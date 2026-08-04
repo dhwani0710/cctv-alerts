@@ -2,7 +2,8 @@ import os
 import shutil
 import cv2
 import config
-from fastapi import FastAPI, UploadFile, Form, File
+from auth import verify_key
+from fastapi import FastAPI, UploadFile, Form, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from database import init_db, get_db
@@ -14,7 +15,7 @@ app = FastAPI(title="Jewellery Store Alert System")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["null", "http://localhost", "http://127.0.0.1"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -31,7 +32,7 @@ def startup():
 def health_check():
     return {"status": "backend is running"}
 
-@app.post("/employees")
+@app.post("/employees", dependencies=[Depends(verify_key)])
 async def add_employee(
     name: str = Form(...),
     shift_start: str = Form(...),
@@ -55,7 +56,7 @@ async def add_employee(
 
     return {"message": f"Employee {name} added successfully"}
 
-@app.get("/employees")
+@app.get("/employees", dependencies=[Depends(verify_key)])
 def list_employees():
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM employees").fetchall()
@@ -66,7 +67,7 @@ def _clear_face_cache():
         if f.startswith("representations_") or f.endswith(".pkl"):
             os.remove(os.path.join(KNOWN_FACES_DIR, f))
 
-@app.put("/employees/{employee_id}")
+@app.put("/employees/{employee_id}", dependencies=[Depends(verify_key)])
 async def update_employee(
     employee_id: int,
     name: str = Form(...),
@@ -103,7 +104,7 @@ async def update_employee(
         
     return {"message": f"Employee {name} updated successfully"}
 
-@app.delete("/employees/{employee_id}")
+@app.delete("/employees/{employee_id}", dependencies=[Depends(verify_key)])
 def delete_employee(employee_id: int):
     with get_db() as conn:
         emp = conn.execute("SELECT * FROM employees WHERE id = ?", (employee_id,)).fetchone()
@@ -121,7 +122,7 @@ def delete_employee(employee_id: int):
 
     return {"message": "Employee deleted"}
 
-@app.get("/status")
+@app.get("/status", dependencies=[Depends(verify_key)])
 def get_status():
     now = datetime.now()
     with state_lock:
@@ -133,11 +134,11 @@ def get_status():
         alerts = list(reversed(state["recent_alerts"][-15:]))
     return {"currently_detected": detected, "recent_alerts": alerts}
 
-@app.get("/settings")
+@app.get("/settings", dependencies=[Depends(verify_key)])
 def get_settings():
     return load_settings()
 
-@app.post("/settings")
+@app.post("/settings", dependencies=[Depends(verify_key)])
 def update_settings(store_open_time: str = Form(...), store_close_time: str = Form(...)):
     save_settings({"store_open_time": store_open_time, "store_close_time": store_close_time})
     return {"message": "Settings updated"}
@@ -149,6 +150,6 @@ def _mjpeg_generator():
             _, buffer = cv2.imencode(".jpg", frame)
             yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
 
-@app.get("/video_feed")
+@app.get("/video_feed", dependencies=[Depends(verify_key)])
 def video_feed():
     return StreamingResponse(_mjpeg_generator(), media_type="multipart/x-mixed-replace; boundary=frame")

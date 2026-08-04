@@ -15,3 +15,5 @@ backend/known_faces/*.pkl
 # OS junk
 .DS_Store
 Thumbs.db
+
+backend/.env

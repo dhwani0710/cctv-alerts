@@ -44,7 +44,7 @@
 
     <div class="grid grid-cols-3 gap-4 flex-1 min-h-0">
       <div class="col-span-2 relative bg-[var(--bg-panel)] rounded-xl border border-[var(--border-color)] overflow-hidden">
-        <img src="http://localhost:8000/video_feed" class="w-full h-full object-cover" />
+        <img id="videoFeed" class="w-full h-full object-cover" />
         <div id="cameraToast" class="hidden absolute top-3 left-3 right-3 border-l-4 rounded px-3 py-2 shadow-lg backdrop-blur-sm"></div>
       </div>
 
@@ -66,6 +66,10 @@
 
 <script>
 const API = "http://localhost:8000";
+const API_KEY = "cctv-alerts-pwd-123";
+
+const authHeaders = { "X-API-Key": API_KEY };
+document.getElementById("videoFeed").src = `${API}/video_feed?api_key=${API_KEY}`;
 const priorityColor = { low: "border-yellow-500 bg-yellow-500/10 text-yellow-500",
                          medium: "border-orange-500 bg-orange-500/10 text-orange-500",
                          high: "border-red-500 bg-red-500/10 text-red-500" };
@@ -94,13 +98,13 @@ function showCameraToast(alert) {
 }
 
 async function loadSettingsIntoUI() {
-  const res = await fetch(`${API}/settings`);
+  const res = await fetch(`${API}/settings`, { headers: authHeaders });
   const s = await res.json();
   document.getElementById("hoursLabel").innerText = `Store hours: ${s.store_open_time} – ${s.store_close_time}`;
 }
 
 async function refresh() {
-  const res = await fetch(`${API}/status`);
+  const res = await fetch(`${API}/status`, { headers: authHeaders });
   const data = await res.json();
 
   document.getElementById("detected").innerHTML = data.currently_detected.length

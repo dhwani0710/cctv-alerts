@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from notifications import send_telegram_alert
 from database import get_db
 from settings_store import load_settings
 import config
@@ -52,6 +53,8 @@ def is_within_store_hours(now: datetime):
     close_t = now.replace(hour=close_h, minute=close_m, second=0, microsecond=0)
     return open_t <= now <= close_t
 
+PRIORITY_EMOJI = {"low": "🟡", "medium": "🟠", "high": "🔴"}
+
 def log_alert(person_name, alert_type, priority, message):
     with get_db() as conn:
         conn.execute(
@@ -59,3 +62,6 @@ def log_alert(person_name, alert_type, priority, message):
             (person_name, alert_type, priority, message, datetime.now().isoformat())
         )
         conn.commit()
+
+    emoji = PRIORITY_EMOJI.get(priority, "")
+    send_telegram_alert(f"{emoji} [{priority.upper()}] {message}")

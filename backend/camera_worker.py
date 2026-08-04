@@ -80,6 +80,12 @@ def _process_frame(frame):
 def camera_loop():
     global latest_frame
     cap = cv2.VideoCapture(0)
+
+    if not cap.isOpened():
+        print("[camera_worker] No camera detected — running without live video.")
+        while True:
+            time.sleep(5)
+
     last_recognition = 0
 
     while True:
