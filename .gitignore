@@ -1,0 +1,17 @@
+# Python
+backend/venv/
+backend/__pycache__/
+*.pyc
+
+# Database & runtime data
+backend/store.db
+backend/settings.json
+backend/known_faces/*.jpg
+backend/known_faces/*.jpeg
+backend/known_faces/*.png
+backend/known_faces/representations_*.pkl
+backend/known_faces/*.pkl
+
+# OS junk
+.DS_Store
+Thumbs.db
