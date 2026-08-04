@@ -130,6 +130,9 @@
 
 <script>
 const API = "http://localhost:8000";
+const API_KEY = "cctv-alerts-pwd-123";
+
+const authHeaders = { "X-API-Key": API_KEY };
 
 function applyTheme(theme) {
   document.documentElement.classList.toggle('light', theme === 'light');
@@ -143,7 +146,7 @@ function toggleTheme() {
 applyTheme(localStorage.getItem('theme') || 'dark');
 
 async function loadSettingsIntoUI() {
-  const res = await fetch(`${API}/settings`);
+  const res = await fetch(`${API}/settings`, { headers: authHeaders });
   const s = await res.json();
   document.getElementById("openTime").value = s.store_open_time;
   document.getElementById("closeTime").value = s.store_close_time;
@@ -153,7 +156,7 @@ async function saveSettings() {
   const formData = new FormData();
   formData.append("store_open_time", document.getElementById("openTime").value);
   formData.append("store_close_time", document.getElementById("closeTime").value);
-  await fetch(`${API}/settings`, { method: "POST", body: formData });
+  await fetch(`${API}/settings`, { method: "POST", headers: authHeaders, body: formData });
   document.getElementById("settingsModal").classList.add("hidden");
   loadSettingsIntoUI();
 }
@@ -163,7 +166,7 @@ function isOvernightShift(start, end) {
 }
 
 async function loadEmployees() {
-  const res = await fetch(`${API}/employees`);
+  const res = await fetch(`${API}/employees`, { headers: authHeaders });
   const employees = await res.json();
   const list = document.getElementById("employeeList");
   list.innerHTML = employees.map(e => `
@@ -196,7 +199,7 @@ function closeConfirmModal() {
 
 async function confirmDelete() {
   if (pendingDeleteId === null) return;
-  await fetch(`${API}/employees/${pendingDeleteId}`, { method: "DELETE" });
+  await fetch(`${API}/employees/${pendingDeleteId}`, { method: "DELETE", headers: authHeaders });
   closeConfirmModal();
   loadEmployees();
 }
@@ -230,7 +233,7 @@ async function submitEdit() {
     formData.append("photo", photoFile);
   }
 
-  const res = await fetch(`${API}/employees/${pendingEditId}`, { method: "PUT", body: formData });
+  const res = await fetch(`${API}/employees/${pendingEditId}`, { method: "PUT", headers: authHeaders, body: formData });
   const result = await res.json();
   if (res.ok && !result.error) {
     closeEditModal();
@@ -248,7 +251,7 @@ document.getElementById("employeeForm").addEventListener("submit", async (e) => 
   formData.append("shift_end", document.getElementById("shift_end").value);
   formData.append("photo", document.getElementById("photo").files[0]);
 
-  const res = await fetch(`${API}/employees`, { method: "POST", body: formData });
+  const res = await fetch(`${API}/employees`, { method: "POST", headers: authHeaders, body: formData });
   const result = await res.json();
   if (res.ok && !result.error) {
     e.target.reset();
