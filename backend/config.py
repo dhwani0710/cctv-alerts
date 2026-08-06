@@ -11,3 +11,5 @@ RECOGNITION_INTERVAL_SEC = 5
 CURRENTLY_DETECTED_TIMEOUT_SEC = 10  # how long someone stays "currently detected" without a fresh match
 
 UNKNOWN_STREAK_THRESHOLD = 2  # consecutive "Unknown" reads required before treating it as a real stranger
+
+ALERT_DEDUPE_WINDOW_SEC = 120

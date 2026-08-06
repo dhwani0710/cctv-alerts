@@ -55,6 +55,19 @@ def is_within_store_hours(now: datetime):
 
 PRIORITY_EMOJI = {"low": "🟡", "medium": "🟠", "high": "🔴"}
 
+def already_alerted_recently(person_name, alert_type, priority, window_seconds=120):
+    cutoff = datetime.now() - timedelta(seconds=window_seconds)
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT timestamp FROM alerts WHERE person_name = ? AND alert_type = ? AND priority = ? "
+            "ORDER BY timestamp DESC LIMIT 1",
+            (person_name, alert_type, priority)
+        ).fetchone()
+    if not row:
+        return False
+    alert_time = datetime.fromisoformat(row["timestamp"])
+    return alert_time >= cutoff
+
 def log_alert(person_name, alert_type, priority, message):
     with get_db() as conn:
         conn.execute(
