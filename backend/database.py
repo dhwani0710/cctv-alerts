@@ -1,14 +1,19 @@
-import sqlite3
+import os
+import psycopg2
+import psycopg2.extras
 from contextlib import contextmanager
+from dotenv import load_dotenv
 
-DB_PATH = "store.db"
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS employees (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             shift_start TEXT NOT NULL,
             shift_end TEXT NOT NULL,
@@ -17,7 +22,7 @@ def init_db():
     """)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS alerts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             person_name TEXT NOT NULL,
             alert_type TEXT NOT NULL,
             priority TEXT NOT NULL,
@@ -38,12 +43,12 @@ def init_db():
         )
     """)
     conn.commit()
+    cursor.close()
     conn.close()
 
 @contextmanager
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         yield conn
     finally:

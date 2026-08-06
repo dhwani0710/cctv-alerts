@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
-from notifications import send_telegram_alert
 from database import get_db
 from settings_store import load_settings
+from notifications import send_telegram_alert
 import config
 
 def get_alert_priority(minutes_past):
@@ -21,9 +21,6 @@ def format_duration(total_minutes):
     return f"{minutes} min"
 
 def get_shift_datetimes(now, shift_start_str, shift_end_str):
-    """Returns (shift_start_dt, shift_end_dt) for the shift occurrence relevant to 'now'.
-    Handles overnight shifts (where shift_end is earlier than shift_start, e.g. 22:00-06:00)
-    by figuring out whether 'now' falls in last night's shift or is approaching tonight's."""
     sh, sm = map(int, shift_start_str.split(":"))
     eh, em = map(int, shift_end_str.split(":"))
 
@@ -53,28 +50,33 @@ def is_within_store_hours(now: datetime):
     close_t = now.replace(hour=close_h, minute=close_m, second=0, microsecond=0)
     return open_t <= now <= close_t
 
-PRIORITY_EMOJI = {"low": "🟡", "medium": "🟠", "high": "🔴"}
-
 def already_alerted_recently(person_name, alert_type, priority, window_seconds=120):
     cutoff = datetime.now() - timedelta(seconds=window_seconds)
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT timestamp FROM alerts WHERE person_name = ? AND alert_type = ? AND priority = ? "
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT timestamp FROM alerts WHERE person_name = %s AND alert_type = %s AND priority = %s "
             "ORDER BY timestamp DESC LIMIT 1",
             (person_name, alert_type, priority)
-        ).fetchone()
+        )
+        row = cur.fetchone()
+        cur.close()
     if not row:
         return False
     alert_time = datetime.fromisoformat(row["timestamp"])
     return alert_time >= cutoff
 
+PRIORITY_EMOJI = {"low": "🟡", "medium": "🟠", "high": "🔴"}
+
 def log_alert(person_name, alert_type, priority, message):
     with get_db() as conn:
-        conn.execute(
-            "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp) VALUES (?, ?, ?, ?, ?)",
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp) VALUES (%s, %s, %s, %s, %s)",
             (person_name, alert_type, priority, message, datetime.now().isoformat())
         )
         conn.commit()
+        cur.close()
 
     emoji = PRIORITY_EMOJI.get(priority, "")
     send_telegram_alert(f"{emoji} [{priority.upper()}] {message}")
