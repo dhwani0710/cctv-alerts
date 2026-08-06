@@ -7,3 +7,4 @@ mtcnn
 requests
 python-dotenv
 apscheduler
+tf-keras

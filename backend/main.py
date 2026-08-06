@@ -7,9 +7,9 @@ from fastapi import FastAPI, UploadFile, Form, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from database import init_db, get_db
-from camera_worker import start_camera_thread, get_current_frame, state, state_lock
+from camera_worker import start_camera_thread, get_current_frame
 from settings_store import load_settings, save_settings
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = FastAPI(title="Jewellery Store Alert System")
 
@@ -125,13 +125,18 @@ def delete_employee(employee_id: int):
 @app.get("/status", dependencies=[Depends(verify_key)])
 def get_status():
     now = datetime.now()
-    with state_lock:
-        detected = [
-            {"name": k, "last_seen": v.isoformat()}
-            for k, v in state["currently_detected"].items()
-            if (now - v).total_seconds() <= config.CURRENTLY_DETECTED_TIMEOUT_SEC
-        ]
-        alerts = list(reversed(state["recent_alerts"][-15:]))
+    cutoff = now - timedelta(seconds=config.CURRENTLY_DETECTED_TIMEOUT_SEC)
+    with get_db() as conn:
+        detected_rows = conn.execute(
+            "SELECT person_name, last_seen FROM currently_detected WHERE last_seen >= ?",
+            (cutoff.isoformat(),)
+        ).fetchall()
+        alert_rows = conn.execute(
+            "SELECT person_name, alert_type, priority, message, timestamp FROM alerts ORDER BY timestamp DESC LIMIT 15"
+        ).fetchall()
+
+    detected = [{"name": r["person_name"], "last_seen": r["last_seen"]} for r in detected_rows]
+    alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
 
 @app.get("/settings", dependencies=[Depends(verify_key)])
