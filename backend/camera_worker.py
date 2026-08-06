@@ -12,26 +12,33 @@ latest_frame = None
 
 def get_unknown_streak():
     with get_db() as conn:
-        row = conn.execute("SELECT value FROM system_state WHERE key = 'unknown_streak'").fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM system_state WHERE key = 'unknown_streak'")
+        row = cur.fetchone()
+        cur.close()
         return int(row["value"]) if row else 0
 
 def set_unknown_streak(value):
     with get_db() as conn:
-        conn.execute(
-            "INSERT INTO system_state (key, value) VALUES ('unknown_streak', ?) "
-            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO system_state (key, value) VALUES ('unknown_streak', %s) "
+            "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
             (str(value),)
         )
         conn.commit()
+        cur.close()
 
 def update_currently_detected(name, now):
     with get_db() as conn:
-        conn.execute(
-            "INSERT INTO currently_detected (person_name, last_seen) VALUES (?, ?) "
-            "ON CONFLICT(person_name) DO UPDATE SET last_seen = excluded.last_seen",
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO currently_detected (person_name, last_seen) VALUES (%s, %s) "
+            "ON CONFLICT(person_name) DO UPDATE SET last_seen = EXCLUDED.last_seen",
             (name, now.isoformat())
         )
         conn.commit()
+        cur.close()
 
 def _process_frame(frame):
     name = recognize_face(frame)
@@ -42,7 +49,10 @@ def _process_frame(frame):
         set_unknown_streak(0)
 
         with get_db() as conn:
-            emp = conn.execute("SELECT * FROM employees WHERE name = ?", (name,)).fetchone()
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM employees WHERE name = %s", (name,))
+            emp = cur.fetchone()
+            cur.close()
         if emp:
             shift_start_dt, shift_end_dt = get_shift_datetimes(now, emp["shift_start"], emp["shift_end"])
 

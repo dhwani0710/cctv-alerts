@@ -8,3 +8,4 @@ requests
 python-dotenv
 apscheduler
 tf-keras
+psycopg2-binary
