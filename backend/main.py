@@ -15,7 +15,7 @@ app = FastAPI(title="Jewellery Store Alert System")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["null", "http://localhost", "http://127.0.0.1"],
+    allow_origins=["null", "http://localhost", "http://127.0.0.1", "https://cctv-alerts-frontend.onrender.com"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
