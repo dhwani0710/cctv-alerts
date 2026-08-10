@@ -62,7 +62,7 @@
       </div>
       <div>
         <label class="block text-sm text-[var(--text-muted)] mb-1">Photo (clear face photo)</label>
-        <input type="file" id="photo" accept="image/*" required class="w-full text-sm text-[var(--text-muted)]">
+        <input type="file" id="photo" accept="image/*" multiple required class="w-full text-sm text-[var(--text-muted)]">
       </div>
       <button type="submit" class="bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--accent-contrast)] font-semibold px-6 py-2 rounded-lg transition text-sm">Add Employee</button>
     </form>
@@ -129,7 +129,8 @@
   </div>
 
 <script>
-const API = "https://cctv-alerts.onrender.com";
+//const API = "https://cctv-alerts.onrender.com";
+const API = "http://localhost:8000";
 const API_KEY = "cctv-alerts-pwd-123";
 
 const authHeaders = { "X-API-Key": API_KEY };
@@ -249,7 +250,10 @@ document.getElementById("employeeForm").addEventListener("submit", async (e) => 
   formData.append("name", document.getElementById("name").value);
   formData.append("shift_start", document.getElementById("shift_start").value);
   formData.append("shift_end", document.getElementById("shift_end").value);
-  formData.append("photo", document.getElementById("photo").files[0]);
+  const photoFiles = document.getElementById("photo").files;
+  for (let i = 0; i < photoFiles.length; i++) {
+    formData.append("photos", photoFiles[i]);
+  }
 
   const res = await fetch(`${API}/employees`, { method: "POST", headers: authHeaders, body: formData });
   const result = await res.json();

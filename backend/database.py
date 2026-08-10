@@ -31,6 +31,13 @@ def init_db():
         )
     """)
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS employee_photos (
+            id SERIAL PRIMARY KEY,
+            employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            filename TEXT NOT NULL
+        )
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS currently_detected (
             person_name TEXT PRIMARY KEY,
             last_seen TEXT NOT NULL

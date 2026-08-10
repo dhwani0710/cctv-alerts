@@ -9,6 +9,8 @@ import config
 
 frame_lock = threading.Lock()
 latest_frame = None
+recognition_lock = threading.Lock()
+recognition_in_progress = False
 
 def get_unknown_streak():
     with get_db() as conn:
@@ -76,8 +78,16 @@ def _process_frame(frame):
                 msg = "Unknown person detected outside store hours"
                 log_alert("Unknown", "stranger", "high", msg)
 
+def _recognition_worker(frame):
+    global recognition_in_progress
+    try:
+        _process_frame(frame)
+    finally:
+        with recognition_lock:
+            recognition_in_progress = False
+
 def camera_loop():
-    global latest_frame
+    global latest_frame, recognition_in_progress
     cap = cv2.VideoCapture(0)
 
     if not cap.isOpened():
@@ -97,7 +107,13 @@ def camera_loop():
             latest_frame = frame.copy()
 
         if time.time() - last_recognition > config.RECOGNITION_INTERVAL_SEC:
-            _process_frame(frame)
+            start_new = False
+            with recognition_lock:
+                if not recognition_in_progress:
+                    recognition_in_progress = True
+                    start_new = True
+            if start_new:
+                threading.Thread(target=_recognition_worker, args=(frame.copy(),), daemon=True).start()
             last_recognition = time.time()
 
         time.sleep(0.03)

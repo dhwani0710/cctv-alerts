@@ -1,6 +1,8 @@
 import os
 import shutil
 import cv2
+from PIL import Image, ImageOps
+import time as _time
 from fastapi import FastAPI, UploadFile, Form, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -32,36 +34,64 @@ def startup():
 def health_check():
     return {"status": "backend is running"}
 
+MAX_PHOTO_DIMENSION = 1024
+
+def _save_resized_photo(upload_file, destination_path):
+    with open(destination_path, "wb") as buffer:
+        shutil.copyfileobj(upload_file.file, buffer)
+
+    img = Image.open(destination_path)
+    img = ImageOps.exif_transpose(img)
+    img = img.convert("RGB")
+    if max(img.size) > MAX_PHOTO_DIMENSION:
+        img.thumbnail((MAX_PHOTO_DIMENSION, MAX_PHOTO_DIMENSION))
+    img.save(destination_path, "JPEG")
+
 def _clear_face_cache():
     for f in os.listdir(KNOWN_FACES_DIR):
         if f.startswith("representations_") or f.endswith(".pkl"):
             os.remove(os.path.join(KNOWN_FACES_DIR, f))
+
+from typing import List
 
 @app.post("/employees", dependencies=[Depends(verify_key)])
 async def add_employee(
     name: str = Form(...),
     shift_start: str = Form(...),
     shift_end: str = Form(...),
-    photo: UploadFile = File(...)
+    photos: List[UploadFile] = File(...)
 ):
     if shift_start == shift_end:
         return {"error": "Shift start and end time cannot be the same."}
+    if len(photos) == 0:
+        return {"error": "At least one photo is required."}
 
-    photo_filename = f"{name.replace(' ', '_')}.jpg"
-    photo_path = os.path.join(KNOWN_FACES_DIR, photo_filename)
-    with open(photo_path, "wb") as buffer:
-        shutil.copyfileobj(photo.file, buffer)
+    employee_folder = os.path.join(KNOWN_FACES_DIR, name.replace(" ", "_"))
+    os.makedirs(employee_folder, exist_ok=True)
 
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO employees (name, shift_start, shift_end, photo_filename) VALUES (%s, %s, %s, %s)",
-            (name, shift_start, shift_end, photo_filename)
+            "INSERT INTO employees (name, shift_start, shift_end, photo_filename) VALUES (%s, %s, %s, %s) RETURNING id",
+            (name, shift_start, shift_end, "")
         )
+        employee_id = cur.fetchone()["id"]
+
+        for i, photo in enumerate(photos):
+            filename = f"photo_{i+1}.jpg"
+            photo_path = os.path.join(employee_folder, filename)
+            _save_resized_photo(photo, photo_path)
+            cur.execute(
+                "INSERT INTO employee_photos (employee_id, filename) VALUES (%s, %s)",
+                (employee_id, filename)
+            )
+
         conn.commit()
         cur.close()
 
-    return {"message": f"Employee {name} added successfully"}
+    _clear_face_cache()
+
+    return {"message": f"Employee {name} added successfully with {len(photos)} photo(s)"}
 
 @app.get("/employees", dependencies=[Depends(verify_key)])
 def list_employees():
@@ -124,9 +154,9 @@ def delete_employee(employee_id: int):
             cur.close()
             return {"message": "Employee not found"}
 
-        photo_path = os.path.join(KNOWN_FACES_DIR, emp["photo_filename"])
-        if os.path.exists(photo_path):
-            os.remove(photo_path)
+        employee_folder = os.path.join(KNOWN_FACES_DIR, emp["name"].replace(" ", "_"))
+        if os.path.exists(employee_folder):
+            shutil.rmtree(employee_folder)
 
         _clear_face_cache()
 
@@ -170,8 +200,9 @@ def _mjpeg_generator():
     while True:
         frame = get_current_frame()
         if frame is not None:
-            _, buffer = cv2.imencode(".jpg", frame)
+            _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
             yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
+        _time.sleep(0.05)
 
 @app.get("/video_feed", dependencies=[Depends(verify_key)])
 def video_feed():
