@@ -6,8 +6,12 @@ VALID_PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
 def recognize_face(frame):
     """Takes a webcam frame (numpy array), returns a matched employee name or 'Unknown'."""
-    photo_files = [f for f in os.listdir(KNOWN_FACES_DIR) if f.lower().endswith(VALID_PHOTO_EXTENSIONS)]
-    if not photo_files:
+    has_photos = False
+    for root, dirs, files in os.walk(KNOWN_FACES_DIR):
+        if any(f.lower().endswith(VALID_PHOTO_EXTENSIONS) for f in files):
+            has_photos = True
+            break
+    if not has_photos:
         return "Unknown"
 
     try:
@@ -26,7 +30,8 @@ def recognize_face(frame):
             distance_col = [c for c in best_match.index if "distance" in c.lower()]
             distance_val = best_match[distance_col[0]] if distance_col else "N/A"
             print(f"[DEBUG] Best match: {identity_path} | distance: {distance_val}")
-            name = os.path.splitext(os.path.basename(identity_path))[0].replace("_", " ")
+            folder_name = os.path.basename(os.path.dirname(identity_path))
+            name = folder_name.replace("_", " ")
             return name
         else:
             print("[DEBUG] No match found within threshold — results were empty")
