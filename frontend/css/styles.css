@@ -507,13 +507,32 @@ button {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
 }
 
 @media (max-width: 980px) {
   .two-col {
     grid-template-columns: 1fr;
   }
+}
+
+/* Cameras & Alerts page: make the alerts panel match the height
+   of the camera grid column instead of sizing to its own content. */
+.two-col .panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.two-col .panel-head {
+  flex-shrink: 0;
+}
+
+#alertList {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 /* ---- log / list rows ---- */
@@ -1168,46 +1187,213 @@ table.records tr:last-child td {
 }
 
 /* ============================================================
-   EMPLOYEES — designation board (role columns)
+   EMPLOYEES — search / filter bar
+   ============================================================ */
+.search-bar {
+  position: relative;
+  max-width: 360px;
+  margin-bottom: 18px;
+}
+
+.search-bar input {
+  width: 100%;
+  padding: 10px 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--paper-line);
+  background: #fff;
+  font-size: 13.5px;
+  font-family: var(--font-body);
+  color: var(--text-on-paper);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.search-bar input:focus {
+  outline: none;
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px var(--brass-glow);
+}
+
+.search-bar .search-icon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: var(--text-on-paper-muted);
+  pointer-events: none;
+}
+
+.search-bar .search-clear {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-on-paper-muted);
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.search-bar .search-clear:hover {
+  background: rgba(0, 0, 0, .06);
+  color: var(--text-on-paper);
+}
+
+.search-bar.has-value .search-clear {
+  display: flex;
+}
+
+.content.dark .search-bar input {
+  background: var(--ink-2);
+  border-color: var(--ink-line);
+  color: var(--text-on-ink);
+}
+
+.content.dark .search-bar .search-icon {
+  color: var(--text-on-ink-muted);
+}
+
+.content.dark .search-bar .search-clear {
+  color: var(--text-on-ink-muted);
+}
+
+.content.dark .search-bar .search-clear:hover {
+  background: rgba(255, 255, 255, .08);
+  color: var(--text-on-ink);
+}
+
+body.light-theme .content.dark .search-bar input {
+  background: #fff;
+  border-color: var(--paper-line);
+  color: var(--text-on-paper);
+}
+
+body.light-theme .content.dark .search-bar .search-icon {
+  color: var(--text-on-paper-muted);
+}
+
+body.light-theme .content.dark .search-bar .search-clear {
+  color: var(--text-on-paper-muted);
+}
+
+body.light-theme .content.dark .search-bar .search-clear:hover {
+  background: rgba(0, 0, 0, .06);
+  color: var(--text-on-paper);
+}
+
+.search-no-results {
+  font-size: 13px;
+  color: var(--text-on-paper-muted);
+  padding: 22px;
+  text-align: center;
+  border: 1px dashed var(--paper-line);
+  border-radius: var(--radius-lg);
+}
+
+.content.dark .search-no-results {
+  color: var(--text-on-ink-muted);
+  border-color: var(--ink-line);
+}
+
+body.light-theme .content.dark .search-no-results {
+  color: var(--text-on-paper-muted);
+  border-color: var(--paper-line);
+}
+
+/* ============================================================
+   EMPLOYEES — designation board (collapsible dropdown sections)
    ============================================================ */
 .role-board {
   display: flex;
-  gap: 18px;
-  overflow-x: auto;
-  padding-bottom: 8px;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .role-col {
-  flex: 0 0 280px;
-  min-width: 280px;
+  border: 1px solid var(--paper-line);
+  border-radius: var(--radius-lg);
+  background: var(--paper-2);
+  overflow: hidden;
 }
 
 .role-col-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
-  padding: 0 2px;
+  gap: 12px;
+  padding: 14px 18px;
+  cursor: pointer;
+  user-select: none;
+  transition: background .15s ease;
+}
+
+.role-col-head:hover {
+  background: var(--paper-line);
+}
+
+.role-col-head-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .role-col-head h3 {
   font-family: var(--font-display);
   font-weight: 500;
-  font-size: 14px;
+  font-size: 15px;
   margin: 0;
   color: var(--text-on-paper);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .role-col-count {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-on-paper-muted);
+  background: rgba(0, 0, 0, .06);
+  padding: 2px 9px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.role-col-chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--text-on-paper-muted);
+  transition: transform .18s ease;
+  flex-shrink: 0;
+}
+
+.role-col.open .role-col-chevron {
+  transform: rotate(180deg);
+}
+
+.role-col-collapse {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height .25s ease;
+}
+
+.role-col.open .role-col-collapse {
+  max-height: 3000px;
 }
 
 .role-col-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+  padding: 16px 18px 18px;
+  border-top: 1px solid var(--paper-line);
 }
 
 .role-col-empty {
@@ -1217,6 +1403,7 @@ table.records tr:last-child td {
   border: 1px dashed var(--paper-line);
   border-radius: var(--radius-md);
   text-align: center;
+  grid-column: 1 / -1;
 }
 
 .staff-card .role-edit-row {
@@ -1555,12 +1742,30 @@ body.light-theme .content.dark .btn-outline:hover {
 }
 
 /* Designation board — dark mode (admin-employees.html uses .content.dark) */
+.content.dark .role-col {
+  background: var(--ink-2);
+  border-color: var(--ink-line);
+}
+
+.content.dark .role-col-head:hover {
+  background: var(--ink-3);
+}
+
 .content.dark .role-col-head h3 {
   color: var(--text-on-ink);
 }
 
 .content.dark .role-col-count {
   color: var(--text-on-ink-muted);
+  background: rgba(255, 255, 255, .06);
+}
+
+.content.dark .role-col-chevron {
+  color: var(--text-on-ink-muted);
+}
+
+.content.dark .role-col-body {
+  border-top-color: var(--ink-line);
 }
 
 .content.dark .role-col-empty {
@@ -1628,12 +1833,30 @@ body.light-theme .content.dark .field input {
 }
 
 /* Designation board — light theme override */
+body.light-theme .content.dark .role-col {
+  background: var(--paper-2);
+  border-color: var(--paper-line);
+}
+
+body.light-theme .content.dark .role-col-head:hover {
+  background: var(--paper-line);
+}
+
 body.light-theme .content.dark .role-col-head h3 {
   color: var(--text-on-paper);
 }
 
 body.light-theme .content.dark .role-col-count {
   color: var(--text-on-paper-muted);
+  background: rgba(0, 0, 0, .06);
+}
+
+body.light-theme .content.dark .role-col-chevron {
+  color: var(--text-on-paper-muted);
+}
+
+body.light-theme .content.dark .role-col-body {
+  border-top-color: var(--paper-line);
 }
 
 body.light-theme .content.dark .role-col-empty {
