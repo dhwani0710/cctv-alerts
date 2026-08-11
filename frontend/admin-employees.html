@@ -115,6 +115,19 @@
           </form>
         </div>
 
+        <div class="search-bar" id="searchBar">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.35-4.35" />
+          </svg>
+          <input type="text" id="searchInput" placeholder="Search employees by name…" autocomplete="off" />
+          <button type="button" class="search-clear" id="searchClear" title="Clear search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+
         <div class="role-board" id="roleBoard"></div>
       </main>
     </div>
@@ -130,10 +143,21 @@
 
       const roleBoard = document.getElementById('roleBoard');
       const roleOptions = document.getElementById('roleOptions');
+      const searchBar = document.getElementById('searchBar');
+      const searchInput = document.getElementById('searchInput');
+      const searchClear = document.getElementById('searchClear');
 
       // Track which employee (by index in MOCK_STAFF) currently has its
       // edit form open, so re-renders don't lose that state.
       let editingIndex = null;
+
+      // Track which designation sections are expanded (dropdown open state).
+      // Starts empty so nothing is scrolled through by default — admin
+      // opens the sections they need.
+      const openRoles = new Set();
+
+      // Current search text (name filter).
+      let searchTerm = '';
 
       function getDesignations() {
         // Unique designations, in first-seen order, based on current staff data.
@@ -187,7 +211,8 @@
             newRoleRow.style.display = select.value === '__new__' ? 'flex' : 'none';
           });
 
-          card.querySelector('.saveRoleBtn').addEventListener('click', () => {
+          card.querySelector('.saveRoleBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
             let newRole = select.value;
             if (newRole === '__new__') {
               newRole = newRoleInput.value.trim();
@@ -195,19 +220,23 @@
             }
             MOCK_STAFF[index].role = newRole;
             editingIndex = null;
+            openRoles.add(newRole); // reveal where the employee landed
             renderBoard();
           });
 
-          card.querySelector('.cancelRoleBtn').addEventListener('click', () => {
+          card.querySelector('.cancelRoleBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
             editingIndex = null;
             renderBoard();
           });
         } else {
-          card.querySelector('.editBtn').addEventListener('click', () => {
+          card.querySelector('.editBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
             editingIndex = index;
             renderBoard();
           });
-          card.querySelector('.removeBtn').addEventListener('click', () => {
+          card.querySelector('.removeBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
             MOCK_STAFF.splice(index, 1);
             editingIndex = null;
             renderBoard();
@@ -225,23 +254,67 @@
         // Keep the "add employee" datalist in sync with current designations.
         roleOptions.innerHTML = designations.map(r => `<option value="${r}"></option>`).join('');
 
-        designations.forEach((role) => {
-          const col = document.createElement('div');
-          col.className = 'role-col';
+        const term = searchTerm.trim().toLowerCase();
+        const isSearching = term.length > 0;
 
-          const membersWithIndex = MOCK_STAFF
+        // Indices (into MOCK_STAFF) whose name matches the current search term.
+        const matchedIndices = new Set(
+          MOCK_STAFF
+            .map((s, i) => ({ s, i }))
+            .filter(({ s }) => !term || s.name.toLowerCase().includes(term))
+            .map(({ i }) => i)
+        );
+
+        // Searching and nothing matches at all — show a single message and stop.
+        if (isSearching && matchedIndices.size === 0) {
+          const noResults = document.createElement('div');
+          noResults.className = 'search-no-results';
+          noResults.textContent = `No employees found matching "${searchTerm.trim()}".`;
+          roleBoard.appendChild(noResults);
+          return;
+        }
+
+        designations.forEach((role) => {
+          const allMembersInRole = MOCK_STAFF
             .map((s, i) => ({ s, i }))
             .filter(({ s }) => s.role === role);
 
-          col.innerHTML = `
+          const membersWithIndex = isSearching
+            ? allMembersInRole.filter(({ i }) => matchedIndices.has(i))
+            : allMembersInRole;
+
+          // While searching, skip designation sections that have no matches
+          // instead of showing an empty accordion for them.
+          if (isSearching && membersWithIndex.length === 0) return;
+
+          // If an employee inside this role is being edited, force it open
+          // so the edit form doesn't disappear on re-render.
+          const hasEditingMember = membersWithIndex.some(({ i }) => i === editingIndex);
+          if (hasEditingMember) openRoles.add(role);
+
+          // Sections auto-expand while searching so results are visible
+          // immediately; otherwise fall back to manual open/closed state.
+          const isOpen = isSearching ? true : openRoles.has(role);
+
+          const section = document.createElement('div');
+          section.className = 'role-col' + (isOpen ? ' open' : '');
+
+          section.innerHTML = `
           <div class="role-col-head">
-            <h3>${role}</h3>
-            <span class="role-col-count">${membersWithIndex.length}</span>
+            <div class="role-col-head-left">
+              <h3>${role}</h3>
+              <span class="role-col-count">${membersWithIndex.length}</span>
+            </div>
+            <svg class="role-col-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
           </div>
-          <div class="role-col-body"></div>
+          <div class="role-col-collapse">
+            <div class="role-col-body"></div>
+          </div>
         `;
 
-          const body = col.querySelector('.role-col-body');
+          const body = section.querySelector('.role-col-body');
           if (membersWithIndex.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'role-col-empty';
@@ -251,11 +324,37 @@
             membersWithIndex.forEach(({ s, i }) => body.appendChild(makeStaffCard(s, i)));
           }
 
-          roleBoard.appendChild(col);
+          // Manual expand/collapse only makes sense when not actively
+          // filtering by search — while searching, everything stays open.
+          section.querySelector('.role-col-head').addEventListener('click', () => {
+            if (isSearching) return;
+            if (openRoles.has(role)) {
+              openRoles.delete(role);
+            } else {
+              openRoles.add(role);
+            }
+            renderBoard();
+          });
+
+          roleBoard.appendChild(section);
         });
       }
 
       renderBoard();
+
+      searchInput.addEventListener('input', () => {
+        searchTerm = searchInput.value;
+        searchBar.classList.toggle('has-value', searchTerm.length > 0);
+        renderBoard();
+      });
+
+      searchClear.addEventListener('click', () => {
+        searchTerm = '';
+        searchInput.value = '';
+        searchBar.classList.remove('has-value');
+        searchInput.focus();
+        renderBoard();
+      });
 
       const addPanel = document.getElementById('addPanel');
       document.getElementById('addToggle').addEventListener('click', () => {
@@ -268,12 +367,14 @@
         e.preventDefault();
         const nameInput = e.target.querySelector('input[type=text]');
         const roleInput = document.getElementById('newRoleInput');
+        const role = roleInput.value.trim();
         MOCK_STAFF.push({
           name: nameInput.value,
-          role: roleInput.value.trim(),
+          role: role,
           shift: '—',
           added: 'Today',
         });
+        openRoles.add(role); // open the section the new hire lands in
         renderBoard();
         addPanel.style.display = 'none';
         e.target.reset();
