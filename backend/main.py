@@ -1,13 +1,14 @@
 import os
 import shutil
 import cv2
+import storage
 from PIL import Image, ImageOps
-import time as _time
+import time
 from fastapi import FastAPI, UploadFile, Form, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from database import init_db, get_db
-from camera_worker import start_camera_thread, get_current_frame
+from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread
 from datetime import datetime, timedelta
 import config
 from auth import verify_key
@@ -28,7 +29,9 @@ KNOWN_FACES_DIR = "known_faces"
 def startup():
     init_db()
     os.makedirs(KNOWN_FACES_DIR, exist_ok=True)
-    start_camera_thread()
+    storage.sync_known_faces_from_storage(KNOWN_FACES_DIR)
+    start_camera_threads()
+    start_health_check_thread()
 
 @app.get("/")
 def health_check():
@@ -77,10 +80,12 @@ async def add_employee(
         )
         employee_id = cur.fetchone()["id"]
 
+        folder_name = name.replace(" ", "_")
         for i, photo in enumerate(photos):
             filename = f"photo_{i+1}.jpg"
             photo_path = os.path.join(employee_folder, filename)
             _save_resized_photo(photo, photo_path)
+            storage.upload_file(photo_path, f"known_faces/{folder_name}/{filename}")
             cur.execute(
                 "INSERT INTO employee_photos (employee_id, filename) VALUES (%s, %s)",
                 (employee_id, filename)
@@ -154,9 +159,12 @@ def delete_employee(employee_id: int):
             cur.close()
             return {"message": "Employee not found"}
 
-        employee_folder = os.path.join(KNOWN_FACES_DIR, emp["name"].replace(" ", "_"))
+        folder_name = emp["name"].replace(" ", "_")
+        employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
         if os.path.exists(employee_folder):
             shutil.rmtree(employee_folder)
+
+        storage.delete_prefix(f"known_faces/{folder_name}")
 
         _clear_face_cache()
 
@@ -175,6 +183,25 @@ def update_settings(store_open_time: str = Form(...), store_close_time: str = Fo
     save_settings({"store_open_time": store_open_time, "store_close_time": store_close_time})
     return {"message": "Settings updated"}
 
+@app.get("/attendance", dependencies=[Depends(verify_key)])
+def get_attendance(date: str = None):
+    target_date = date or datetime.now().date().isoformat()
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT e.name, a.first_seen, a.last_seen FROM attendance a "
+            "JOIN employees e ON e.id = a.employee_id "
+            "WHERE a.attendance_date = %s ORDER BY a.first_seen ASC",
+            (target_date,)
+        )
+        rows = cur.fetchall()
+        cur.close()
+    return {"date": target_date, "records": [dict(r) for r in rows]}
+
+@app.get("/cameras", dependencies=[Depends(verify_key)])
+def list_cameras():
+    return config.CAMERAS
+
 @app.get("/status", dependencies=[Depends(verify_key)])
 def get_status():
     now = datetime.now()
@@ -182,28 +209,36 @@ def get_status():
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT person_name, last_seen FROM currently_detected WHERE last_seen >= %s",
+            "SELECT person_name, camera_id, last_seen FROM currently_detected WHERE last_seen >= %s",
             (cutoff.isoformat(),)
         )
         detected_rows = cur.fetchall()
         cur.execute(
-            "SELECT person_name, alert_type, priority, message, timestamp FROM alerts ORDER BY timestamp DESC LIMIT 15"
+            "SELECT person_name, alert_type, priority, message, timestamp, snapshot_filename FROM alerts ORDER BY timestamp DESC LIMIT 15"
         )
         alert_rows = cur.fetchall()
         cur.close()
 
-    detected = [{"name": r["person_name"], "last_seen": r["last_seen"]} for r in detected_rows]
+    detected = [{"name": r["person_name"], "camera": r["camera_id"], "last_seen": r["last_seen"]} for r in detected_rows]
     alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
 
-def _mjpeg_generator():
+def _mjpeg_generator(camera_id):
+    encode_params = [cv2.IMWRITE_JPEG_QUALITY, 70]
     while True:
-        frame = get_current_frame()
+        frame = get_current_frame(camera_id)
         if frame is not None:
-            _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            _, buffer = cv2.imencode(".jpg", frame, encode_params)
             yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
-        _time.sleep(0.05)
+        time.sleep(1/15)
 
-@app.get("/video_feed", dependencies=[Depends(verify_key)])
-def video_feed():
-    return StreamingResponse(_mjpeg_generator(), media_type="multipart/x-mixed-replace; boundary=frame")
+@app.get("/snapshots/{filename}", dependencies=[Depends(verify_key)])
+def get_snapshot(filename: str):
+    filepath = os.path.join("snapshots", filename)
+    if not os.path.exists(filepath):
+        return {"error": "Snapshot not found"}
+    return FileResponse(filepath, media_type="image/jpeg")
+
+@app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_key)])
+def video_feed(camera_id: str):
+    return StreamingResponse(_mjpeg_generator(camera_id), media_type="multipart/x-mixed-replace; boundary=frame")

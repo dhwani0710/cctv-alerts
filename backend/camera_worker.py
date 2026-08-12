@@ -2,96 +2,165 @@ import cv2
 import threading
 import time
 from datetime import datetime
-from recognition import recognize_face
+from recognition import recognize_faces
 from alerts import get_alert_priority, is_within_store_hours, log_alert, format_duration, get_shift_datetimes, already_alerted_recently
 from database import get_db
 import config
 
-frame_lock = threading.Lock()
-latest_frame = None
-recognition_lock = threading.Lock()
-recognition_in_progress = False
+frame_locks = {}
+latest_frames = {}
+recognition_locks = {}
+recognition_in_progress = {}
 
-def get_unknown_streak():
+def get_unknown_streak(camera_id):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT value FROM system_state WHERE key = 'unknown_streak'")
+        cur.execute("SELECT value FROM system_state WHERE key = %s", (f"unknown_streak_{camera_id}",))
         row = cur.fetchone()
         cur.close()
         return int(row["value"]) if row else 0
 
-def set_unknown_streak(value):
+def set_unknown_streak(camera_id, value):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO system_state (key, value) VALUES ('unknown_streak', %s) "
+            "INSERT INTO system_state (key, value) VALUES (%s, %s) "
             "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
-            (str(value),)
+            (f"unknown_streak_{camera_id}", str(value))
         )
         conn.commit()
         cur.close()
 
-def update_currently_detected(name, now):
+def update_camera_heartbeat(camera_id, now):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO currently_detected (person_name, last_seen) VALUES (%s, %s) "
-            "ON CONFLICT(person_name) DO UPDATE SET last_seen = EXCLUDED.last_seen",
-            (name, now.isoformat())
+            "INSERT INTO system_state (key, value) VALUES (%s, %s) "
+            "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
+            (f"heartbeat_{camera_id}", now.isoformat())
         )
         conn.commit()
         cur.close()
 
-def _process_frame(frame):
-    name = recognize_face(frame)
+def get_camera_heartbeat(camera_id):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM system_state WHERE key = %s", (f"heartbeat_{camera_id}",))
+        row = cur.fetchone()
+        cur.close()
+        return datetime.fromisoformat(row["value"]) if row else None
+
+def update_currently_detected(name, camera_id, now):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO currently_detected (person_name, camera_id, last_seen) VALUES (%s, %s, %s) "
+            "ON CONFLICT(person_name, camera_id) DO UPDATE SET last_seen = EXCLUDED.last_seen",
+            (name, camera_id, now.isoformat())
+        )
+        conn.commit()
+        cur.close()
+
+def update_attendance(employee_id, now):
+    today = now.date().isoformat()
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT(employee_id, attendance_date) DO UPDATE SET last_seen = EXCLUDED.last_seen",
+            (employee_id, today, now.isoformat(), now.isoformat())
+        )
+        conn.commit()
+        cur.close()
+
+def _is_frame_tampered(frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    mean, stddev = cv2.meanStdDev(gray)
+    brightness = mean[0][0]
+    detail = stddev[0][0]
+    return brightness < config.TAMPER_BRIGHTNESS_THRESHOLD or detail < config.TAMPER_VARIANCE_THRESHOLD
+
+def _process_frame(frame, camera_id, camera_name):
     now = datetime.now()
 
-    if name != "Unknown":
-        update_currently_detected(name, now)
-        set_unknown_streak(0)
+    if _is_frame_tampered(frame):
+        if not already_alerted_recently(f"camera_{camera_id}", "camera_tamper", "high", config.ALERT_DEDUPE_WINDOW_SEC):
+            msg = f"[{camera_name}] Camera view blocked or tampered with"
+            log_alert(f"camera_{camera_id}", "camera_tamper", "high", msg, frame=frame)
+        return
 
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM employees WHERE name = %s", (name,))
-            emp = cur.fetchone()
-            cur.close()
-        if emp:
-            shift_start_dt, shift_end_dt = get_shift_datetimes(now, emp["shift_start"], emp["shift_end"])
+    names = recognize_faces(frame)
 
-            if now < shift_start_dt:
-                minutes_early = (shift_start_dt - now).total_seconds() / 60
-                priority = get_alert_priority(minutes_early)
-                if not already_alerted_recently(name, "early_arrival", priority, config.ALERT_DEDUPE_WINDOW_SEC):
-                    msg = f"{name} present {format_duration(minutes_early)} before shift start"
-                    log_alert(name, "early_arrival", priority, msg)
-            elif now > shift_end_dt:
-                minutes_past = (now - shift_end_dt).total_seconds() / 60
-                priority = get_alert_priority(minutes_past)
-                if not already_alerted_recently(name, "overstay", priority, config.ALERT_DEDUPE_WINDOW_SEC):
-                    msg = f"{name} still in store {format_duration(minutes_past)} after shift end"
-                    log_alert(name, "overstay", priority, msg)
-    else:
-        streak = get_unknown_streak() + 1
-        set_unknown_streak(streak)
+    if not names:
+        return
+
+    any_unknown = False
+
+    for name in names:
+        if name == "Unknown":
+            any_unknown = True
+            continue
+
+        try:
+            update_currently_detected(name, camera_id, now)
+
+            with get_db() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT * FROM employees WHERE name = %s", (name,))
+                emp = cur.fetchone()
+                cur.close()
+            if emp:
+                update_attendance(emp["id"], now)
+                shift_start_dt, shift_end_dt = get_shift_datetimes(now, emp["shift_start"], emp["shift_end"])
+
+                if now < shift_start_dt:
+                    minutes_early = (shift_start_dt - now).total_seconds() / 60
+                    priority = get_alert_priority(minutes_early)
+                    if not already_alerted_recently(name, "early_arrival", priority, config.ALERT_DEDUPE_WINDOW_SEC):
+                        msg = f"[{camera_name}] {name} present {format_duration(minutes_early)} before shift start"
+                        log_alert(name, "early_arrival", priority, msg)
+                elif now > shift_end_dt:
+                    minutes_past = (now - shift_end_dt).total_seconds() / 60
+                    priority = get_alert_priority(minutes_past)
+                    if not already_alerted_recently(name, "overstay", priority, config.ALERT_DEDUPE_WINDOW_SEC):
+                        msg = f"[{camera_name}] {name} still in store {format_duration(minutes_past)} after shift end"
+                        log_alert(name, "overstay", priority, msg)
+        except Exception as e:
+            print(f"[camera_worker] Error processing detected person '{name}': {e}")
+
+    if any_unknown:
+        streak = get_unknown_streak(camera_id) + 1
+        set_unknown_streak(camera_id, streak)
         if streak >= config.UNKNOWN_STREAK_THRESHOLD and not is_within_store_hours(now):
             if not already_alerted_recently("Unknown", "stranger", "high", config.ALERT_DEDUPE_WINDOW_SEC):
-                msg = "Unknown person detected outside store hours"
-                log_alert("Unknown", "stranger", "high", msg)
+                msg = f"[{camera_name}] Unknown person detected outside store hours"
+                log_alert("Unknown", "stranger", "high", msg, frame=frame)
+    else:
+        set_unknown_streak(camera_id, 0)
 
-def _recognition_worker(frame):
-    global recognition_in_progress
+def _recognition_worker(frame, camera_id, camera_name):
     try:
-        _process_frame(frame)
+        _process_frame(frame, camera_id, camera_name)
     finally:
-        with recognition_lock:
-            recognition_in_progress = False
+        with recognition_locks[camera_id]:
+            recognition_in_progress[camera_id] = False
 
-def camera_loop():
-    global latest_frame, recognition_in_progress
-    cap = cv2.VideoCapture(0)
+def _camera_loop(camera_config):
+    camera_id = camera_config["id"]
+    camera_name = camera_config["name"]
+    source = camera_config["source"]
+
+    frame_locks[camera_id] = threading.Lock()
+    recognition_locks[camera_id] = threading.Lock()
+    recognition_in_progress[camera_id] = False
+    latest_frames[camera_id] = None
+
+    cap = cv2.VideoCapture(source)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     if not cap.isOpened():
-        print("[camera_worker] No camera detected — running without live video.")
+        print(f"[camera_worker] Camera '{camera_name}' ({camera_id}) not detected — running without live video.")
         while True:
             time.sleep(5)
 
@@ -103,25 +172,59 @@ def camera_loop():
             time.sleep(1)
             continue
 
-        with frame_lock:
-            latest_frame = frame.copy()
+        with frame_locks[camera_id]:
+            latest_frames[camera_id] = frame.copy()
+        update_camera_heartbeat(camera_id, datetime.now())
 
         if time.time() - last_recognition > config.RECOGNITION_INTERVAL_SEC:
             start_new = False
-            with recognition_lock:
-                if not recognition_in_progress:
-                    recognition_in_progress = True
+            with recognition_locks[camera_id]:
+                if not recognition_in_progress[camera_id]:
+                    recognition_in_progress[camera_id] = True
                     start_new = True
             if start_new:
-                threading.Thread(target=_recognition_worker, args=(frame.copy(),), daemon=True).start()
+                threading.Thread(target=_recognition_worker, args=(frame.copy(), camera_id, camera_name), daemon=True).start()
             last_recognition = time.time()
 
         time.sleep(0.03)
 
-def start_camera_thread():
-    t = threading.Thread(target=camera_loop, daemon=True)
-    t.start()
+def start_camera_threads():
+    for camera_config in config.CAMERAS:
+        t = threading.Thread(target=_camera_loop, args=(camera_config,), daemon=True)
+        t.start()
 
-def get_current_frame():
-    with frame_lock:
-        return latest_frame.copy() if latest_frame is not None else None
+def get_current_frame(camera_id):
+    lock = frame_locks.get(camera_id)
+    if lock is None:
+        return None
+    with lock:
+        frame = latest_frames.get(camera_id)
+        return frame.copy() if frame is not None else None
+
+def _health_check_loop():
+    already_alerted = set()
+    while True:
+        time.sleep(config.CAMERA_HEALTH_CHECK_INTERVAL_SEC)
+        now = datetime.now()
+        for camera_config in config.CAMERAS:
+            camera_id = camera_config["id"]
+            camera_name = camera_config["name"]
+            last_seen = get_camera_heartbeat(camera_id)
+
+            if last_seen is None:
+                continue
+
+            seconds_since = (now - last_seen).total_seconds()
+
+            if seconds_since > config.CAMERA_OFFLINE_THRESHOLD_SEC:
+                if camera_id not in already_alerted:
+                    if not already_alerted_recently(f"camera_{camera_id}", "camera_offline", "high", config.ALERT_DEDUPE_WINDOW_SEC):
+                        msg = f"[{camera_name}] Camera offline or feed lost — no frames for {int(seconds_since)}s"
+                        log_alert(f"camera_{camera_id}", "camera_offline", "high", msg)
+                    already_alerted.add(camera_id)
+            else:
+                already_alerted.discard(camera_id)
+
+def start_health_check_thread():
+    t = threading.Thread(target=_health_check_loop, daemon=True)
+    t.start()

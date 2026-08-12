@@ -13,3 +13,15 @@ CURRENTLY_DETECTED_TIMEOUT_SEC = 10  # how long someone stays "currently detecte
 UNKNOWN_STREAK_THRESHOLD = 2  # consecutive "Unknown" reads required before treating it as a real stranger
 
 ALERT_DEDUPE_WINDOW_SEC = 120
+
+MIN_MATCHING_PHOTOS = 2
+
+CAMERAS = [
+    {"id": "cam1", "name": "Front Entrance", "source": 0},
+]
+
+CAMERA_OFFLINE_THRESHOLD_SEC = 30
+CAMERA_HEALTH_CHECK_INTERVAL_SEC = 15
+
+TAMPER_BRIGHTNESS_THRESHOLD = 15
+TAMPER_VARIANCE_THRESHOLD = 5

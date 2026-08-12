@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta
 from database import get_db
 from settings_store import load_settings
-from notifications import send_telegram_alert
+from notifications import send_telegram_alert, send_telegram_photo
 import config
-
+import os
+import cv2
+import uuid
+import storage
 def get_alert_priority(minutes_past):
     if minutes_past <= config.LOW_THRESHOLD_MIN:
         return "low"
@@ -68,15 +71,32 @@ def already_alerted_recently(person_name, alert_type, priority, window_seconds=1
 
 PRIORITY_EMOJI = {"low": "🟡", "medium": "🟠", "high": "🔴"}
 
-def log_alert(person_name, alert_type, priority, message):
+SNAPSHOTS_DIR = "snapshots"
+
+def save_snapshot(frame):
+    os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}.jpg"
+    filepath = os.path.join(SNAPSHOTS_DIR, filename)
+    cv2.imwrite(filepath, frame)
+    public_url = storage.upload_file(filepath, f"snapshots/{filename}")
+    return filepath, public_url
+
+def log_alert(person_name, alert_type, priority, message, frame=None):
+    local_path, snapshot_url = (save_snapshot(frame) if frame is not None else (None, None))
+
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp) VALUES (%s, %s, %s, %s, %s)",
-            (person_name, alert_type, priority, message, datetime.now().isoformat())
+            "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp, snapshot_filename) VALUES (%s, %s, %s, %s, %s, %s)",
+            (person_name, alert_type, priority, message, datetime.now().isoformat(), snapshot_url)
         )
         conn.commit()
         cur.close()
 
     emoji = PRIORITY_EMOJI.get(priority, "")
-    send_telegram_alert(f"{emoji} [{priority.upper()}] {message}")
+    caption = f"{emoji} [{priority.upper()}] {message}"
+
+    if local_path:
+        send_telegram_photo(local_path, caption)
+    else:
+        send_telegram_alert(caption)
