@@ -31,6 +31,7 @@ const DEMO_USERS = [
   { username: 'admin',    password: 'admin123',    role: 'admin',    name: 'S. Kapoor' },
   { username: 'employee', password: 'employee123', role: 'employee', name: 'R. Verma' },
 ];
+<<<<<<< Updated upstream
 function attemptLogin(username, password) {
   const match = DEMO_USERS.find(
     (u) => u.username === username.trim() && u.password === password
@@ -44,6 +45,33 @@ function attemptLogin(username, password) {
   };
   sessionStorage.setItem(CCTV_SESSION_KEY, JSON.stringify(session));
   return { ok: true, session };
+=======
+const API_BASE = "http://localhost:8000";
+
+async function attemptLogin(username, password) {
+  try {
+    const res = await fetch(`${API_BASE}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: username.trim(), password }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) return { ok: false };
+
+    const session = {
+      username: username.trim(),
+      role: data.role,
+      name: data.name,
+      token: data.token,
+      loggedInAt: Date.now(),
+    };
+    sessionStorage.setItem(CCTV_SESSION_KEY, JSON.stringify(session));
+    return { ok: true, session };
+  } catch (e) {
+    return { ok: false };
+  }
+>>>>>>> Stashed changes
 }
 function getSession() {
   const raw = sessionStorage.getItem(CCTV_SESSION_KEY);
