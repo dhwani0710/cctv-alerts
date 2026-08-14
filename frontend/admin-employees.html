@@ -106,8 +106,13 @@
             </div>
             <div class="field"><label>Shift start</label><input type="time" required /></div>
             <div class="field"><label>Shift end</label><input type="time" required /></div>
+<<<<<<< Updated upstream
             <div class="field" style="grid-column:1/-1;"><label>Photo (for face match)</label><input type="file"
                 accept="image/*" /></div>
+=======
+            <div class="field" style="grid-column:1/-1;"><label>Photo (for face match)</label><input type="file" id="photoInput"
+                accept="image/*" required /></div>
+>>>>>>> Stashed changes
             <div style="grid-column:1/-1; display:flex; gap:10px;">
               <button type="submit" class="btn btn-brass">Save employee</button>
               <button type="button" class="btn btn-outline" id="cancelAdd">Cancel</button>
@@ -115,6 +120,7 @@
           </form>
         </div>
 
+<<<<<<< Updated upstream
         <div class="search-bar" id="searchBar">
           <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="7" />
@@ -129,6 +135,21 @@
         </div>
 
         <div class="role-board" id="roleBoard"></div>
+=======
+        <div class="role-board" id="roleBoard"></div>
+
+        <div class="cam-lightbox" id="deleteConfirmModal">
+          <div class="login-card"
+            style="background:var(--ink-2); border:1px solid var(--ink-line); border-radius:var(--radius-lg); padding:24px; max-width:360px;">
+            <h2 style="margin-top:0;">Remove employee</h2>
+            <p class="sub" id="deleteConfirmText"></p>
+            <div style="display:flex; gap:10px; margin-top:18px;">
+              <button class="btn btn-outline" id="deleteCancelBtn">Cancel</button>
+              <button class="btn btn-danger" id="deleteConfirmBtn">Remove</button>
+            </div>
+          </div>
+        </div>
+>>>>>>> Stashed changes
       </main>
     </div>
   </div>
@@ -137,12 +158,18 @@
   <script src="js/app.js"></script>
   <script>
     const session = requireAuth(['admin']);
+<<<<<<< Updated upstream
+=======
+    let staffData = [];
+
+>>>>>>> Stashed changes
     if (session) {
       initShell(session, 'employees');
       initTheme();
 
       const roleBoard = document.getElementById('roleBoard');
       const roleOptions = document.getElementById('roleOptions');
+<<<<<<< Updated upstream
       const searchBar = document.getElementById('searchBar');
       const searchInput = document.getElementById('searchInput');
       const searchClear = document.getElementById('searchClear');
@@ -158,11 +185,54 @@
 
       // Current search text (name filter).
       let searchTerm = '';
+=======
+
+      let editingIndex = null;
+
+      let pendingDeleteIndex = null;
+
+      document.getElementById('deleteCancelBtn').addEventListener('click', () => {
+        pendingDeleteIndex = null;
+        document.getElementById('deleteConfirmModal').classList.remove('open');
+      });
+
+      document.getElementById('deleteConfirmBtn').addEventListener('click', async () => {
+        if (pendingDeleteIndex === null) return;
+        await fetch(`${API_BASE}/employees/${staffData[pendingDeleteIndex].id}`, {
+          method: "DELETE",
+          headers: { "Authorization": `Bearer ${session.token}` }
+        });
+        pendingDeleteIndex = null;
+        editingIndex = null;
+        document.getElementById('deleteConfirmModal').classList.remove('open');
+        loadStaff();
+      });
+
+      async function loadStaff() {
+        const res = await fetch(`${API_BASE}/employees`, {
+          headers: { "Authorization": `Bearer ${session.token}` }
+        });
+        const employees = await res.json();
+        staffData = employees.map(e => ({
+      id: e.id,
+      name: e.name,
+      role: e.designation || "Staff",
+      shift: `${e.shift_start} – ${e.shift_end}`,
+      shift_start: e.shift_start,
+      shift_end: e.shift_end
+    }));
+        renderBoard();
+      }
+>>>>>>> Stashed changes
 
       function getDesignations() {
         // Unique designations, in first-seen order, based on current staff data.
         const seen = [];
+<<<<<<< Updated upstream
         MOCK_STAFF.forEach((s) => {
+=======
+        staffData.forEach((s) => {
+>>>>>>> Stashed changes
           if (!seen.includes(s.role)) seen.push(s.role);
         });
         return seen;
@@ -171,7 +241,10 @@
       function makeStaffCard(s, index) {
         const card = document.createElement('div');
         card.className = 'staff-card';
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
         const isEditing = editingIndex === index;
 
         card.innerHTML = `
@@ -179,7 +252,10 @@
         <div class="name">${s.name}</div>
         <div class="role">${s.role}</div>
         <div class="row"><span>Shift</span><span>${s.shift}</span></div>
+<<<<<<< Updated upstream
         <div class="row"><span>Added</span><span>${s.added}</span></div>
+=======
+>>>>>>> Stashed changes
         ${isEditing ? `
           <div class="role-edit-row">
             <select class="roleSelect">
@@ -211,6 +287,7 @@
             newRoleRow.style.display = select.value === '__new__' ? 'flex' : 'none';
           });
 
+<<<<<<< Updated upstream
           card.querySelector('.saveRoleBtn').addEventListener('click', (e) => {
             e.stopPropagation();
             let newRole = select.value;
@@ -226,10 +303,35 @@
 
           card.querySelector('.cancelRoleBtn').addEventListener('click', (e) => {
             e.stopPropagation();
+=======
+          card.querySelector('.saveRoleBtn').addEventListener('click', async () => {
+            let newRole = select.value;
+            if (newRole === '__new__') {
+              newRole = newRoleInput.value.trim();
+              if (!newRole) return;
+            }
+            const emp = staffData[index];
+            const formData = new FormData();
+            formData.append("name", emp.name);
+            formData.append("shift_start", emp.shift_start);
+            formData.append("shift_end", emp.shift_end);
+            formData.append("designation", newRole);
+            await fetch(`${API_BASE}/employees/${emp.id}`, {
+              method: "PUT",
+              headers: { "Authorization": `Bearer ${session.token}` },
+              body: formData
+            });
+            editingIndex = null;
+            loadStaff();
+          });
+
+          card.querySelector('.cancelRoleBtn').addEventListener('click', () => {
+>>>>>>> Stashed changes
             editingIndex = null;
             renderBoard();
           });
         } else {
+<<<<<<< Updated upstream
           card.querySelector('.editBtn').addEventListener('click', (e) => {
             e.stopPropagation();
             editingIndex = index;
@@ -240,6 +342,17 @@
             MOCK_STAFF.splice(index, 1);
             editingIndex = null;
             renderBoard();
+=======
+          card.querySelector('.editBtn').addEventListener('click', () => {
+            editingIndex = index;
+            renderBoard();
+          });
+          card.querySelector('.removeBtn').addEventListener('click', () => {
+            pendingDeleteIndex = index;
+            document.getElementById('deleteConfirmText').textContent =
+              `Are you sure you want to remove ${staffData[index].name}? This cannot be undone.`;
+            document.getElementById('deleteConfirmModal').classList.add('open');
+>>>>>>> Stashed changes
           });
         }
 
@@ -254,6 +367,7 @@
         // Keep the "add employee" datalist in sync with current designations.
         roleOptions.innerHTML = designations.map(r => `<option value="${r}"></option>`).join('');
 
+<<<<<<< Updated upstream
         const term = searchTerm.trim().toLowerCase();
         const isSearching = term.length > 0;
 
@@ -315,6 +429,25 @@
         `;
 
           const body = section.querySelector('.role-col-body');
+=======
+        designations.forEach((role) => {
+          const col = document.createElement('div');
+          col.className = 'role-col';
+
+          const membersWithIndex = staffData
+            .map((s, i) => ({ s, i }))
+            .filter(({ s }) => s.role === role);
+
+          col.innerHTML = `
+          <div class="role-col-head">
+            <h3>${role}</h3>
+            <span class="role-col-count">${membersWithIndex.length}</span>
+          </div>
+          <div class="role-col-body"></div>
+        `;
+
+          const body = col.querySelector('.role-col-body');
+>>>>>>> Stashed changes
           if (membersWithIndex.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'role-col-empty';
@@ -324,6 +457,7 @@
             membersWithIndex.forEach(({ s, i }) => body.appendChild(makeStaffCard(s, i)));
           }
 
+<<<<<<< Updated upstream
           // Manual expand/collapse only makes sense when not actively
           // filtering by search — while searching, everything stays open.
           section.querySelector('.role-col-head').addEventListener('click', () => {
@@ -337,11 +471,15 @@
           });
 
           roleBoard.appendChild(section);
+=======
+          roleBoard.appendChild(col);
+>>>>>>> Stashed changes
         });
       }
 
       renderBoard();
 
+<<<<<<< Updated upstream
       searchInput.addEventListener('input', () => {
         searchTerm = searchInput.value;
         searchBar.classList.toggle('has-value', searchTerm.length > 0);
@@ -356,6 +494,8 @@
         renderBoard();
       });
 
+=======
+>>>>>>> Stashed changes
       const addPanel = document.getElementById('addPanel');
       document.getElementById('addToggle').addEventListener('click', () => {
         addPanel.style.display = addPanel.style.display === 'none' ? 'block' : 'none';
@@ -363,6 +503,7 @@
       document.getElementById('cancelAdd').addEventListener('click', () => {
         addPanel.style.display = 'none';
       });
+<<<<<<< Updated upstream
       document.getElementById('addForm').addEventListener('submit', (e) => {
         e.preventDefault();
         const nameInput = e.target.querySelector('input[type=text]');
@@ -378,6 +519,27 @@
         renderBoard();
         addPanel.style.display = 'none';
         e.target.reset();
+=======
+      document.getElementById('addForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formEl = e.target;
+        const formData = new FormData();
+        formData.append("name", formEl.querySelector('input[type=text]').value);
+        formData.append("designation", document.getElementById('newRoleInput').value.trim());
+        formData.append("shift_start", formEl.querySelector('input[type=time]').value);
+        formData.append("shift_end", formEl.querySelectorAll('input[type=time]')[1].value);
+        const photoFile = formEl.querySelector('input[type=file]').files[0];
+        if (photoFile) formData.append("photos", photoFile);
+
+        await fetch(`${API_BASE}/employees`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${session.token}` },
+          body: formData
+        });
+        addPanel.style.display = 'none';
+        formEl.reset();
+        loadStaff();
+>>>>>>> Stashed changes
       });
     }
   </script>

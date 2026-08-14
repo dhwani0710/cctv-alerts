@@ -1,13 +1,24 @@
-import os
-from dotenv import load_dotenv
-from fastapi import Header, HTTPException, Query
+from fastapi import Header, HTTPException
 from typing import Optional
+from auth_users import decode_token
+import jwt
 
-load_dotenv()
+def verify_token(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
 
-API_SECRET_KEY = os.getenv("API_SECRET_KEY")
+    token = authorization.replace("Bearer ", "")
+    try:
+        payload = decode_token(token)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-def verify_key(x_api_key: Optional[str] = Header(None), api_key: Optional[str] = Query(None)):
-    provided_key = x_api_key or api_key
-    if not API_SECRET_KEY or provided_key != API_SECRET_KEY:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return payload
+
+def require_admin(authorization: Optional[str] = Header(None)):
+    payload = verify_token(authorization)
+    if payload["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return payload

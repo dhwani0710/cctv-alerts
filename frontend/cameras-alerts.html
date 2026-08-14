@@ -90,8 +90,13 @@
         </div>
 
         <div class="two-col">
+<<<<<<< Updated upstream
           <div class="panel cam-col">
             <div class="panel-head">
+=======
+          <div>
+            <div class="panel-head" style="margin-bottom:14px;">
+>>>>>>> Stashed changes
               <h2>Camera feeds</h2>
             </div>
             <div class="cam-grid" id="camGrid"></div>
@@ -105,7 +110,10 @@
             <div id="alertList"></div>
           </div>
         </div>
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
       </main>
     </div>
   </div>
@@ -122,6 +130,10 @@
   <script src="js/auth.js"></script>
   <script src="js/app.js"></script>
   <script>
+<<<<<<< Updated upstream
+=======
+    const API_BASE = "http://localhost:8000";
+>>>>>>> Stashed changes
     const session = requireAuth(['admin', 'employee']);
     if (session) {
       document.querySelector('[data-dash-link]').href = dashboardFor(session.role);
@@ -129,20 +141,31 @@
       initTheme();
 
       const camGrid = document.getElementById('camGrid');
+<<<<<<< Updated upstream
+=======
+      const authHeaders = { "Authorization": `Bearer ${session.token}` };
+>>>>>>> Stashed changes
       const lightbox = document.getElementById('camLightbox');
       const lightboxInner = document.getElementById('camLightboxInner');
 
       function openLightbox(c) {
         lightboxInner.innerHTML = `
     <div class="cam-feed">
+<<<<<<< Updated upstream
       <div class="noise-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="7" width="14" height="11" rx="2"/><path d="M16.5 10.5 21 8v9l-4.5-2.5"/></svg></div>
+=======
+      <img src="${API_BASE}/video_feed/${c.id}" style="width:100%; height:100%; object-fit:cover;" />
+>>>>>>> Stashed changes
       <div class="cam-live ${c.live ? '' : 'offline'}"><span class="rec-dot"></span>${c.live ? 'LIVE' : 'OFFLINE'}</div>
       <div class="cam-time mono">${c.id}</div>
     </div>
     <div class="cam-meta">
       <div>
         <div class="name">${c.name}</div>
+<<<<<<< Updated upstream
         <div class="zone">${c.zone}</div>
+=======
+>>>>>>> Stashed changes
       </div>
     </div>`;
         lightbox.classList.add('open');
@@ -159,6 +182,7 @@
         if (e.key === 'Escape') closeLightbox();
       });
 
+<<<<<<< Updated upstream
       MOCK_CAMERAS.forEach((c) => {
         const tile = document.createElement('div');
         tile.className = 'cam-tile';
@@ -201,6 +225,66 @@
         <div class="alert-time mono">${a.time}</div>`;
         alertList.appendChild(row);
       });
+=======
+      async function loadCameras() {
+        const res = await fetch(`${API_BASE}/cameras`, { headers: authHeaders });
+        const cameras = await res.json();
+
+        camGrid.innerHTML = '';
+        cameras.forEach((c) => {
+          const tile = document.createElement('div');
+          tile.className = 'cam-tile';
+          tile.innerHTML = `
+      <div class="cam-feed">
+        <img src="${API_BASE}/video_feed/${c.id}" style="width:100%; height:100%; object-fit:cover;" onerror="this.style.display='none'" />
+        <div class="cam-live ${c.live ? '' : 'offline'}"><span class="rec-dot"></span>${c.live ? 'LIVE' : 'OFFLINE'}</div>
+        <div class="cam-time mono">${c.id}</div>
+      </div>
+      <div class="cam-meta">
+        <div>
+          <div class="name">${c.name}</div>
+        </div>
+        <button class="btn btn-outline btn-sm" data-admin-only>Settings</button>
+      </div>`;
+          tile.addEventListener('click', () => openLightbox(c));
+          const settingsBtn = tile.querySelector('button');
+          if (settingsBtn) settingsBtn.addEventListener('click', (e) => e.stopPropagation());
+          camGrid.appendChild(tile);
+        });
+
+        document.querySelectorAll('[data-admin-only]').forEach((el) => {
+          el.style.display = session.role === 'admin' ? '' : 'none';
+        });
+      }
+
+      async function loadAlerts() {
+        const res = await fetch(`${API_BASE}/status`, { headers: authHeaders });
+        const data = await res.json();
+        const alerts = data.recent_alerts;
+
+        const alertCount = document.getElementById('alertCount');
+        alertCount.textContent = alerts.length + ' recent';
+
+        const alertList = document.getElementById('alertList');
+        alertList.innerHTML = '';
+        alerts.forEach((a) => {
+          const row = document.createElement('div');
+          row.className = 'alert-item';
+          const time = new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          row.innerHTML = `
+      <div class="alert-sev ${a.priority === 'low' ? 'low' : ''}"></div>
+      <div class="alert-body">
+        <div class="t">${a.message}</div>
+        ${a.snapshot_filename ? `<img src="${a.snapshot_filename}" style="width:60px; border-radius:4px; margin-top:6px; cursor:pointer;" onclick="window.open('${a.snapshot_filename}','_blank')" />` : ''}
+      </div>
+      <div class="alert-time mono">${time}</div>`;
+          alertList.appendChild(row);
+        });
+      }
+
+      loadCameras();
+      loadAlerts();
+>>>>>>> Stashed changes
     }
   </script>
 </body>
