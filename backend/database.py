@@ -31,23 +31,18 @@ def init_db():
         )
     """)
     cursor.execute("""
-<<<<<<< Updated upstream
-=======
         CREATE TABLE IF NOT EXISTS employee_photos (
             id SERIAL PRIMARY KEY,
             employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
             filename TEXT NOT NULL
         )
     """)
-
     cursor.execute("""
         ALTER TABLE alerts ADD COLUMN IF NOT EXISTS snapshot_filename TEXT
     """)
-
     cursor.execute("""
         ALTER TABLE employees ADD COLUMN IF NOT EXISTS designation TEXT NOT NULL DEFAULT 'Staff'
     """)
-
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
@@ -57,7 +52,6 @@ def init_db():
             name TEXT NOT NULL
         )
     """)
-
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
             id SERIAL PRIMARY KEY,
@@ -68,13 +62,13 @@ def init_db():
             UNIQUE(employee_id, attendance_date)
         )
     """)
-
     cursor.execute("DROP TABLE IF EXISTS currently_detected")
     cursor.execute("""
->>>>>>> Stashed changes
         CREATE TABLE IF NOT EXISTS currently_detected (
-            person_name TEXT PRIMARY KEY,
-            last_seen TEXT NOT NULL
+            person_name TEXT NOT NULL,
+            camera_id TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            PRIMARY KEY (person_name, camera_id)
         )
     """)
     cursor.execute("""

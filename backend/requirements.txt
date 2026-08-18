@@ -8,12 +8,8 @@ requests
 python-dotenv
 apscheduler
 tf-keras
-<<<<<<< Updated upstream
-psycopg2-binary
-=======
 psycopg2-binary
 supabase
 passlib[bcrypt]
 bcrypt==4.0.1
 pyjwt
->>>>>>> Stashed changes

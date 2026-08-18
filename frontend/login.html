@@ -81,20 +81,12 @@
   const form = document.getElementById('loginForm');
   const errorBox = document.getElementById('formError');
 
-<<<<<<< Updated upstream
-  form.addEventListener('submit', function (e) {
-=======
   form.addEventListener('submit', async function (e) {
->>>>>>> Stashed changes
     e.preventDefault();
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
 
-<<<<<<< Updated upstream
-    const result = attemptLogin(username, password);
-=======
     const result = await attemptLogin(username, password);
->>>>>>> Stashed changes
     if (!result.ok) {
       errorBox.classList.add('show');
       return;

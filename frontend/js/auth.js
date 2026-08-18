@@ -27,25 +27,6 @@
    ============================================================ */
 const CCTV_SESSION_KEY = 'vaultwatch_session';
 // Demo credential store — replace with a real API call, see above.
-const DEMO_USERS = [
-  { username: 'admin',    password: 'admin123',    role: 'admin',    name: 'S. Kapoor' },
-  { username: 'employee', password: 'employee123', role: 'employee', name: 'R. Verma' },
-];
-<<<<<<< Updated upstream
-function attemptLogin(username, password) {
-  const match = DEMO_USERS.find(
-    (u) => u.username === username.trim() && u.password === password
-  );
-  if (!match) return { ok: false };
-  const session = {
-    username: match.username,
-    role: match.role,
-    name: match.name,
-    loggedInAt: Date.now(),
-  };
-  sessionStorage.setItem(CCTV_SESSION_KEY, JSON.stringify(session));
-  return { ok: true, session };
-=======
 const API_BASE = "http://localhost:8000";
 
 async function attemptLogin(username, password) {
@@ -71,7 +52,6 @@ async function attemptLogin(username, password) {
   } catch (e) {
     return { ok: false };
   }
->>>>>>> Stashed changes
 }
 function getSession() {
   const raw = sessionStorage.getItem(CCTV_SESSION_KEY);
