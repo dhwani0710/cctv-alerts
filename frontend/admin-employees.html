@@ -106,90 +106,66 @@
             </div>
             <div class="field"><label>Shift start</label><input type="time" required /></div>
             <div class="field"><label>Shift end</label><input type="time" required /></div>
-<<<<<<< Updated upstream
-            <div class="field" style="grid-column:1/-1;"><label>Photo (for face match)</label><input type="file"
-                accept="image/*" /></div>
-=======
-            <div class="field" style="grid-column:1/-1;"><label>Photo (for face match)</label><input type="file" id="photoInput"
-                accept="image/*" required /></div>
->>>>>>> Stashed changes
-            <div style="grid-column:1/-1; display:flex; gap:10px;">
-              <button type="submit" class="btn btn-brass">Save employee</button>
-              <button type="button" class="btn btn-outline" id="cancelAdd">Cancel</button>
-            </div>
-          </form>
+            <div class="field" style="grid-column:1/-1;"><label>Photo (for face
+                match)</label><input type="file" accept="image/*" />
         </div>
-
-<<<<<<< Updated upstream
-        <div class="search-bar" id="searchBar">
-          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m21 21-4.35-4.35" />
-          </svg>
-          <input type="text" id="searchInput" placeholder="Search employees by name…" autocomplete="off" />
-          <button type="button" class="search-clear" id="searchClear" title="Clear search">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
+        <div style="grid-column:1/-1; display:flex; gap:10px;">
+          <button type="submit" class="btn btn-brass">Save employee</button>
+          <button type="button" class="btn btn-outline" id="cancelAdd">Cancel</button>
         </div>
-
-        <div class="role-board" id="roleBoard"></div>
-=======
-        <div class="role-board" id="roleBoard"></div>
-
-        <div class="cam-lightbox" id="deleteConfirmModal">
-          <div class="login-card"
-            style="background:var(--ink-2); border:1px solid var(--ink-line); border-radius:var(--radius-lg); padding:24px; max-width:360px;">
-            <h2 style="margin-top:0;">Remove employee</h2>
-            <p class="sub" id="deleteConfirmText"></p>
-            <div style="display:flex; gap:10px; margin-top:18px;">
-              <button class="btn btn-outline" id="deleteCancelBtn">Cancel</button>
-              <button class="btn btn-danger" id="deleteConfirmBtn">Remove</button>
-            </div>
-          </div>
-        </div>
->>>>>>> Stashed changes
-      </main>
+        </form>
     </div>
+
+    <div class="search-bar" id="searchBar">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="7" />
+        <path d="m21 21-4.35-4.35" />
+      </svg>
+      <input type="text" id="searchInput" placeholder="Search employees by name…" autocomplete="off" />
+      <button type="button" class="search-clear" id="searchClear" title="Clear search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
+    </div>
+
+    <div class="role-board" id="roleBoard"></div>
+
+    <div class="cam-lightbox" id="deleteConfirmModal">
+      <div class="login-card"
+        style="background:var(--ink-2); border:1px solid var(--ink-line); border-radius:var(--radius-lg); padding:24px; max-width:360px;">
+        <h2 style="margin-top:0;">Remove employee</h2>
+        <p class="sub" id="deleteConfirmText"></p>
+        <div style="display:flex; gap:10px; margin-top:18px;">
+          <button class="btn btn-outline" id="deleteCancelBtn">Cancel</button>
+          <button class="btn btn-danger" id="deleteConfirmBtn">Remove</button>
+        </div>
+      </div>
+    </div>
+    </main>
+  </div>
   </div>
 
   <script src="js/auth.js"></script>
   <script src="js/app.js"></script>
   <script>
     const session = requireAuth(['admin']);
-<<<<<<< Updated upstream
-=======
     let staffData = [];
 
->>>>>>> Stashed changes
     if (session) {
       initShell(session, 'employees');
       initTheme();
 
       const roleBoard = document.getElementById('roleBoard');
       const roleOptions = document.getElementById('roleOptions');
-<<<<<<< Updated upstream
       const searchBar = document.getElementById('searchBar');
       const searchInput = document.getElementById('searchInput');
       const searchClear = document.getElementById('searchClear');
 
-      // Track which employee (by index in MOCK_STAFF) currently has its
-      // edit form open, so re-renders don't lose that state.
       let editingIndex = null;
-
-      // Track which designation sections are expanded (dropdown open state).
-      // Starts empty so nothing is scrolled through by default — admin
-      // opens the sections they need.
-      const openRoles = new Set();
-
-      // Current search text (name filter).
-      let searchTerm = '';
-=======
-
-      let editingIndex = null;
-
       let pendingDeleteIndex = null;
+      const openRoles = new Set();
+      let searchTerm = '';
 
       document.getElementById('deleteCancelBtn').addEventListener('click', () => {
         pendingDeleteIndex = null;
@@ -214,25 +190,19 @@
         });
         const employees = await res.json();
         staffData = employees.map(e => ({
-      id: e.id,
-      name: e.name,
-      role: e.designation || "Staff",
-      shift: `${e.shift_start} – ${e.shift_end}`,
-      shift_start: e.shift_start,
-      shift_end: e.shift_end
-    }));
+          id: e.id,
+          name: e.name,
+          role: e.designation || "Staff",
+          shift: `${e.shift_start} – ${e.shift_end}`,
+          shift_start: e.shift_start,
+          shift_end: e.shift_end
+        }));
         renderBoard();
       }
->>>>>>> Stashed changes
 
       function getDesignations() {
-        // Unique designations, in first-seen order, based on current staff data.
         const seen = [];
-<<<<<<< Updated upstream
-        MOCK_STAFF.forEach((s) => {
-=======
         staffData.forEach((s) => {
->>>>>>> Stashed changes
           if (!seen.includes(s.role)) seen.push(s.role);
         });
         return seen;
@@ -241,42 +211,34 @@
       function makeStaffCard(s, index) {
         const card = document.createElement('div');
         card.className = 'staff-card';
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
         const isEditing = editingIndex === index;
 
         card.innerHTML = `
-        <div class="avatar">${initials(s.name)}</div>
-        <div class="name">${s.name}</div>
-        <div class="role">${s.role}</div>
-        <div class="row"><span>Shift</span><span>${s.shift}</span></div>
-<<<<<<< Updated upstream
-        <div class="row"><span>Added</span><span>${s.added}</span></div>
-=======
->>>>>>> Stashed changes
-        ${isEditing ? `
-          <div class="role-edit-row">
-            <select class="roleSelect">
-              ${getDesignations().map(r => `<option value="${r}" ${r === s.role ? 'selected' : ''}>${r}</option>`).join('')}
-              <option value="__new__">+ New designation…</option>
-            </select>
-          </div>
-          <div class="role-edit-row newRoleRow" style="display:none;">
-            <input type="text" class="newRoleInput" placeholder="Type new designation" />
-          </div>
-          <div class="actions">
-            <button class="btn btn-brass btn-sm saveRoleBtn">Save</button>
-            <button class="btn btn-outline btn-sm cancelRoleBtn">Cancel</button>
-          </div>
-        ` : `
-          <div class="actions">
-            <button class="btn btn-outline btn-sm editBtn">Edit</button>
-            <button class="btn btn-danger btn-sm removeBtn">Remove</button>
-          </div>
-        `}
-      `;
+      <div class="avatar">${initials(s.name)}</div>
+      <div class="name">${s.name}</div>
+      <div class="role">${s.role}</div>
+      <div class="row"><span>Shift</span><span>${s.shift}</span></div>
+      ${isEditing ? `
+        <div class="role-edit-row">
+          <select class="roleSelect">
+            ${getDesignations().map(r => `<option value="${r}" ${r === s.role ? 'selected' : ''}>${r}</option>`).join('')}
+            <option value="__new__">+ New designation…</option>
+          </select>
+        </div>
+        <div class="role-edit-row newRoleRow" style="display:none;">
+          <input type="text" class="newRoleInput" placeholder="Type new designation" />
+        </div>
+        <div class="actions">
+          <button class="btn btn-brass btn-sm saveRoleBtn">Save</button>
+          <button class="btn btn-outline btn-sm cancelRoleBtn">Cancel</button>
+        </div>
+      ` : `
+        <div class="actions">
+          <button class="btn btn-outline btn-sm editBtn">Edit</button>
+          <button class="btn btn-danger btn-sm removeBtn">Remove</button>
+        </div>
+      `}
+    `;
 
         if (isEditing) {
           const select = card.querySelector('.roleSelect');
@@ -287,24 +249,8 @@
             newRoleRow.style.display = select.value === '__new__' ? 'flex' : 'none';
           });
 
-<<<<<<< Updated upstream
-          card.querySelector('.saveRoleBtn').addEventListener('click', (e) => {
+          card.querySelector('.saveRoleBtn').addEventListener('click', async (e) => {
             e.stopPropagation();
-            let newRole = select.value;
-            if (newRole === '__new__') {
-              newRole = newRoleInput.value.trim();
-              if (!newRole) return; // require a value before saving
-            }
-            MOCK_STAFF[index].role = newRole;
-            editingIndex = null;
-            openRoles.add(newRole); // reveal where the employee landed
-            renderBoard();
-          });
-
-          card.querySelector('.cancelRoleBtn').addEventListener('click', (e) => {
-            e.stopPropagation();
-=======
-          card.querySelector('.saveRoleBtn').addEventListener('click', async () => {
             let newRole = select.value;
             if (newRole === '__new__') {
               newRole = newRoleInput.value.trim();
@@ -322,16 +268,16 @@
               body: formData
             });
             editingIndex = null;
+            openRoles.add(newRole);
             loadStaff();
           });
 
-          card.querySelector('.cancelRoleBtn').addEventListener('click', () => {
->>>>>>> Stashed changes
+          card.querySelector('.cancelRoleBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
             editingIndex = null;
             renderBoard();
           });
         } else {
-<<<<<<< Updated upstream
           card.querySelector('.editBtn').addEventListener('click', (e) => {
             e.stopPropagation();
             editingIndex = index;
@@ -339,20 +285,10 @@
           });
           card.querySelector('.removeBtn').addEventListener('click', (e) => {
             e.stopPropagation();
-            MOCK_STAFF.splice(index, 1);
-            editingIndex = null;
-            renderBoard();
-=======
-          card.querySelector('.editBtn').addEventListener('click', () => {
-            editingIndex = index;
-            renderBoard();
-          });
-          card.querySelector('.removeBtn').addEventListener('click', () => {
             pendingDeleteIndex = index;
             document.getElementById('deleteConfirmText').textContent =
               `Are you sure you want to remove ${staffData[index].name}? This cannot be undone.`;
             document.getElementById('deleteConfirmModal').classList.add('open');
->>>>>>> Stashed changes
           });
         }
 
@@ -361,25 +297,19 @@
 
       function renderBoard() {
         roleBoard.innerHTML = '';
-
         const designations = getDesignations();
-
-        // Keep the "add employee" datalist in sync with current designations.
         roleOptions.innerHTML = designations.map(r => `<option value="${r}"></option>`).join('');
 
-<<<<<<< Updated upstream
         const term = searchTerm.trim().toLowerCase();
         const isSearching = term.length > 0;
 
-        // Indices (into MOCK_STAFF) whose name matches the current search term.
         const matchedIndices = new Set(
-          MOCK_STAFF
+          staffData
             .map((s, i) => ({ s, i }))
             .filter(({ s }) => !term || s.name.toLowerCase().includes(term))
             .map(({ i }) => i)
         );
 
-        // Searching and nothing matches at all — show a single message and stop.
         if (isSearching && matchedIndices.size === 0) {
           const noResults = document.createElement('div');
           noResults.className = 'search-no-results';
@@ -389,7 +319,7 @@
         }
 
         designations.forEach((role) => {
-          const allMembersInRole = MOCK_STAFF
+          const allMembersInRole = staffData
             .map((s, i) => ({ s, i }))
             .filter(({ s }) => s.role === role);
 
@@ -397,57 +327,32 @@
             ? allMembersInRole.filter(({ i }) => matchedIndices.has(i))
             : allMembersInRole;
 
-          // While searching, skip designation sections that have no matches
-          // instead of showing an empty accordion for them.
           if (isSearching && membersWithIndex.length === 0) return;
 
-          // If an employee inside this role is being edited, force it open
-          // so the edit form doesn't disappear on re-render.
           const hasEditingMember = membersWithIndex.some(({ i }) => i === editingIndex);
           if (hasEditingMember) openRoles.add(role);
 
-          // Sections auto-expand while searching so results are visible
-          // immediately; otherwise fall back to manual open/closed state.
           const isOpen = isSearching ? true : openRoles.has(role);
 
           const section = document.createElement('div');
           section.className = 'role-col' + (isOpen ? ' open' : '');
 
           section.innerHTML = `
-          <div class="role-col-head">
-            <div class="role-col-head-left">
-              <h3>${role}</h3>
-              <span class="role-col-count">${membersWithIndex.length}</span>
-            </div>
-            <svg class="role-col-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </div>
-          <div class="role-col-collapse">
-            <div class="role-col-body"></div>
-          </div>
-        `;
-
-          const body = section.querySelector('.role-col-body');
-=======
-        designations.forEach((role) => {
-          const col = document.createElement('div');
-          col.className = 'role-col';
-
-          const membersWithIndex = staffData
-            .map((s, i) => ({ s, i }))
-            .filter(({ s }) => s.role === role);
-
-          col.innerHTML = `
-          <div class="role-col-head">
+        <div class="role-col-head">
+          <div class="role-col-head-left">
             <h3>${role}</h3>
             <span class="role-col-count">${membersWithIndex.length}</span>
           </div>
+          <svg class="role-col-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </div>
+        <div class="role-col-collapse">
           <div class="role-col-body"></div>
-        `;
+        </div>
+      `;
 
-          const body = col.querySelector('.role-col-body');
->>>>>>> Stashed changes
+          const body = section.querySelector('.role-col-body');
           if (membersWithIndex.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'role-col-empty';
@@ -457,29 +362,17 @@
             membersWithIndex.forEach(({ s, i }) => body.appendChild(makeStaffCard(s, i)));
           }
 
-<<<<<<< Updated upstream
-          // Manual expand/collapse only makes sense when not actively
-          // filtering by search — while searching, everything stays open.
           section.querySelector('.role-col-head').addEventListener('click', () => {
             if (isSearching) return;
-            if (openRoles.has(role)) {
-              openRoles.delete(role);
-            } else {
-              openRoles.add(role);
-            }
+            if (openRoles.has(role)) openRoles.delete(role);
+            else openRoles.add(role);
             renderBoard();
           });
 
           roleBoard.appendChild(section);
-=======
-          roleBoard.appendChild(col);
->>>>>>> Stashed changes
         });
       }
 
-      renderBoard();
-
-<<<<<<< Updated upstream
       searchInput.addEventListener('input', () => {
         searchTerm = searchInput.value;
         searchBar.classList.toggle('has-value', searchTerm.length > 0);
@@ -494,8 +387,6 @@
         renderBoard();
       });
 
-=======
->>>>>>> Stashed changes
       const addPanel = document.getElementById('addPanel');
       document.getElementById('addToggle').addEventListener('click', () => {
         addPanel.style.display = addPanel.style.display === 'none' ? 'block' : 'none';
@@ -503,29 +394,13 @@
       document.getElementById('cancelAdd').addEventListener('click', () => {
         addPanel.style.display = 'none';
       });
-<<<<<<< Updated upstream
-      document.getElementById('addForm').addEventListener('submit', (e) => {
-        e.preventDefault();
-        const nameInput = e.target.querySelector('input[type=text]');
-        const roleInput = document.getElementById('newRoleInput');
-        const role = roleInput.value.trim();
-        MOCK_STAFF.push({
-          name: nameInput.value,
-          role: role,
-          shift: '—',
-          added: 'Today',
-        });
-        openRoles.add(role); // open the section the new hire lands in
-        renderBoard();
-        addPanel.style.display = 'none';
-        e.target.reset();
-=======
       document.getElementById('addForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const formEl = e.target;
+        const role = document.getElementById('newRoleInput').value.trim();
         const formData = new FormData();
         formData.append("name", formEl.querySelector('input[type=text]').value);
-        formData.append("designation", document.getElementById('newRoleInput').value.trim());
+        formData.append("designation", role);
         formData.append("shift_start", formEl.querySelector('input[type=time]').value);
         formData.append("shift_end", formEl.querySelectorAll('input[type=time]')[1].value);
         const photoFile = formEl.querySelector('input[type=file]').files[0];
@@ -536,11 +411,13 @@
           headers: { "Authorization": `Bearer ${session.token}` },
           body: formData
         });
+        openRoles.add(role);
         addPanel.style.display = 'none';
         formEl.reset();
         loadStaff();
->>>>>>> Stashed changes
       });
+
+      loadStaff();
     }
   </script>
 </body>

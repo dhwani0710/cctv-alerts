@@ -507,11 +507,7 @@ button {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
   gap: 20px;
-<<<<<<< Updated upstream
   align-items: stretch;
-=======
-  align-items: start;
->>>>>>> Stashed changes
 }
 
 @media (max-width: 980px) {
@@ -520,7 +516,6 @@ button {
   }
 }
 
-<<<<<<< Updated upstream
 /* Cameras & Alerts page: make the alerts panel match the height
    of the camera grid column instead of sizing to its own content. */
 .two-col .panel {
@@ -540,8 +535,6 @@ button {
   min-height: 0;
 }
 
-=======
->>>>>>> Stashed changes
 /* ---- log / list rows ---- */
 .log-row {
   display: flex;
@@ -1194,7 +1187,6 @@ table.records tr:last-child td {
 }
 
 /* ============================================================
-<<<<<<< Updated upstream
    EMPLOYEES — search / filter bar
    ============================================================ */
 .search-bar {
@@ -1440,8 +1432,6 @@ body.light-theme .content.dark .search-no-results {
 }
 
 /* ============================================================
-=======
->>>>>>> Stashed changes
    STAT CARD LINKS
    ============================================================ */
 a.stat-card {
@@ -1751,7 +1741,6 @@ body.light-theme .content.dark .btn-outline:hover {
   border-color: var(--brass);
 }
 
-<<<<<<< Updated upstream
 /* Designation board — dark mode (admin-employees.html uses .content.dark) */
 .content.dark .role-col {
   background: var(--ink-2);
@@ -1796,8 +1785,6 @@ body.light-theme .content.dark .btn-outline:hover {
   border-color: var(--brass);
 }
 
-=======
->>>>>>> Stashed changes
 /* Light-theme overrides — so the theme toggle still works correctly
    now that these two pages default to dark */
 body.light-theme .content.dark table.records th {
@@ -1845,7 +1832,6 @@ body.light-theme .content.dark .field input {
   color: var(--text-on-paper);
 }
 
-<<<<<<< Updated upstream
 /* Designation board — light theme override */
 body.light-theme .content.dark .role-col {
   background: var(--paper-2);
@@ -1916,64 +1902,4 @@ body.light-theme .content.dark .staff-card .role-edit-row input {
 
 .punch-btn {
   margin-left: auto;
-=======
-/* ============================================================
-   Employees page — role-based board layout
-   ============================================================ */
-.role-board {
-  display: flex;
-  gap: 18px;
-  overflow-x: auto;
-  padding-bottom: 8px;
-}
-
-.role-col {
-  flex: 0 0 280px;
-  min-width: 280px;
-}
-
-.role-col-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  padding: 0 2px;
-}
-
-.role-col-head h3 {
-  font-size: 14px;
-  margin: 0;
-}
-
-.role-col-count {
-  font-size: 12px;
-  opacity: 0.6;
-}
-
-.role-col-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.role-col-empty {
-  font-size: 13px;
-  opacity: 0.5;
-  padding: 14px 10px;
-  border: 1px dashed rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
-  text-align: center;
-}
-
-.staff-card .role-edit-row {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.staff-card .role-edit-row select,
-.staff-card .role-edit-row input {
-  flex: 1;
-  font-size: 12px;
->>>>>>> Stashed changes
 }
