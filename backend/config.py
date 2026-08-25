@@ -9,10 +9,10 @@ CURRENTLY_DETECTED_TIMEOUT_SEC = 10
 
 UNKNOWN_STREAK_THRESHOLD = 2
 
-ALERT_DEDUPE_WINDOW_SEC = 120
+ALERT_DEDUPE_WINDOW_SEC = 60
 
 CAMERAS = [
-    {"id": "cam1", "name": "201 Door", "source": "rtsp://admin:FWXDNE@192.168.1.6:554/Streaming/Channels/102"},
+    {"id": "cam1", "name": "201 Door", "source": "rtsp://admin:FWXDNE@192.168.1.6:554/Streaming/Channels/102", "location": "front"},
 ]
 
 CAMERA_OFFLINE_THRESHOLD_SEC = 30
