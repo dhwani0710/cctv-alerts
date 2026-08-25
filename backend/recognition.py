@@ -1,15 +1,23 @@
-import os
-from deepface import DeepFace
+try:
+    from deepface import DeepFace
+except ImportError:
+    DeepFace = None
+    print("[WARN] DeepFace / TensorFlow not installed. Face recognition will run in simulation mode.")
 
 KNOWN_FACES_DIR = "known_faces"
 VALID_PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png")
+
 
 import config
 
 def recognize_faces(frame):
     """Takes a webcam frame, returns a list of names — one per detected face.
     Unmatched faces show as 'Unknown'. Empty list means no faces detected at all."""
+    if DeepFace is None:
+        return []
+
     has_photos = False
+
     photo_counts = {}
     for root, dirs, files in os.walk(KNOWN_FACES_DIR):
         image_files = [f for f in files if f.lower().endswith(VALID_PHOTO_EXTENSIONS)]
