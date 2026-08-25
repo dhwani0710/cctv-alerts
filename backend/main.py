@@ -4,21 +4,31 @@ import cv2
 import storage
 from PIL import Image, ImageOps
 import time
-from fastapi import FastAPI, UploadFile, Form, File, Depends
+from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, status, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
+from typing import Optional, List
 from database import init_db, get_db
 from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread
 from datetime import datetime, timedelta
 import config
-from auth import verify_key
+from auth import (
+    verify_key,
+    get_current_user,
+    require_roles,
+    hash_password,
+    verify_password,
+    create_access_token
+)
 from settings_store import load_settings, save_settings
 
 app = FastAPI(title="Jewellery Store Alert System")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["null", "http://localhost", "http://127.0.0.1", "https://cctv-alerts-frontend.onrender.com"],
+    allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -36,6 +46,140 @@ def startup():
 @app.get("/")
 def health_check():
     return {"status": "backend is running"}
+
+# --- Auth Models & Endpoints ---
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str
+
+class UpdateUserRequest(BaseModel):
+    role: Optional[str] = None
+    password: Optional[str] = None
+
+@app.post("/auth/login")
+def login(req: LoginRequest):
+    username = req.username.strip()
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, password_hash, role FROM users WHERE username = %s", (username,))
+        user = cur.fetchone()
+        cur.close()
+
+    if not user or not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password"
+        )
+
+    access_token = create_access_token({
+        "sub": str(user["id"]),
+        "username": user["username"],
+        "role": user["role"]
+    })
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "role": user["role"],
+        "username": user["username"]
+    }
+
+@app.get("/auth/me")
+def get_me(current_user: dict = Depends(get_current_user)):
+    return current_user
+
+# --- User Management Endpoints (Admin Only) ---
+
+@app.get("/users", dependencies=[Depends(require_roles(["admin"]))])
+def list_users():
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, role, created_at FROM users ORDER BY id ASC")
+        users = cur.fetchall()
+        cur.close()
+        return [dict(u) for u in users]
+
+@app.post("/users", dependencies=[Depends(require_roles(["admin"]))])
+def create_user(req: CreateUserRequest):
+    username = req.username.strip()
+    role = req.role.strip().lower()
+    if role not in ["admin", "manager", "guard"]:
+        raise HTTPException(status_code=400, detail="Role must be admin, manager, or guard")
+    if not username or not req.password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+
+    pwd_hash = hash_password(req.password)
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+        if cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=400, detail=f"Username '{username}' already exists")
+
+        cur.execute(
+            "INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, %s, %s) RETURNING id, username, role, created_at",
+            (username, pwd_hash, role, datetime.utcnow().isoformat())
+        )
+        new_user = cur.fetchone()
+        conn.commit()
+        cur.close()
+
+    return dict(new_user)
+
+@app.put("/users/{user_id}", dependencies=[Depends(require_roles(["admin"]))])
+def update_user(user_id: int, req: UpdateUserRequest):
+    updates = []
+    params = []
+    if req.role:
+        role = req.role.strip().lower()
+        if role not in ["admin", "manager", "guard"]:
+            raise HTTPException(status_code=400, detail="Role must be admin, manager, or guard")
+        updates.append("role = %s")
+        params.append(role)
+    if req.password:
+        updates.append("password_hash = %s")
+        params.append(hash_password(req.password))
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No updates provided")
+
+    params.append(user_id)
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = %s RETURNING id, username, role", tuple(params))
+        updated = cur.fetchone()
+        conn.commit()
+        cur.close()
+
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+    return dict(updated)
+
+@app.delete("/users/{user_id}", dependencies=[Depends(require_roles(["admin"]))])
+def delete_user(user_id: int, current_user: dict = Depends(get_current_user)):
+    if str(user_id) == str(current_user.get("id")):
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+        if not cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        conn.commit()
+        cur.close()
+
+    return {"message": "User deleted successfully"}
+
+# --- Employee Management (Admin & Manager) ---
 
 MAX_PHOTO_DIMENSION = 1024
 
@@ -55,9 +199,7 @@ def _clear_face_cache():
         if f.startswith("representations_") or f.endswith(".pkl"):
             os.remove(os.path.join(KNOWN_FACES_DIR, f))
 
-from typing import List
-
-@app.post("/employees", dependencies=[Depends(verify_key)])
+@app.post("/employees", dependencies=[Depends(require_roles(["admin", "manager"]))])
 async def add_employee(
     name: str = Form(...),
     shift_start: str = Form(...),
@@ -98,7 +240,7 @@ async def add_employee(
 
     return {"message": f"Employee {name} added successfully with {len(photos)} photo(s)"}
 
-@app.get("/employees", dependencies=[Depends(verify_key)])
+@app.get("/employees", dependencies=[Depends(require_roles(["admin", "manager"]))])
 def list_employees():
     with get_db() as conn:
         cur = conn.cursor()
@@ -107,7 +249,7 @@ def list_employees():
         cur.close()
         return [dict(row) for row in rows]
 
-@app.put("/employees/{employee_id}", dependencies=[Depends(verify_key)])
+@app.put("/employees/{employee_id}", dependencies=[Depends(require_roles(["admin", "manager"]))])
 async def update_employee(
     employee_id: int,
     name: str = Form(...),
@@ -149,7 +291,7 @@ async def update_employee(
 
     return {"message": f"Employee {name} updated successfully"}
 
-@app.delete("/employees/{employee_id}", dependencies=[Depends(verify_key)])
+@app.delete("/employees/{employee_id}", dependencies=[Depends(require_roles(["admin", "manager"]))])
 def delete_employee(employee_id: int):
     with get_db() as conn:
         cur = conn.cursor()
@@ -174,16 +316,20 @@ def delete_employee(employee_id: int):
 
     return {"message": "Employee deleted"}
 
-@app.get("/settings", dependencies=[Depends(verify_key)])
+# --- Settings Endpoints (Admin Only) ---
+
+@app.get("/settings", dependencies=[Depends(require_roles(["admin"]))])
 def get_settings():
     return load_settings()
 
-@app.post("/settings", dependencies=[Depends(verify_key)])
+@app.post("/settings", dependencies=[Depends(require_roles(["admin"]))])
 def update_settings(store_open_time: str = Form(...), store_close_time: str = Form(...)):
     save_settings({"store_open_time": store_open_time, "store_close_time": store_close_time})
     return {"message": "Settings updated"}
 
-@app.get("/attendance", dependencies=[Depends(verify_key)])
+# --- Attendance Endpoints (Admin & Manager) ---
+
+@app.get("/attendance", dependencies=[Depends(require_roles(["admin", "manager"]))])
 def get_attendance(date: str = None):
     target_date = date or datetime.now().date().isoformat()
     with get_db() as conn:
@@ -198,11 +344,13 @@ def get_attendance(date: str = None):
         cur.close()
     return {"date": target_date, "records": [dict(r) for r in rows]}
 
-@app.get("/cameras", dependencies=[Depends(verify_key)])
+# --- Monitoring & Streams (Admin, Manager & Guard) ---
+
+@app.get("/cameras", dependencies=[Depends(require_roles(["admin", "manager", "guard"]))])
 def list_cameras():
     return config.CAMERAS
 
-@app.get("/status", dependencies=[Depends(verify_key)])
+@app.get("/status", dependencies=[Depends(require_roles(["admin", "manager", "guard"]))])
 def get_status():
     now = datetime.now()
     cutoff = now - timedelta(seconds=config.CURRENTLY_DETECTED_TIMEOUT_SEC)
@@ -223,22 +371,40 @@ def get_status():
     alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
 
+import numpy as np
+
+
+def _get_offline_frame(camera_id: str):
+    # 640x360 16:9 dark slate placeholder frame
+    img = np.zeros((360, 640, 3), dtype=np.uint8)
+    img[:] = (20, 15, 10) # BGR dark slate
+    cv2.putText(img, f"CAMERA '{camera_id.upper()}' OFFLINE", (150, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (230, 230, 230), 2, cv2.LINE_AA)
+    cv2.putText(img, "No webcam or RTSP feed active", (180, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (140, 140, 140), 1, cv2.LINE_AA)
+    return img
+
 def _mjpeg_generator(camera_id):
-    encode_params = [cv2.IMWRITE_JPEG_QUALITY, 70]
+    encode_params = [cv2.IMWRITE_JPEG_QUALITY, 60]
+    offline_img = _get_offline_frame(camera_id)
+    _, offline_buf = cv2.imencode(".jpg", offline_img, encode_params)
+    offline_bytes = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + offline_buf.tobytes() + b"\r\n"
+
     while True:
         frame = get_current_frame(camera_id)
         if frame is not None:
             _, buffer = cv2.imencode(".jpg", frame, encode_params)
             yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
-        time.sleep(1/15)
+            time.sleep(1/15)
+        else:
+            yield offline_bytes
+            time.sleep(1.0)
 
-@app.get("/snapshots/{filename}", dependencies=[Depends(verify_key)])
+@app.get("/snapshots/{filename}", dependencies=[Depends(require_roles(["admin", "manager", "guard"]))])
 def get_snapshot(filename: str):
     filepath = os.path.join("snapshots", filename)
     if not os.path.exists(filepath):
         return {"error": "Snapshot not found"}
     return FileResponse(filepath, media_type="image/jpeg")
 
-@app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_key)])
+@app.get("/video_feed/{camera_id}", dependencies=[Depends(require_roles(["admin", "manager", "guard"]))])
 def video_feed(camera_id: str):
     return StreamingResponse(_mjpeg_generator(camera_id), media_type="multipart/x-mixed-replace; boundary=frame")

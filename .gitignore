@@ -1,19 +1,54 @@
-# Python
-backend/venv/
-backend/__pycache__/
-*.pyc
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.local
+frontend/.env
+frontend/.env.*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+node_modules/
+dist/
 
-# Database & runtime data
+# Python / Backend
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/venv/
+backend/.venv/
+venv/
+.venv/
+env/
+.pytest_cache/
+backend/__pycache__/
+
+# Environment & Secrets
+.env
+.env.local
+backend/.env
+
+# Database & Runtime Data
+*.db
+*.sqlite
+*.sqlite3
+backend/cctv.db
 backend/store.db
 backend/settings.json
+backend/snapshots/
+snapshots/
+
+# Face Recognition Caches & Uploads
 backend/known_faces/*.jpg
 backend/known_faces/*.jpeg
 backend/known_faces/*.png
 backend/known_faces/representations_*.pkl
 backend/known_faces/*.pkl
 
-# OS junk
+# OS & Editor
 .DS_Store
 Thumbs.db
-
-backend/.env
+.vscode/
+.idea/
+*.swp
