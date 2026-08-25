@@ -13,20 +13,22 @@ recognition_locks = {}
 recognition_in_progress = {}
 
 def get_unknown_streak(camera_id):
+    location = _get_camera_location(camera_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT value FROM system_state WHERE key = %s", (f"unknown_streak_{camera_id}",))
+        cur.execute("SELECT value FROM system_state WHERE key = %s", (f"unknown_streak_{location}",))
         row = cur.fetchone()
         cur.close()
         return int(row["value"]) if row else 0
 
 def set_unknown_streak(camera_id, value):
+    location = _get_camera_location(camera_id)
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO system_state (key, value) VALUES (%s, %s) "
             "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
-            (f"unknown_streak_{camera_id}", str(value))
+            (f"unknown_streak_{location}", str(value))
         )
         conn.commit()
         cur.close()
@@ -80,6 +82,12 @@ def _is_frame_tampered(frame):
     brightness = mean[0][0]
     detail = stddev[0][0]
     return brightness < config.TAMPER_BRIGHTNESS_THRESHOLD or detail < config.TAMPER_VARIANCE_THRESHOLD
+
+def _get_camera_location(camera_id):
+    for cam in config.CAMERAS:
+        if cam["id"] == camera_id:
+            return cam.get("location", camera_id)
+    return camera_id
 
 def _process_frame(frame, camera_id, camera_name):
     now = datetime.now()
@@ -141,11 +149,13 @@ def _process_frame(frame, camera_id, camera_name):
         streak = get_unknown_streak(camera_id) + 1
         set_unknown_streak(camera_id, streak)
         if streak >= config.UNKNOWN_STREAK_THRESHOLD and not is_within_store_hours(now):
-            if not already_alerted_recently("Unknown", "stranger", "high", config.ALERT_DEDUPE_WINDOW_SEC):
+            location = _get_camera_location(camera_id)
+            location_key = f"Unknown@{location}"
+            if not already_alerted_recently(location_key, "stranger", "high", config.ALERT_DEDUPE_WINDOW_SEC):
                 current = get_current_frame(camera_id)
                 snapshot_frame = current if current is not None else frame
                 msg = f"[{camera_name}] Unknown person detected outside store hours"
-                log_alert("Unknown", "stranger", "high", msg, frame=snapshot_frame)
+                log_alert(location_key, "stranger", "high", msg, frame=snapshot_frame)
     else:
         set_unknown_streak(camera_id, 0)
 
