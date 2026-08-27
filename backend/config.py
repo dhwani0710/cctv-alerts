@@ -1,23 +1,18 @@
-# Store operating hours — used to decide if an unknown person is a customer or a threat
-STORE_OPEN_TIME = "10:00"
+STORE_OPEN_TIME = "18:00"
 STORE_CLOSE_TIME = "21:00"
 
-# Overstay alert thresholds (minutes past shift_end)
-LOW_THRESHOLD_MIN = 30      # 0-30 min past shift end = low
-MEDIUM_THRESHOLD_MIN = 60   # 30-60 min = medium, beyond = high
+LOW_THRESHOLD_MIN = 30
+MEDIUM_THRESHOLD_MIN = 60
 
-# How often (seconds) the camera worker runs face recognition on a frame
-RECOGNITION_INTERVAL_SEC = 7
-CURRENTLY_DETECTED_TIMEOUT_SEC = 10  # how long someone stays "currently detected" without a fresh match
+RECOGNITION_INTERVAL_SEC = 5
+CURRENTLY_DETECTED_TIMEOUT_SEC = 10
 
-UNKNOWN_STREAK_THRESHOLD = 2  # consecutive "Unknown" reads required before treating it as a real stranger
+UNKNOWN_STREAK_THRESHOLD = 2
 
-ALERT_DEDUPE_WINDOW_SEC = 120
-
-MIN_MATCHING_PHOTOS = 2
+ALERT_DEDUPE_WINDOW_SEC = 60
 
 CAMERAS = [
-    {"id": "cam1", "name": "Front Entrance", "source": 0},
+    {"id": "cam1", "name": "201 Door", "source": "rtsp://admin:FWXDNE@192.168.1.6:554/Streaming/Channels/102", "location": "front"},
 ]
 
 CAMERA_OFFLINE_THRESHOLD_SEC = 30

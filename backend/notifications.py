@@ -26,6 +26,8 @@ def send_telegram_photo(photo_path, caption):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     try:
         with open(photo_path, "rb") as photo_file:
-            requests.post(url, data={"chat_id": CHAT_ID, "caption": caption}, files={"photo": photo_file}, timeout=10)
+            response = requests.post(url, data={"chat_id": CHAT_ID, "caption": caption}, files={"photo": photo_file}, timeout=10)
+        if response.status_code != 200:
+            print(f"[notifications ERROR] Telegram API rejected request: {response.status_code} — {response.text}")
     except Exception as e:
         print(f"[notifications ERROR] {e}")

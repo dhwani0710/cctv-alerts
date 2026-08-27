@@ -16,6 +16,7 @@ export default defineConfig({
       '/snapshots': 'http://localhost:8000',
       '/video_feed': 'http://localhost:8000',
       '/users': 'http://localhost:8000',
+      '/login': 'http://localhost:8000',
     }
   }
 })
