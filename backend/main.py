@@ -2,7 +2,7 @@ import os
 import shutil
 import cv2
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, Form, File, Depends
+from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
@@ -10,7 +10,7 @@ from database import init_db, get_db
 from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat
 from datetime import datetime, timedelta
 import config
-from auth import verify_token, require_admin
+from auth import verify_token, require_admin, require_staff
 from auth_users import verify_password, create_token, hash_password
 from settings_store import load_settings, save_settings
 import storage
@@ -19,7 +19,11 @@ app = FastAPI(title="Jewellery Store Alert System")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["null", "http://localhost", "http://127.0.0.1", "https://cctv-alerts-f.onrender.com"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -72,9 +76,15 @@ def login(payload: LoginRequest):
         return {"ok": False, "error": "Incorrect username or password"}
 
     token = create_token(user["id"], user["username"], user["role"], user["name"])
-    return {"ok": True, "role": user["role"], "name": user["name"], "token": token}
+    return {
+    "ok": True,
+    "role": user["role"],
+    "name": user["name"],
+    "username": user["username"],
+    "token": token
+}
 
-@app.post("/employees", dependencies=[Depends(require_admin)])
+@app.post("/employees", dependencies=[Depends(require_staff)])
 async def add_employee(
     name: str = Form(...),
     shift_start: str = Form(...),
@@ -116,7 +126,7 @@ async def add_employee(
 
     return {"message": f"Employee {name} added successfully with {len(photos)} photo(s)"}
 
-@app.get("/employees", dependencies=[Depends(require_admin)])
+@app.get("/employees", dependencies=[Depends(require_staff)])
 def list_employees():
     with get_db() as conn:
         cur = conn.cursor()
@@ -125,7 +135,7 @@ def list_employees():
         cur.close()
         return [dict(row) for row in rows]
 
-@app.put("/employees/{employee_id}", dependencies=[Depends(require_admin)])
+@app.put("/employees/{employee_id}", dependencies=[Depends(require_staff)])
 async def update_employee(
     employee_id: int,
     name: str = Form(...),
@@ -163,7 +173,7 @@ async def update_employee(
 
     return {"message": f"Employee {name} updated successfully"}
 
-@app.delete("/employees/{employee_id}", dependencies=[Depends(require_admin)])
+@app.delete("/employees/{employee_id}", dependencies=[Depends(require_staff)])
 def delete_employee(employee_id: int):
     with get_db() as conn:
         cur = conn.cursor()
@@ -276,7 +286,7 @@ def _mjpeg_generator(camera_id):
             _, buffer = cv2.imencode(".jpg", frame, encode_params)
             yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
 
-@app.get("/snapshots/{filename}", dependencies=[Depends(require_admin)])
+@app.get("/snapshots/{filename}", dependencies=[Depends(verify_token)])
 def get_snapshot(filename: str):
     filepath = os.path.join("snapshots", filename)
     if not os.path.exists(filepath):
@@ -286,3 +296,42 @@ def get_snapshot(filename: str):
 @app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_token)])
 def video_feed(camera_id: str):
     return StreamingResponse(_mjpeg_generator(camera_id), media_type="multipart/x-mixed-replace; boundary=frame")
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str
+
+@app.get("/users", dependencies=[Depends(require_admin)])
+def list_users():
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, role, name, created_at FROM users ORDER BY id")
+        rows = cur.fetchall()
+        cur.close()
+        return [dict(r) for r in rows]
+
+@app.post("/users", dependencies=[Depends(require_admin)])
+def create_user(payload: CreateUserRequest):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE username = %s", (payload.username,))
+        if cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=400, detail="Username already exists")
+        cur.execute(
+            "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
+            (payload.username, hash_password(payload.password), payload.role, payload.username)
+        )
+        conn.commit()
+        cur.close()
+    return {"message": "User created"}
+
+@app.delete("/users/{user_id}", dependencies=[Depends(require_admin)])
+def delete_user(user_id: int):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        conn.commit()
+        cur.close()
+    return {"message": "User deleted"}

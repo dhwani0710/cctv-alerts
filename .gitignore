@@ -17,3 +17,23 @@ backend/known_faces/*.pkl
 Thumbs.db
 
 backend/.env
+
+node_modules/
+frontend/node_modules/
+__pycache__/
+*.pyc
+.env
+.env.*
+venv/
+.venv/
+dist/node_modules/
+frontend/node_modules/
+__pycache__/
+*.pyc
+.env
+.env.*
+venv/
+.venv/
+dist/
+
+backend/snapshots/

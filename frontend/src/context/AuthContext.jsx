@@ -25,19 +25,19 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (username, password) => {
-    const res = await fetch('/auth/login', {
+    const res = await fetch('/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
     });
 
     const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Authentication failed');
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || data.detail || 'Authentication failed');
     }
 
     const authData = {
-      token: data.access_token,
+      token: data.token,
       role: data.role.toLowerCase(),
       username: data.username
     };

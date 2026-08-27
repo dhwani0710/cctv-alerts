@@ -77,19 +77,26 @@ def save_snapshot(frame):
     filename = f"{uuid.uuid4().hex}.jpg"
     filepath = os.path.join(SNAPSHOTS_DIR, filename)
     cv2.imwrite(filepath, frame)
-    public_url = storage.upload_file(filepath, f"snapshots/{filename}")
+    try:
+        public_url = storage.upload_file(filepath, f"snapshots/{filename}")
+    except Exception as e:
+        print(f"[alerts] Snapshot upload failed, continuing without cloud URL: {e}")
+        public_url = None
     return filepath, public_url
 
 PRIORITY_EMOJI = {"low": "🟡", "medium": "🟠", "high": "🔴"}
 
 def log_alert(person_name, alert_type, priority, message, frame=None):
     local_path, snapshot_url = (save_snapshot(frame) if frame is not None else (None, None))
+    final_url = snapshot_url
+    if local_path and not snapshot_url:
+        final_url = f"/snapshots/{os.path.basename(local_path)}"
 
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp, snapshot_filename) VALUES (%s, %s, %s, %s, %s, %s)",
-            (person_name, alert_type, priority, message, datetime.now().isoformat(), snapshot_url)
+            (person_name, alert_type, priority, message, datetime.now().isoformat(), final_url)
         )
         conn.commit()
         cur.close()

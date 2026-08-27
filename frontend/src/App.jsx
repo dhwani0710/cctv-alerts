@@ -5,6 +5,7 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AdminPage } from './pages/AdminPage';
 import { AttendancePage } from './pages/AttendancePage';
+import { SettingsPage } from './pages/SettingsPage';
 
 const RootRedirect = () => {
   const { user, getDefaultRedirect } = useAuth();
@@ -44,6 +45,15 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['admin', 'manager']}>
                 <AttendancePage />
+              </ProtectedRoute>
+            }
+          />
+          
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <SettingsPage />
               </ProtectedRoute>
             }
           />
