@@ -1,3 +1,5 @@
+import os
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay"
 import cv2
 import threading
 import time
@@ -13,42 +15,25 @@ recognition_locks = {}
 recognition_in_progress = {}
 
 def get_unknown_streak(camera_id):
+    location = _get_camera_location(camera_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT value FROM system_state WHERE key = %s", (f"unknown_streak_{camera_id}",))
+        cur.execute("SELECT value FROM system_state WHERE key = %s", (f"unknown_streak_{location}",))
         row = cur.fetchone()
         cur.close()
         return int(row["value"]) if row else 0
 
 def set_unknown_streak(camera_id, value):
+    location = _get_camera_location(camera_id)
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO system_state (key, value) VALUES (%s, %s) "
             "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
-            (f"unknown_streak_{camera_id}", str(value))
+            (f"unknown_streak_{location}", str(value))
         )
         conn.commit()
         cur.close()
-
-def update_camera_heartbeat(camera_id, now):
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO system_state (key, value) VALUES (%s, %s) "
-            "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
-            (f"heartbeat_{camera_id}", now.isoformat())
-        )
-        conn.commit()
-        cur.close()
-
-def get_camera_heartbeat(camera_id):
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT value FROM system_state WHERE key = %s", (f"heartbeat_{camera_id}",))
-        row = cur.fetchone()
-        cur.close()
-        return datetime.fromisoformat(row["value"]) if row else None
 
 def update_currently_detected(name, camera_id, now):
     with get_db() as conn:
@@ -74,12 +59,37 @@ def update_attendance(employee_id, now):
         conn.commit()
         cur.close()
 
+def update_camera_heartbeat(camera_id, now):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO system_state (key, value) VALUES (%s, %s) "
+            "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
+            (f"heartbeat_{camera_id}", now.isoformat())
+        )
+        conn.commit()
+        cur.close()
+
+def get_camera_heartbeat(camera_id):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM system_state WHERE key = %s", (f"heartbeat_{camera_id}",))
+        row = cur.fetchone()
+        cur.close()
+        return datetime.fromisoformat(row["value"]) if row else None
+
 def _is_frame_tampered(frame):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     mean, stddev = cv2.meanStdDev(gray)
     brightness = mean[0][0]
     detail = stddev[0][0]
     return brightness < config.TAMPER_BRIGHTNESS_THRESHOLD or detail < config.TAMPER_VARIANCE_THRESHOLD
+
+def _get_camera_location(camera_id):
+    for cam in config.CAMERAS:
+        if cam["id"] == camera_id:
+            return cam.get("location", camera_id)
+    return camera_id
 
 def _process_frame(frame, camera_id, camera_name):
     now = datetime.now()
@@ -91,6 +101,14 @@ def _process_frame(frame, camera_id, camera_name):
         return
 
     names = recognize_faces(frame)
+
+    if not names:
+        time.sleep(0.3)
+        retry_frame = get_current_frame(camera_id)
+        if retry_frame is not None:
+            names = recognize_faces(retry_frame)
+            if names:
+                print(f"[camera_worker] Recovered detection on retry for '{camera_name}' (first frame likely corrupted)")
 
     if not names:
         return
@@ -133,9 +151,13 @@ def _process_frame(frame, camera_id, camera_name):
         streak = get_unknown_streak(camera_id) + 1
         set_unknown_streak(camera_id, streak)
         if streak >= config.UNKNOWN_STREAK_THRESHOLD and not is_within_store_hours(now):
-            if not already_alerted_recently("Unknown", "stranger", "high", config.ALERT_DEDUPE_WINDOW_SEC):
+            location = _get_camera_location(camera_id)
+            location_key = f"Unknown@{location}"
+            if not already_alerted_recently(location_key, "stranger", "high", config.ALERT_DEDUPE_WINDOW_SEC):
+                current = get_current_frame(camera_id)
+                snapshot_frame = current if current is not None else frame
                 msg = f"[{camera_name}] Unknown person detected outside store hours"
-                log_alert("Unknown", "stranger", "high", msg, frame=frame)
+                log_alert(location_key, "stranger", "high", msg, frame=snapshot_frame)
     else:
         set_unknown_streak(camera_id, 0)
 
@@ -156,8 +178,13 @@ def _camera_loop(camera_config):
     recognition_in_progress[camera_id] = False
     latest_frames[camera_id] = None
 
-    cap = cv2.VideoCapture(source)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    def _open_capture():
+        c = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+        c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        c.set(cv2.CAP_PROP_FPS, 15)
+        return c
+
+    cap = _open_capture()
 
     if not cap.isOpened():
         print(f"[camera_worker] Camera '{camera_name}' ({camera_id}) not detected — running without live video.")
@@ -165,12 +192,24 @@ def _camera_loop(camera_config):
             time.sleep(5)
 
     last_recognition = 0
+    consecutive_failures = 0
+    MAX_FAILURES_BEFORE_RECONNECT = 15
 
     while True:
-        success, frame = cap.read()
+        for _ in range(3):
+            cap.grab()
+        success, frame = cap.retrieve()
         if not success:
+            consecutive_failures += 1
+            if consecutive_failures >= MAX_FAILURES_BEFORE_RECONNECT:
+                print(f"[camera_worker] '{camera_name}' ({camera_id}) unresponsive — reconnecting...")
+                cap.release()
+                time.sleep(2)
+                cap = _open_capture()
+                consecutive_failures = 0
             time.sleep(1)
             continue
+        consecutive_failures = 0
 
         with frame_locks[camera_id]:
             latest_frames[camera_id] = frame.copy()

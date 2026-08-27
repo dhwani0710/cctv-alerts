@@ -1,23 +1,15 @@
-try:
-    from deepface import DeepFace
-except ImportError:
-    DeepFace = None
-    print("[WARN] DeepFace / TensorFlow not installed. Face recognition will run in simulation mode.")
+import os
+from datetime import datetime
+from deepface import DeepFace
+import config
 
 KNOWN_FACES_DIR = "known_faces"
 VALID_PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
-
-import config
-
 def recognize_faces(frame):
     """Takes a webcam frame, returns a list of names — one per detected face.
     Unmatched faces show as 'Unknown'. Empty list means no faces detected at all."""
-    if DeepFace is None:
-        return []
-
     has_photos = False
-
     photo_counts = {}
     for root, dirs, files in os.walk(KNOWN_FACES_DIR):
         image_files = [f for f in files if f.lower().endswith(VALID_PHOTO_EXTENSIONS)]
@@ -43,11 +35,10 @@ def recognize_faces(frame):
     try:
         results = DeepFace.find(
             img_path=frame,
-            db_path="known_faces",
+            db_path=KNOWN_FACES_DIR,
             enforce_detection=False,
             detector_backend="mtcnn",
             distance_metric="cosine",
-            threshold=0.75,
             silent=True
         )
 
@@ -59,7 +50,7 @@ def recognize_faces(frame):
 
         names = []
         for face_result in results:
-            if not has_photos or len(face_result) == 0:
+            if len(face_result) == 0:
                 names.append("Unknown")
                 continue
 
@@ -73,7 +64,7 @@ def recognize_faces(frame):
 
             accepted_name = "Unknown"
             for folder_name, distances in matches_by_employee.items():
-                required = min(config.MIN_MATCHING_PHOTOS, photo_counts.get(folder_name, 1))
+                required = min(getattr(config, "MIN_MATCHING_PHOTOS", 2), photo_counts.get(folder_name, 1))
                 print(f"[DEBUG] {folder_name}: {len(distances)} photo(s) matched (need {required}), distances: {distances}")
                 if len(distances) >= required:
                     accepted_name = folder_name.replace("_", " ")
