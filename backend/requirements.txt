@@ -1,13 +1,13 @@
 fastapi
 uvicorn
 python-multipart
-deepface
-opencv-contrib-python
-mtcnn
+deepface; python_version < "3.13"
+tf-keras; python_version < "3.13"
+mtcnn; python_version < "3.13"
+opencv-python
 requests
 python-dotenv
 apscheduler
-tf-keras
 psycopg2-binary
 supabase
 passlib[bcrypt]
