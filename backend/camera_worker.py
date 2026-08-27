@@ -1,3 +1,5 @@
+import os
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay"
 import cv2
 import threading
 import time
@@ -179,6 +181,7 @@ def _camera_loop(camera_config):
     def _open_capture():
         c = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
         c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        c.set(cv2.CAP_PROP_FPS, 15)
         return c
 
     cap = _open_capture()
@@ -193,7 +196,9 @@ def _camera_loop(camera_config):
     MAX_FAILURES_BEFORE_RECONNECT = 15
 
     while True:
-        success, frame = cap.read()
+        for _ in range(3):
+            cap.grab()
+        success, frame = cap.retrieve()
         if not success:
             consecutive_failures += 1
             if consecutive_failures >= MAX_FAILURES_BEFORE_RECONNECT:

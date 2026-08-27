@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Navbar } from '../components/Navbar';
+import { Sidebar } from '../components/Sidebar';
+import { Topbar } from '../components/Topbar';
 import { useAuth } from '../context/AuthContext';
 
 export const AdminPage = () => {
   const { user, apiFetch } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const isStaff = isAdmin || user?.role === 'manager';
 
   // Employee State
   const [employees, setEmployees] = useState([]);
@@ -18,11 +20,6 @@ export const AdminPage = () => {
   const [deleteModal, setDeleteModal] = useState(null); // { id, name }
   const [editModal, setEditModal] = useState(null); // { id, name, shiftStart, shiftEnd }
   const [editPhoto, setEditPhoto] = useState(null);
-  const [settingsModal, setSettingsModal] = useState(false);
-
-  // Store Hours State
-  const [openTime, setOpenTime] = useState('09:00');
-  const [closeTime, setCloseTime] = useState('21:00');
 
   // User Management State (Admin Only)
   const [users, setUsers] = useState([]);
@@ -42,20 +39,6 @@ export const AdminPage = () => {
     }
   }, [apiFetch]);
 
-  const loadSettings = useCallback(async () => {
-    if (!isAdmin) return;
-    try {
-      const res = await apiFetch('/settings');
-      if (res.ok) {
-        const data = await res.json();
-        setOpenTime(data.store_open_time || '09:00');
-        setCloseTime(data.store_close_time || '21:00');
-      }
-    } catch (err) {
-      console.error('Error loading settings:', err);
-    }
-  }, [apiFetch, isAdmin]);
-
   const loadUsers = useCallback(async () => {
     if (!isAdmin) return;
     try {
@@ -72,10 +55,9 @@ export const AdminPage = () => {
   useEffect(() => {
     loadEmployees();
     if (isAdmin) {
-      loadSettings();
       loadUsers();
     }
-  }, [isAdmin, loadEmployees, loadSettings, loadUsers]);
+  }, [isAdmin, loadEmployees, loadUsers]);
 
   const handleAddEmployee = async (e) => {
     e.preventDefault();
@@ -155,27 +137,6 @@ export const AdminPage = () => {
     }
   };
 
-  const handleSaveSettings = async () => {
-    const formData = new FormData();
-    formData.append('store_open_time', openTime);
-    formData.append('store_close_time', closeTime);
-
-    try {
-      const res = await apiFetch('/settings', {
-        method: 'POST',
-        body: formData
-      });
-      if (res.ok) {
-        setSettingsModal(false);
-        loadSettings();
-      } else {
-        alert('Failed to save settings');
-      }
-    } catch (err) {
-      alert('Error saving settings');
-    }
-  };
-
   const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
@@ -225,21 +186,12 @@ export const AdminPage = () => {
   };
 
   return (
-    <div className="min-h-screen text-sm p-4">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex flex-wrap justify-between items-center gap-4 pb-3 border-b border-[var(--border-color)]">
-          <Navbar title="Jewellery Store Security" subtitle="Management & Access Portal" />
-          {isAdmin && (
-            <div className="-mt-6 mb-4 flex justify-end w-full">
-              <button
-                onClick={() => setSettingsModal(true)}
-                className="text-xs border border-[var(--border-color)] hover:border-amber-500 rounded-lg px-2.5 py-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition"
-              >
-                ⚙ Store Hours
-              </button>
-            </div>
-          )}
-        </div>
+    <div className="h-screen flex overflow-hidden">
+      <Sidebar />
+      <div className="flex-1 flex flex-col min-w-0">
+        <Topbar title="Employees" />
+        <div className="flex-1 overflow-y-auto p-4">
+        <div className="max-w-4xl mx-auto space-y-6">
 
         {/* Employee Setup Form */}
         <div>
@@ -312,25 +264,30 @@ export const AdminPage = () => {
           <h3 className="text-xs uppercase tracking-wider text-[var(--text-muted)] font-semibold mt-6 mb-3">
             Registered Employees
           </h3>
-          <div className="space-y-2 max-h-72 overflow-y-auto">
+                    <div className="space-y-2 max-h-72 overflow-y-auto">
             {employees.length > 0 ? (
               employees.map((e) => (
                 <div
                   key={e.id}
                   className="flex justify-between items-center bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-lg px-4 py-3"
                 >
-                  <div>
-                    <span className="font-medium text-slate-200">{e.name}</span>
-                    <span className="text-[var(--text-muted)] text-sm ml-2">
-                      {e.shift_start} – {e.shift_end}
-                    </span>
-                    {isOvernight(e.shift_start, e.shift_end) && (
-                      <span className="text-amber-500 text-xs ml-2 border border-amber-500/40 rounded px-1.5 py-0.5">
-                        overnight
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-[var(--bg-panel-3)] border border-[var(--border-color)] flex items-center justify-center text-xs font-mono text-[var(--accent)]">
+                      {e.name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <span className="font-medium text-[var(--text-primary)]">{e.name}</span>
+                      <span className="text-[var(--text-muted)] text-xs ml-2">
+                        {e.shift_start} – {e.shift_end}
                       </span>
-                    )}
+                      {isOvernight(e.shift_start, e.shift_end) && (
+                        <span className="text-[var(--accent)] text-[10px] ml-2 border border-[var(--accent)]/40 rounded px-1.5 py-0.5">
+                          overnight
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex gap-4 w-32 justify-end shrink-0">
+                  <div className="flex gap-4 shrink-0">
                     <button
                       onClick={() =>
                         setEditModal({
@@ -542,47 +499,8 @@ export const AdminPage = () => {
           </div>
         </div>
       )}
-
-      {/* Store Hours Modal */}
-      {settingsModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl p-6 w-96 space-y-4 shadow-2xl">
-            <h2 className="text-lg font-semibold text-slate-100">Store Operating Hours</h2>
-            <div>
-              <label className="block text-sm text-[var(--text-muted)] mb-1">Opening Time</label>
-              <input
-                type="time"
-                value={openTime}
-                onChange={(e) => setOpenTime(e.target.value)}
-                className="w-full bg-[var(--input-bg)] rounded-lg px-4 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-[var(--text-muted)] mb-1">Closing Time</label>
-              <input
-                type="time"
-                value={closeTime}
-                onChange={(e) => setCloseTime(e.target.value)}
-                className="w-full bg-[var(--input-bg)] rounded-lg px-4 py-2 text-sm"
-              />
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                onClick={() => setSettingsModal(false)}
-                className="text-[var(--text-muted)] text-sm px-4 py-2"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveSettings}
-                className="bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--accent-contrast)] font-semibold px-4 py-2 rounded-lg text-sm"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
+      </div>
     </div>
   );
 };

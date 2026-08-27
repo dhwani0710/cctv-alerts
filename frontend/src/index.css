@@ -3,41 +3,37 @@
 @tailwind utilities;
 
 :root {
-  --bg-page: #020617;
-  --bg-panel: #0f172a;
-  --text-primary: #f1f5f9;
-  --text-muted: #94a3b8;
-  --border-color: #1e293b;
-  --input-bg: #1e293b;
-  --accent: #f59e0b;
-  --accent-hover: #fbbf24;
-  --accent-contrast: #020617;
+  --bg-page: #14171C;
+  --bg-panel: #1B1F26;
+  --bg-panel-3: #242932;
+  --border-color: #333A44;
+  --text-primary: #E9E6DD;
+  --text-muted: #9BA1A8;
+  --accent: #B08D57;
+  --accent-hover: #C9A56E;
+  --accent-contrast: #14171C;
+  --danger: #C1432E;
+  --input-bg: #242932;
 }
 
 html.light {
-  --bg-page: #faf3e6;
-  --bg-panel: #fffdf8;
-  --text-primary: #2d1b0e;
-  --text-muted: #8a6d4d;
-  --border-color: #e8d5b5;
-  --input-bg: #f6ead2;
-  --accent: #b8860b;
-  --accent-hover: #966f09;
-  --accent-contrast: #fffaf0;
-}
-
-html.light .bg-panel-shadow {
-  box-shadow: 0 2px 6px rgba(120, 90, 40, 0.12);
+  --bg-page: #F6F3EC;
+  --bg-panel: #EDE7D8;
+  --bg-panel-3: #E4DCC5;
+  --border-color: #DCD4BE;
+  --text-primary: #201C15;
+  --text-muted: #6B6357;
+  --accent: #8C6F44;
+  --accent-hover: #6E5636;
+  --accent-contrast: #F6F3EC;
+  --danger: #C1432E;
+  --input-bg: #F6F3EC;
 }
 
 body {
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family: 'Segoe UI', -apple-system, sans-serif;
   background-color: var(--bg-page);
   color: var(--text-primary);
   min-height: 100vh;
   margin: 0;
-}
-
-.glow-gold {
-  box-shadow: 0 0 50px -10px rgba(245, 158, 11, 0.15);
 }

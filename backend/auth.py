@@ -27,3 +27,9 @@ def require_admin(authorization: Optional[str] = Header(None)):
     if payload["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return payload
+
+def require_staff(authorization: Optional[str] = Header(None)):
+    payload = verify_token(authorization)
+    if payload["role"] not in ("admin", "manager"):
+        raise HTTPException(status_code=403, detail="Staff access required")
+    return payload
