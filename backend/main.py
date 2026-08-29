@@ -1,6 +1,7 @@
 import os
 import shutil
 import cv2
+import time
 from typing import List, Optional
 from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,77 +58,12 @@ class UpdateUserRequest(BaseModel):
     role: Optional[str] = None
     password: Optional[str] = None
 
-@app.post("/auth/login")
-def login(req: LoginRequest):
-    username = req.username.strip()
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, username, password_hash, role FROM users WHERE username = %s", (username,))
-        user = cur.fetchone()
-        cur.close()
-
-    if not user or not verify_password(req.password, user["password_hash"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password"
-        )
-
-    access_token = create_access_token({
-        "sub": str(user["id"]),
-        "username": user["username"],
-        "role": user["role"]
-    })
-
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "role": user["role"],
-        "username": user["username"]
-    }
-
 @app.get("/auth/me")
-def get_me(current_user: dict = Depends(get_current_user)):
+def get_me(current_user: dict = Depends(verify_token)):
     return current_user
 
 # --- User Management Endpoints (Admin Only) ---
-
-@app.get("/users", dependencies=[Depends(require_roles(["admin"]))])
-def list_users():
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, username, role, created_at FROM users ORDER BY id ASC")
-        users = cur.fetchall()
-        cur.close()
-        return [dict(u) for u in users]
-
-@app.post("/users", dependencies=[Depends(require_roles(["admin"]))])
-def create_user(req: CreateUserRequest):
-    username = req.username.strip()
-    role = req.role.strip().lower()
-    if role not in ["admin", "manager", "guard"]:
-        raise HTTPException(status_code=400, detail="Role must be admin, manager, or guard")
-    if not username or not req.password:
-        raise HTTPException(status_code=400, detail="Username and password are required")
-
-    pwd_hash = hash_password(req.password)
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-        if cur.fetchone():
-            cur.close()
-            raise HTTPException(status_code=400, detail=f"Username '{username}' already exists")
-
-        cur.execute(
-            "INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, %s, %s) RETURNING id, username, role, created_at",
-            (username, pwd_hash, role, datetime.utcnow().isoformat())
-        )
-        new_user = cur.fetchone()
-        conn.commit()
-        cur.close()
-
-    return dict(new_user)
-
-@app.put("/users/{user_id}", dependencies=[Depends(require_roles(["admin"]))])
+@app.put("/users/{user_id}", dependencies=[Depends(require_admin)])
 def update_user(user_id: int, req: UpdateUserRequest):
     updates = []
     params = []
@@ -156,26 +92,7 @@ def update_user(user_id: int, req: UpdateUserRequest):
         raise HTTPException(status_code=404, detail="User not found")
     return dict(updated)
 
-@app.delete("/users/{user_id}", dependencies=[Depends(require_roles(["admin"]))])
-def delete_user(user_id: int, current_user: dict = Depends(get_current_user)):
-    if str(user_id) == str(current_user.get("id")):
-        raise HTTPException(status_code=400, detail="You cannot delete your own account")
-
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
-        if not cur.fetchone():
-            cur.close()
-            raise HTTPException(status_code=404, detail="User not found")
-
-        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
-        conn.commit()
-        cur.close()
-
-    return {"message": "User deleted successfully"}
-
 # --- Employee Management (Admin & Manager) ---
-
 MAX_PHOTO_DIMENSION = 1024
 
 def _save_resized_photo(upload_file, destination_path):
@@ -437,13 +354,6 @@ def _mjpeg_generator(camera_id):
             yield offline_bytes
             time.sleep(1.0)
 
-@app.get("/snapshots/{filename}", dependencies=[Depends(require_roles(["admin", "manager", "guard"]))])
-def get_snapshot(filename: str):
-    filepath = os.path.join("snapshots", filename)
-    if not os.path.exists(filepath):
-        return {"error": "Snapshot not found"}
-    return FileResponse(filepath, media_type="image/jpeg")
-
 @app.get("/snapshots/{filename}", dependencies=[Depends(verify_token)])
 def get_snapshot(filename: str):
     filepath = os.path.join("snapshots", filename)
@@ -460,6 +370,31 @@ class CreateUserRequest(BaseModel):
     password: str
     role: str
 
+@app.post("/users", dependencies=[Depends(require_admin)])
+def create_user(payload: CreateUserRequest):
+    username = payload.username.strip()
+    role = payload.role.strip().lower()
+    if role not in ["admin", "manager", "guard"]:
+        raise HTTPException(status_code=400, detail="Role must be admin, manager, or guard")
+    if not username or not payload.password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+        if cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=400, detail=f"Username '{username}' already exists")
+
+        cur.execute(
+            "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
+            (username, hash_password(payload.password), role, username)
+        )
+        conn.commit()
+        cur.close()
+
+    return {"message": "User created"}
+
 @app.get("/users", dependencies=[Depends(require_admin)])
 def list_users():
     with get_db() as conn:
@@ -469,27 +404,20 @@ def list_users():
         cur.close()
         return [dict(r) for r in rows]
 
-@app.post("/users", dependencies=[Depends(require_admin)])
-def create_user(payload: CreateUserRequest):
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM users WHERE username = %s", (payload.username,))
-        if cur.fetchone():
-            cur.close()
-            raise HTTPException(status_code=400, detail="Username already exists")
-        cur.execute(
-            "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
-            (payload.username, hash_password(payload.password), payload.role, payload.username)
-        )
-        conn.commit()
-        cur.close()
-    return {"message": "User created"}
-
 @app.delete("/users/{user_id}", dependencies=[Depends(require_admin)])
-def delete_user(user_id: int):
+def delete_user(user_id: int, current_user: dict = Depends(verify_token)):
+    if str(user_id) == str(current_user.get("user_id")):
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+
     with get_db() as conn:
         cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+        if not cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=404, detail="User not found")
+
         cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
         conn.commit()
         cur.close()
-    return {"message": "User deleted"}
+
+    return {"message": "User deleted successfully"}
