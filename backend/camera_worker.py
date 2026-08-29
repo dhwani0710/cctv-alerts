@@ -1,5 +1,7 @@
 import os
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
 import cv2
 import threading
 import time
@@ -199,7 +201,7 @@ def _camera_loop(camera_config):
         for _ in range(3):
             cap.grab()
         success, frame = cap.retrieve()
-        if not success:
+        if not success or frame is None or frame.size == 0:
             consecutive_failures += 1
             if consecutive_failures >= MAX_FAILURES_BEFORE_RECONNECT:
                 print(f"[camera_worker] '{camera_name}' ({camera_id}) unresponsive — reconnecting...")
