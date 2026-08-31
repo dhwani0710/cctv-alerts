@@ -64,7 +64,7 @@ def recognize_faces(frame):
 
             accepted_name = "Unknown"
             for folder_name, distances in matches_by_employee.items():
-                required = min(getattr(config, "MIN_MATCHING_PHOTOS", 2), photo_counts.get(folder_name, 1))
+                required = min(getattr(config, "MIN_MATCHING_PHOTOS", 1), photo_counts.get(folder_name, 1))
                 print(f"[DEBUG] {folder_name}: {len(distances)} photo(s) matched (need {required}), distances: {distances}")
                 if len(distances) >= required:
                     accepted_name = folder_name.replace("_", " ")

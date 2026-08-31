@@ -86,7 +86,7 @@ def save_snapshot(frame):
 
 PRIORITY_EMOJI = {"low": "🟡", "medium": "🟠", "high": "🔴"}
 
-def log_alert(person_name, alert_type, priority, message, frame=None):
+def log_alert(person_name, alert_type, priority, message, frame=None, camera_id=None):
     local_path, snapshot_url = (save_snapshot(frame) if frame is not None else (None, None))
     final_url = snapshot_url
     if local_path and not snapshot_url:
@@ -95,8 +95,8 @@ def log_alert(person_name, alert_type, priority, message, frame=None):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp, snapshot_filename) VALUES (%s, %s, %s, %s, %s, %s)",
-            (person_name, alert_type, priority, message, datetime.now().isoformat(), final_url)
+            "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (person_name, alert_type, priority, message, datetime.now().isoformat(), final_url, camera_id)
         )
         conn.commit()
         cur.close()

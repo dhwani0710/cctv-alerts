@@ -34,6 +34,7 @@ KNOWN_FACES_DIR = "known_faces"
 @app.on_event("startup")
 def startup():
     init_db()
+    _seed_cameras_from_config()
     os.makedirs(KNOWN_FACES_DIR, exist_ok=True)
     storage.sync_known_faces_from_storage(KNOWN_FACES_DIR)
     start_camera_threads()
@@ -177,7 +178,10 @@ async def add_employee(
             filename = f"photo_{i+1}.jpg"
             photo_path = os.path.join(employee_folder, filename)
             _save_resized_photo(photo, photo_path)
-            storage.upload_file(photo_path, f"known_faces/{folder_name}/{filename}")
+            try:
+                storage.upload_file(photo_path, f"known_faces/{folder_name}/{filename}")
+            except Exception as e:
+                print(f"[main] Photo cloud upload failed, continuing with local copy only: {e}")
             cur.execute(
                 "INSERT INTO employee_photos (employee_id, filename) VALUES (%s, %s)",
                 (employee_id, filename)
@@ -225,7 +229,10 @@ async def update_employee(
             os.makedirs(employee_folder, exist_ok=True)
             photo_path = os.path.join(employee_folder, "photo_1.jpg")
             _save_resized_photo(photo, photo_path)
-            storage.upload_file(photo_path, f"known_faces/{folder_name}/photo_1.jpg")
+            try:
+                storage.upload_file(photo_path, f"known_faces/{folder_name}/photo_1.jpg")
+            except Exception as e:
+                print(f"[main] Photo cloud upload failed, continuing with local copy only: {e}")
             _clear_face_cache()
 
         cur.execute(
@@ -314,12 +321,71 @@ def get_attendance(date: str = None):
 @app.get("/cameras", dependencies=[Depends(verify_token)])
 def list_cameras():
     now = datetime.now()
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, rtsp_url, location, enabled FROM cameras")
+        rows = cur.fetchall()
+        cur.close()
     result = []
-    for cam in config.CAMERAS:
+    for cam in rows:
         heartbeat = get_camera_heartbeat(cam["id"])
         is_live = heartbeat is not None and (now - heartbeat).total_seconds() <= config.CAMERA_OFFLINE_THRESHOLD_SEC
-        result.append({"id": cam["id"], "name": cam["name"], "live": is_live})
+        result.append({"id": cam["id"], "name": cam["name"], "location": cam["location"], "enabled": cam["enabled"], "live": is_live})
     return result
+
+class CameraRequest(BaseModel):
+    id: str
+    name: str
+    rtsp_url: str
+    location: str = None
+    enabled: bool = True
+
+@app.post("/cameras", dependencies=[Depends(require_admin)])
+def add_camera(payload: CameraRequest):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO cameras (id, name, rtsp_url, location, enabled) VALUES (%s, %s, %s, %s, %s)",
+            (payload.id, payload.name, payload.rtsp_url, payload.location or payload.id, payload.enabled)
+        )
+        conn.commit()
+        cur.close()
+    return {"message": "Camera added — restart backend to apply"}
+
+@app.put("/cameras/{camera_id}", dependencies=[Depends(require_admin)])
+def update_camera(camera_id: str, payload: CameraRequest):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE cameras SET name=%s, rtsp_url=%s, location=%s, enabled=%s WHERE id=%s",
+            (payload.name, payload.rtsp_url, payload.location or camera_id, payload.enabled, camera_id)
+        )
+        conn.commit()
+        cur.close()
+    return {"message": "Camera updated — restart backend to apply"}
+
+@app.delete("/cameras/{camera_id}", dependencies=[Depends(require_admin)])
+def delete_camera(camera_id: str):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM cameras WHERE id = %s", (camera_id,))
+        conn.commit()
+        cur.close()
+    return {"message": "Camera deleted — restart backend to apply"}
+
+def _seed_cameras_from_config():
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as count FROM cameras")
+        count = cur.fetchone()["count"]
+        if count == 0:
+            for cam in config.CAMERAS:
+                cur.execute(
+                    "INSERT INTO cameras (id, name, rtsp_url, location, enabled) VALUES (%s, %s, %s, %s, %s)",
+                    (cam["id"], cam["name"], cam["source"], cam.get("location", cam["id"]), True)
+                )
+            conn.commit()
+        cur.close()
 
 @app.get("/status", dependencies=[Depends(verify_token)])
 def get_status():
