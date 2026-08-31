@@ -101,14 +101,18 @@ def init_db():
         )
     """)
     cursor.execute("""
+            ALTER TABLE alerts ADD COLUMN IF NOT EXISTS snapshot_filename TEXT
+        """)
+    cursor.execute("""
+            ALTER TABLE alerts ADD COLUMN IF NOT EXISTS camera_id TEXT
+        """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS employee_photos (
             id SERIAL PRIMARY KEY,
             employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
             filename TEXT NOT NULL
         )
-    """)
-    cursor.execute("""
-        ALTER TABLE alerts ADD COLUMN IF NOT EXISTS snapshot_filename TEXT
     """)
     cursor.execute("""
         ALTER TABLE employees ADD COLUMN IF NOT EXISTS designation TEXT NOT NULL DEFAULT 'Staff'
@@ -125,6 +129,7 @@ def init_db():
     cursor.execute("""
         ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()
     """)
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
             id SERIAL PRIMARY KEY,
@@ -134,6 +139,9 @@ def init_db():
             last_seen TEXT NOT NULL,
             UNIQUE(employee_id, attendance_date)
         )
+    """)
+    cursor.execute("""
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS last_camera_id TEXT
     """)
 
     cursor.execute("DROP TABLE IF EXISTS currently_detected")
@@ -149,6 +157,16 @@ def init_db():
         CREATE TABLE IF NOT EXISTS system_state (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cameras (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            rtsp_url TEXT NOT NULL,
+            location TEXT,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE
         )
     """)
 
