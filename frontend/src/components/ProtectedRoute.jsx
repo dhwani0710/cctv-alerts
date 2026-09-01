@@ -1,21 +1,13 @@
-import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import React from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth, dashboardFor } from '../context/AuthContext.jsx';
 
-export const ProtectedRoute = ({ children, allowedRoles = [] }) => {
-  const { user, getDefaultRedirect } = useAuth();
-  const location = useLocation();
+export default function ProtectedRoute({ allowedRoles, children }) {
+  const { session } = useAuth();
 
-  if (!user || !user.token) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+  if (!session) return <Navigate to="/login" replace />;
+  if (!allowedRoles.includes(session.role)) {
+    return <Navigate to={`${dashboardFor(session.role)}?denied=1`} replace />;
   }
-
-  if (allowedRoles.length > 0) {
-    const userRole = (user.role || '').toLowerCase();
-    const normalized = allowedRoles.map(r => r.toLowerCase());
-    if (!normalized.includes(userRole)) {
-      return <Navigate to={getDefaultRedirect(user.role)} replace />;
-    }
-  }
-
   return children;
-};
+}
