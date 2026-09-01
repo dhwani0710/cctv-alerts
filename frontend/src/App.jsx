@@ -1,69 +1,42 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { ProtectedRoute } from './components/ProtectedRoute';
-import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { AdminPage } from './pages/AdminPage';
-import { AttendancePage } from './pages/AttendancePage';
-import { SettingsPage } from './pages/SettingsPage';
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext.jsx';
+import ProtectedRoute from './components/ProtectedRoute.jsx';
+import Login from './pages/Login.jsx';
+import AdminDashboard from './pages/AdminDashboard.jsx';
+import EmployeeDashboard from './pages/EmployeeDashboard.jsx';
+import CamerasAlerts from './pages/CamerasAlerts.jsx';
+import Records from './pages/Records.jsx';
+import AdminEmployees from './pages/AdminEmployees.jsx';
 
-const RootRedirect = () => {
-  const { user, getDefaultRedirect } = useAuth();
-  if (!user || !user.token) {
-    return <Navigate to="/login" replace />;
-  }
-  return <Navigate to={getDefaultRedirect(user.role)} replace />;
-};
-
-function App() {
+export default function App() {
   return (
-    <Router>
-      <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute allowedRoles={['admin', 'manager', 'guard']}>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute allowedRoles={['admin', 'manager']}>
-                <AdminPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/attendance"
-            element={
-              <ProtectedRoute allowedRoles={['admin', 'manager']}>
-                <AttendancePage />
-              </ProtectedRoute>
-            }
-          />
-          
-          <Route
-            path="/settings"
-            element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <SettingsPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route path="/" element={<RootRedirect />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AuthProvider>
-    </Router>
+    <AuthProvider>
+      <Routes>
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/admin-dashboard"
+          element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>}
+        />
+        <Route
+          path="/employee-dashboard"
+          element={<ProtectedRoute allowedRoles={['employee']}><EmployeeDashboard /></ProtectedRoute>}
+        />
+        <Route
+          path="/admin-employees"
+          element={<ProtectedRoute allowedRoles={['admin']}><AdminEmployees /></ProtectedRoute>}
+        />
+        <Route
+          path="/cameras-alerts"
+          element={<ProtectedRoute allowedRoles={['admin', 'employee']}><CamerasAlerts /></ProtectedRoute>}
+        />
+        <Route
+          path="/records"
+          element={<ProtectedRoute allowedRoles={['admin', 'employee']}><Records /></ProtectedRoute>}
+        />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </AuthProvider>
   );
 }
-
-export default App;
