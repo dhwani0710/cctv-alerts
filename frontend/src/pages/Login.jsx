@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, dashboardFor } from '../context/AuthContext.jsx';
 import HallmarkStamp from '../components/HallmarkStamp.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
 
 export default function Login() {
   const { login, session } = useAuth();
@@ -44,7 +45,10 @@ export default function Login() {
       </div>
       <div className="login-panel">
         <div className="login-card">
-          <span className="eyebrow">Secure Access</span>
+          <div className="login-card-top">
+            <span className="eyebrow">Secure Access</span>
+            <ThemeToggle />
+          </div>
           <h2>Sign in</h2>
           <p className="sub">Enter the username and password issued to you.</p>
           {error && <div className="form-error show">Incorrect username or password. Try again.</div>}
