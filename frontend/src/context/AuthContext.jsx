@@ -1,92 +1,64 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext(null);
+const SESSION_KEY = 'vaultwatch_session';
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    const token = localStorage.getItem('cctv_auth_token');
-    const role = localStorage.getItem('cctv_user_role');
-    const username = localStorage.getItem('cctv_username');
-    if (!token) return null;
-    return { token, role, username };
-  });
+/*
+ * DEMO / MOCK AUTH ONLY. Replace `login()` below with a real fetch()
+ * to your backend when it's ready — see the comment inside it.
+ * IMPORTANT: the backend must independently reject an employee's
+ * token on any admin-only endpoint. This context only controls what
+ * the UI shows; it can't stop someone calling an admin API route
+ * directly. Real enforcement belongs on the server.
+ */
+const DEMO_USERS = [
+  { username: 'admin', password: 'admin123', role: 'admin', name: 'S. Kapoor' },
+  { username: 'employee', password: 'employee123', role: 'employee', name: 'R. Verma' },
+];
 
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
-  const navigate = useNavigate();
+function readSession() {
+  const raw = sessionStorage.getItem(SESSION_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('light', theme === 'light');
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+export function dashboardFor(role) {
+  return role === 'admin' ? '/admin-dashboard' : '/employee-dashboard';
+}
 
-  const toggleTheme = () => {
-    setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
-  };
+export function AuthProvider({ children }) {
+  const [session, setSession] = useState(readSession);
 
-  const login = async (username, password) => {
-    const res = await fetch('/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
-    });
+  function login(username, password) {
+    // TO WIRE UP A REAL BACKEND:
+    //   const res = await fetch('/api/login', { method:'POST',
+    //     headers:{'Content-Type':'application/json'},
+    //     body: JSON.stringify({ username, password }) });
+    //   const data = await res.json();
+    //   if (!data.ok) return { ok:false };
+    //   store data.token instead of a plain session object.
+    const match = DEMO_USERS.find(
+      (u) => u.username === username.trim() && u.password === password
+    );
+    if (!match) return { ok: false };
+    const next = { username: match.username, role: match.role, name: match.name, loggedInAt: Date.now() };
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+    setSession(next);
+    return { ok: true, session: next };
+  }
 
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || data.detail || 'Authentication failed');
-    }
-
-    const authData = {
-      token: data.token,
-      role: data.role.toLowerCase(),
-      username: data.username
-    };
-
-    localStorage.setItem('cctv_auth_token', authData.token);
-    localStorage.setItem('cctv_user_role', authData.role);
-    localStorage.setItem('cctv_username', authData.username);
-
-    setUser(authData);
-    return authData;
-  };
-
-  const logout = () => {
-    localStorage.removeItem('cctv_auth_token');
-    localStorage.removeItem('cctv_user_role');
-    localStorage.removeItem('cctv_username');
-    setUser(null);
-    navigate('/login');
-  };
-
-  const getDefaultRedirect = (role) => {
-    const r = (role || '').toLowerCase();
-    if (r === 'guard') return '/dashboard';
-    return '/admin';
-  };
-
-  const apiFetch = async (url, options = {}) => {
-    const headers = {
-      ...(options.headers || {}),
-      ...(user?.token ? { Authorization: `Bearer ${user.token}` } : {})
-    };
-
-    try {
-      const res = await fetch(url, { ...options, headers });
-      if (res.status === 401) {
-        logout();
-      }
-      return res;
-    } catch (err) {
-      console.error('API Fetch error:', err);
-      throw err;
-    }
-  };
+  function logout() {
+    sessionStorage.removeItem(SESSION_KEY);
+    setSession(null);
+  }
 
   return (
-    <AuthContext.Provider value={{ user, theme, toggleTheme, login, logout, getDefaultRedirect, apiFetch }}>
+    <AuthContext.Provider value={{ session, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
-};
+}
 
-export const useAuth = () => useContext(AuthContext);
+export function useAuth() {
+  return useContext(AuthContext);
+}
