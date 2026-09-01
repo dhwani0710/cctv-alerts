@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth, dashboardFor } from '../context/AuthContext.jsx';
 import { MOCK_ALERTS, initials } from '../data/mockData.js';
 import HallmarkStamp from './HallmarkStamp.jsx';
+import ThemeToggle from './ThemeToggle.jsx';
 
 const NAV_ICONS = {
   dashboard: (
@@ -98,6 +99,7 @@ export default function Shell({ active, dark = false, title, children }) {
               <div className="avatar">{initials(session.name)}</div>
               <span className="name">{session.name}</span>
             </div>
+            <ThemeToggle />
             <button className="logout-btn" onClick={handleLogout}>Sign out</button>
           </div>
         </header>
