@@ -275,3 +275,8 @@ table.records tr:last-child td{ border-bottom:none; }
 .staff-card .row{ display:flex; justify-content:space-between; font-size:12px; padding:6px 0; border-top:1px solid var(--border); }
 .staff-card .row span:first-child{ color:var(--text-muted); }
 .staff-card .actions{ display:flex; gap:8px; margin-top:14px; }
+
+.alerts-activity-grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:stretch; }
+@media (max-width:900px){ .alerts-activity-grid{ grid-template-columns:1fr; } }
+
+.log-row{ grid-template-columns:10px auto 1fr auto; }
