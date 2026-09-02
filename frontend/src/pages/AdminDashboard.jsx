@@ -3,14 +3,18 @@ import { Link } from 'react-router-dom';
 import Shell from '../components/Shell.jsx';
 import { MOCK_ALERTS, MOCK_RECORDS } from '../data/mockData.js';
 
+// Records describing the same real event as an alert (worded differently)
+// are excluded here so nothing repeats between the two boxes.
+const DUPLICATE_EVENTS = ['Face flagged', 'Camera offline', 'After-hours motion'];
+const activityRecords = MOCK_RECORDS.filter((r) => !DUPLICATE_EVENTS.includes(r.event));
+
 export default function AdminDashboard() {
   return (
     <Shell active="dashboard" dark title="Overview">
       <div className="page-head">
-        <span className="eyebrow">Admin</span>
         <h1>Good to see you</h1>
-        <p>Here's what the store looked like today.</p>
       </div>
+
       <div className="stat-grid">
         <div className="stat-card good">
           <span className="eyebrow">Cameras live</span>
@@ -33,34 +37,34 @@ export default function AdminDashboard() {
           <div className="delta">entries logged since 00:00</div>
         </div>
       </div>
-      <div className="two-col">
+
+      <div className="alerts-activity-grid">
         <div className="panel">
           <div className="panel-head">
             <h2>Recent alerts</h2>
             <Link className="link-btn" to="/cameras-alerts">View all →</Link>
           </div>
-          {MOCK_ALERTS.slice(0, 3).map((a, i) => (
-            <div className="alert-item" key={i}>
-              <div className={`alert-sev ${a.sev === 'low' ? 'low' : ''}`} />
-              <div className="alert-body">
-                <div className="t">{a.title}</div>
-                <div className="d">{a.desc}</div>
-              </div>
-              <div className="alert-time mono">{a.time}</div>
+          {MOCK_ALERTS.map((a, i) => (
+            <div className="log-row" key={i}>
+              <div className={`log-dot ${a.sev === 'high' ? 'alert' : 'info'}`} />
+              <div className="log-time">{a.time}</div>
+              <div className="log-text">{a.title}</div>
+              <div className="log-tag">{a.sev === 'high' ? 'High' : 'Low'}</div>
             </div>
           ))}
         </div>
+
         <div className="panel">
           <div className="panel-head">
             <h2>Activity log</h2>
             <Link className="link-btn" to="/records">Full records →</Link>
           </div>
-          {MOCK_RECORDS.slice(0, 5).map((r, i) => (
+          {activityRecords.map((r, i) => (
             <div className="log-row" key={i}>
               <div className={`log-dot ${r.status === 'flag' ? 'alert' : r.status === 'review' ? 'info' : ''}`} />
-              <div className="log-time">{r.time.split(' · ').pop().split(' ').pop()}</div>
+              <div className="log-time">{r.time}</div>
               <div className="log-text">{r.event} — {r.camera}</div>
-              <div className="log-tag">{r.person === '—' ? 'system' : r.person}</div>
+              <div className="log-tag">{r.person}</div>
             </div>
           ))}
         </div>
