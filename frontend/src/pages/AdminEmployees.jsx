@@ -16,17 +16,20 @@ export default function AdminEmployees() {
 
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
+  const [shiftFilter, setShiftFilter] = useState('');
 
   const roles = useMemo(() => Array.from(new Set(staff.map((s) => s.role))), [staff]);
+  const shifts = useMemo(() => Array.from(new Set(staff.map((s) => s.shift))), [staff]);
 
   const filteredStaff = useMemo(
     () =>
       staff.filter(
         (s) =>
           (!roleFilter || s.role === roleFilter) &&
+          (!shiftFilter || s.shift === shiftFilter) &&
           (!search || s.name.toLowerCase().includes(search.toLowerCase()))
       ),
-    [staff, search, roleFilter]
+    [staff, search, roleFilter, shiftFilter]
   );
 
   function handleSubmit(e) {
@@ -58,6 +61,10 @@ export default function AdminEmployees() {
         <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
           <option value="">All roles</option>
           {roles.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <select value={shiftFilter} onChange={(e) => setShiftFilter(e.target.value)}>
+          <option value="">All shifts</option>
+          {shifts.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
 
