@@ -8,6 +8,8 @@ import EmployeeDashboard from './pages/EmployeeDashboard.jsx';
 import CamerasAlerts from './pages/CamerasAlerts.jsx';
 import Records from './pages/Records.jsx';
 import AdminEmployees from './pages/AdminEmployees.jsx';
+import Attendance from './pages/Attendance.jsx';
+import Settings from './pages/Settings.jsx';
 
 export default function App() {
   return (
@@ -34,6 +36,14 @@ export default function App() {
         <Route
           path="/records"
           element={<ProtectedRoute allowedRoles={['admin', 'employee']}><Records /></ProtectedRoute>}
+        />
+        <Route
+          path="/attendance"
+          element={<ProtectedRoute allowedRoles={['admin']}><Attendance /></ProtectedRoute>}
+        />
+        <Route
+          path="/settings"
+          element={<ProtectedRoute allowedRoles={['admin', 'employee']}><Settings /></ProtectedRoute>}
         />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
