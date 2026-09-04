@@ -2,19 +2,7 @@ import React, { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext(null);
 const SESSION_KEY = 'vaultwatch_session';
-
-/*
- * DEMO / MOCK AUTH ONLY. Replace `login()` below with a real fetch()
- * to your backend when it's ready — see the comment inside it.
- * IMPORTANT: the backend must independently reject an employee's
- * token on any admin-only endpoint. This context only controls what
- * the UI shows; it can't stop someone calling an admin API route
- * directly. Real enforcement belongs on the server.
- */
-const DEMO_USERS = [
-  { username: 'admin', password: 'admin123', role: 'admin', name: 'S. Kapoor' },
-  { username: 'employee', password: 'employee123', role: 'employee', name: 'R. Verma' },
-];
+const API_BASE = 'http://localhost:8000';
 
 function readSession() {
   const raw = sessionStorage.getItem(SESSION_KEY);
@@ -29,22 +17,29 @@ export function dashboardFor(role) {
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(readSession);
 
-  function login(username, password) {
-    // TO WIRE UP A REAL BACKEND:
-    //   const res = await fetch('/api/login', { method:'POST',
-    //     headers:{'Content-Type':'application/json'},
-    //     body: JSON.stringify({ username, password }) });
-    //   const data = await res.json();
-    //   if (!data.ok) return { ok:false };
-    //   store data.token instead of a plain session object.
-    const match = DEMO_USERS.find(
-      (u) => u.username === username.trim() && u.password === password
-    );
-    if (!match) return { ok: false };
-    const next = { username: match.username, role: match.role, name: match.name, loggedInAt: Date.now() };
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
-    setSession(next);
-    return { ok: true, session: next };
+  async function login(username, password) {
+    try {
+      const res = await fetch(`${API_BASE}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      const data = await res.json();
+      if (!data.ok) return { ok: false };
+
+      const next = {
+        username: data.username,
+        role: data.role,
+        name: data.name,
+        token: data.token,
+        loggedInAt: Date.now(),
+      };
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+      setSession(next);
+      return { ok: true, session: next };
+    } catch (err) {
+      return { ok: false };
+    }
   }
 
   function logout() {
@@ -52,8 +47,18 @@ export function AuthProvider({ children }) {
     setSession(null);
   }
 
+  async function apiFetch(path, options = {}) {
+    const headers = {
+      ...(options.headers || {}),
+      ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+    };
+    const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    if (res.status === 401) logout();
+    return res;
+  }
+
   return (
-    <AuthContext.Provider value={{ session, login, logout }}>
+    <AuthContext.Provider value={{ session, login, logout, apiFetch }}>
       {children}
     </AuthContext.Provider>
   );
