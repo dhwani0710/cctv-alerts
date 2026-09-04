@@ -1,22 +1,49 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import Shell from '../components/Shell.jsx';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-import { MOCK_STAFF_INITIAL, initials } from '../data/mockData.js';
+import { initials } from '../data/mockData.js';
 
 export default function AdminEmployees() {
-  const { session } = useAuth();
+  const { session, apiFetch } = useAuth();
   const isAdmin = session.role === 'admin';
 
-  const [staff, setStaff] = useState(MOCK_STAFF_INITIAL);
+  const [staff, setStaff] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
+  const [photos, setPhotos] = useState([]);
 
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [shiftFilter, setShiftFilter] = useState('');
+
+  const [editTarget, setEditTarget] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editStart, setEditStart] = useState('');
+  const [editEnd, setEditEnd] = useState('');
+  const [editPhoto, setEditPhoto] = useState(null);
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const loadStaff = useCallback(async () => {
+    const res = await apiFetch('/employees');
+    if (res.ok) {
+      const data = await res.json();
+      setStaff(data.map((e) => ({
+        id: e.id,
+        name: e.name,
+        role: e.designation || 'Staff',
+        shift_start: e.shift_start,
+        shift_end: e.shift_end,
+        shift: `${e.shift_start} – ${e.shift_end}`,
+      })));
+    }
+  }, [apiFetch]);
+
+  useEffect(() => { loadStaff(); }, [loadStaff]);
 
   const roles = useMemo(() => Array.from(new Set(staff.map((s) => s.role))), [staff]);
   const shifts = useMemo(() => Array.from(new Set(staff.map((s) => s.shift))), [staff]);
@@ -32,11 +59,56 @@ export default function AdminEmployees() {
     [staff, search, roleFilter, shiftFilter]
   );
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    setStaff([...staff, { name, role, shift: start && end ? `${start} – ${end}` : '—', added: 'Today' }]);
-    setName(''); setRole(''); setStart(''); setEnd('');
-    setShowAdd(false);
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('designation', role);
+    formData.append('shift_start', start);
+    formData.append('shift_end', end);
+    for (let i = 0; i < photos.length; i++) formData.append('photos', photos[i]);
+
+    const res = await apiFetch('/employees', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (res.ok && !data.error) {
+      setName(''); setRole(''); setStart(''); setEnd(''); setPhotos([]);
+      setShowAdd(false);
+      loadStaff();
+    } else {
+      alert(data.error || 'Failed to add employee');
+    }
+  }
+
+  function openEdit(s) {
+    setEditTarget(s);
+    setEditName(s.name);
+    setEditStart(s.shift_start);
+    setEditEnd(s.shift_end);
+    setEditPhoto(null);
+  }
+
+  async function confirmEdit() {
+    const formData = new FormData();
+    formData.append('name', editName);
+    formData.append('designation', editTarget.role);
+    formData.append('shift_start', editStart);
+    formData.append('shift_end', editEnd);
+    if (editPhoto) formData.append('photo', editPhoto);
+
+    const res = await apiFetch(`/employees/${editTarget.id}`, { method: 'PUT', body: formData });
+    const data = await res.json();
+    if (res.ok && !data.error) {
+      setEditTarget(null);
+      loadStaff();
+    } else {
+      alert(data.error || 'Failed to update employee');
+    }
+  }
+
+  async function confirmDelete() {
+    await apiFetch(`/employees/${deleteTarget.id}`, { method: 'DELETE' });
+    setDeleteTarget(null);
+    loadStaff();
   }
 
   return (
@@ -76,7 +148,7 @@ export default function AdminEmployees() {
             <div className="field"><label>Role</label><input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Sales Associate" required /></div>
             <div className="field"><label>Shift start</label><input type="time" value={start} onChange={(e) => setStart(e.target.value)} required /></div>
             <div className="field"><label>Shift end</label><input type="time" value={end} onChange={(e) => setEnd(e.target.value)} required /></div>
-            <div className="field" style={{ gridColumn: '1/-1' }}><label>Photo (for face match)</label><input type="file" accept="image/*" /></div>
+            <div className="field" style={{ gridColumn: '1/-1' }}><label>Photo (for face match)</label><input type="file" accept="image/*" multiple required onChange={(e) => setPhotos(e.target.files)} /></div>
             <div style={{ gridColumn: '1/-1', display: 'flex', gap: 10 }}>
               <button type="submit" className="btn btn-brass">Save employee</button>
               <button type="button" className="btn btn-outline" onClick={() => setShowAdd(false)}>Cancel</button>
@@ -90,17 +162,16 @@ export default function AdminEmployees() {
       </div>
 
       <div className="staff-grid">
-        {filteredStaff.map((s, i) => (
-          <div className="staff-card" key={i}>
+        {filteredStaff.map((s) => (
+          <div className="staff-card" key={s.id}>
             <div className="avatar">{initials(s.name)}</div>
             <div className="name">{s.name}</div>
             <div className="role">{s.role}</div>
             <div className="row"><span>Shift</span><span>{s.shift}</span></div>
-            <div className="row"><span>Added</span><span>{s.added}</span></div>
             {isAdmin && (
               <div className="actions">
-                <button className="btn btn-outline btn-sm">Edit</button>
-                <button className="btn btn-danger btn-sm">Remove</button>
+                <button className="btn btn-outline btn-sm" onClick={() => openEdit(s)}>Edit</button>
+                <button className="btn btn-danger btn-sm" onClick={() => setDeleteTarget(s)}>Remove</button>
               </div>
             )}
           </div>
@@ -109,6 +180,36 @@ export default function AdminEmployees() {
           <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No staff match that search.</p>
         )}
       </div>
+
+      {editTarget && (
+        <div className="cam-lightbox-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setEditTarget(null); }}>
+          <div className="panel" style={{ maxWidth: 420, width: '100%' }}>
+            <div className="panel-head"><h2>Edit employee</h2></div>
+            <div style={{ display: 'grid', gap: 14 }}>
+              <div className="field"><label>Full name</label><input value={editName} onChange={(e) => setEditName(e.target.value)} /></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div className="field"><label>Shift start</label><input type="time" value={editStart} onChange={(e) => setEditStart(e.target.value)} /></div>
+                <div className="field"><label>Shift end</label><input type="time" value={editEnd} onChange={(e) => setEditEnd(e.target.value)} /></div>
+              </div>
+              <div className="field"><label>New photo (optional)</label><input type="file" accept="image/*" onChange={(e) => setEditPhoto(e.target.files[0] || null)} /></div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button className="btn btn-outline" onClick={() => setEditTarget(null)}>Cancel</button>
+                <button className="btn btn-brass" onClick={confirmEdit}>Save changes</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Remove employee"
+        message={deleteTarget ? `Are you sure you want to remove ${deleteTarget.name}? This cannot be undone.` : ''}
+        confirmLabel="Remove"
+        danger
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </Shell>
   );
 }
