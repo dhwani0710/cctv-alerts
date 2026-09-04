@@ -72,6 +72,37 @@ def already_alerted_recently(person_name, alert_type, priority, window_seconds=1
     alert_time = datetime.fromisoformat(row["timestamp"])
     return alert_time >= cutoff
 
+def get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id, window_seconds=120):
+    now = datetime.now()
+    cutoff = now - timedelta(seconds=window_seconds)
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, alert_count FROM incidents WHERE person_name = %s AND alert_type = %s "
+            "AND camera_id = %s AND last_seen >= %s ORDER BY last_seen DESC LIMIT 1",
+            (person_name, alert_type, camera_id, cutoff.isoformat())
+        )
+        row = cur.fetchone()
+
+        if row:
+            cur.execute(
+                "UPDATE incidents SET last_seen = %s, alert_count = alert_count + 1, priority = %s WHERE id = %s",
+                (now.isoformat(), priority, row["id"])
+            )
+            conn.commit()
+            cur.close()
+            return row["id"], row["alert_count"] + 1, False
+        else:
+            cur.execute(
+                "INSERT INTO incidents (person_name, alert_type, priority, camera_id, zone_id, first_seen, last_seen, alert_count) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, 1) RETURNING id",
+                (person_name, alert_type, priority, camera_id, zone_id, now.isoformat(), now.isoformat())
+            )
+            incident_id = cur.fetchone()["id"]
+            conn.commit()
+            cur.close()
+            return incident_id, 1, True
+
 def save_snapshot(frame):
     os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
     filename = f"{uuid.uuid4().hex}.jpg"
@@ -86,25 +117,30 @@ def save_snapshot(frame):
 
 PRIORITY_EMOJI = {"low": "🟡", "medium": "🟠", "high": "🔴"}
 
-def log_alert(person_name, alert_type, priority, message, frame=None, camera_id=None):
+def log_alert(person_name, alert_type, priority, message, frame=None, camera_id=None, zone_id=None):
     local_path, snapshot_url = (save_snapshot(frame) if frame is not None else (None, None))
     final_url = snapshot_url
     if local_path and not snapshot_url:
         final_url = f"/snapshots/{os.path.basename(local_path)}"
 
+    incident_id, alert_count, is_new = get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id)
+
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (person_name, alert_type, priority, message, datetime.now().isoformat(), final_url, camera_id)
+            "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id, zone_id, incident_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (person_name, alert_type, priority, message, datetime.now().isoformat(), final_url, camera_id, zone_id, incident_id)
         )
         conn.commit()
         cur.close()
 
     emoji = PRIORITY_EMOJI.get(priority, "")
     caption = f"{emoji} [{priority.upper()}] {message}"
+    if not is_new:
+        caption += f" (incident #{incident_id}, occurrence {alert_count})"
 
-    if local_path:
-        send_telegram_photo(local_path, caption)
-    else:
-        send_telegram_alert(caption)
+    if is_new:
+        if local_path:
+            send_telegram_photo(local_path, caption)
+        else:
+            send_telegram_alert(caption)

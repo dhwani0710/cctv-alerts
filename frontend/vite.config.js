@@ -7,16 +7,19 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/auth': 'http://localhost:8000',
-      '/employees': 'http://localhost:8000',
-      '/settings': 'http://localhost:8000',
-      '/attendance': 'http://localhost:8000',
-      '/status': 'http://localhost:8000',
-      '/cameras': 'http://localhost:8000',
-      '/snapshots': 'http://localhost:8000',
-      '/video_feed': 'http://localhost:8000',
-      '/users': 'http://localhost:8000',
-      '/login': 'http://localhost:8000',
+      '/auth': { target: 'http://localhost:8000', changeOrigin: true },
+      '/employees': { target: 'http://localhost:8000', changeOrigin: true },
+      '/settings': { target: 'http://localhost:8000', changeOrigin: true },
+      '/attendance': { target: 'http://localhost:8000', changeOrigin: true },
+      '/status': { target: 'http://localhost:8000', changeOrigin: true },
+      '/cameras': { target: 'http://localhost:8000', changeOrigin: true },
+      '/zones': { target: 'http://localhost:8000', changeOrigin: true },
+      '/incidents': { target: 'http://localhost:8000', changeOrigin: true },
+      '/snapshots': { target: 'http://localhost:8000', changeOrigin: true },
+      '/video_feed': { target: 'http://localhost:8000', changeOrigin: true },
+      '/users': { target: 'http://localhost:8000', changeOrigin: true },
+      '/login': { target: 'http://localhost:8000', changeOrigin: true },
+      '/records': { target: 'http://localhost:8000', changeOrigin: true },
     }
   }
 })
