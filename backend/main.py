@@ -15,6 +15,7 @@ from auth import verify_token, require_admin, require_staff
 from auth_users import verify_password, create_token, hash_password
 from settings_store import load_settings, save_settings
 import storage
+from PIL import Image, ImageOps
 
 app = FastAPI(title="Jewellery Store Alert System")
 
@@ -99,7 +100,6 @@ MAX_PHOTO_DIMENSION = 1024
 def _save_resized_photo(upload_file, destination_path):
     with open(destination_path, "wb") as buffer:
         shutil.copyfileobj(upload_file.file, buffer)
-
     img = Image.open(destination_path)
     img = ImageOps.exif_transpose(img)
     img = img.convert("RGB")
@@ -111,23 +111,6 @@ def _clear_face_cache():
     for f in os.listdir(KNOWN_FACES_DIR):
         if f.startswith("representations_") or f.endswith(".pkl"):
             os.remove(os.path.join(KNOWN_FACES_DIR, f))
-
-MAX_PHOTO_DIMENSION = 1024
-
-def _save_resized_photo(upload_file, destination_path):
-    from PIL import Image, ImageOps
-    with open(destination_path, "wb") as buffer:
-        shutil.copyfileobj(upload_file.file, buffer)
-    img = Image.open(destination_path)
-    img = ImageOps.exif_transpose(img)
-    img = img.convert("RGB")
-    if max(img.size) > MAX_PHOTO_DIMENSION:
-        img.thumbnail((MAX_PHOTO_DIMENSION, MAX_PHOTO_DIMENSION))
-    img.save(destination_path, "JPEG")
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
 
 @app.post("/login")
 def login(payload: LoginRequest):
@@ -259,7 +242,7 @@ def delete_employee(employee_id: int):
         if os.path.exists(employee_folder):
             shutil.rmtree(employee_folder)
 
-        storage.delete_prefix(f"known_faces/{folder_name}")
+        #storage.delete_prefix(f"known_faces/{folder_name}")
         _clear_face_cache()
 
         cur.execute("DELETE FROM employees WHERE id = %s", (employee_id,))
@@ -323,14 +306,14 @@ def list_cameras():
     now = datetime.now()
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name, rtsp_url, location, enabled FROM cameras")
+        cur.execute("SELECT id, name, rtsp_url, location, enabled, zone_id FROM cameras")
         rows = cur.fetchall()
         cur.close()
     result = []
     for cam in rows:
         heartbeat = get_camera_heartbeat(cam["id"])
         is_live = heartbeat is not None and (now - heartbeat).total_seconds() <= config.CAMERA_OFFLINE_THRESHOLD_SEC
-        result.append({"id": cam["id"], "name": cam["name"], "location": cam["location"], "enabled": cam["enabled"], "live": is_live})
+        result.append({"id": cam["id"], "name": cam["name"], "location": cam["location"], "zone_id": cam["zone_id"], "enabled": cam["enabled"], "live": is_live})
     return result
 
 class CameraRequest(BaseModel):
@@ -338,6 +321,7 @@ class CameraRequest(BaseModel):
     name: str
     rtsp_url: str
     location: str = None
+    zone_id: str = None
     enabled: bool = True
 
 @app.post("/cameras", dependencies=[Depends(require_admin)])
@@ -345,8 +329,8 @@ def add_camera(payload: CameraRequest):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO cameras (id, name, rtsp_url, location, enabled) VALUES (%s, %s, %s, %s, %s)",
-            (payload.id, payload.name, payload.rtsp_url, payload.location or payload.id, payload.enabled)
+            "INSERT INTO cameras (id, name, rtsp_url, location, enabled, zone_id) VALUES (%s, %s, %s, %s, %s, %s)",
+            (payload.id, payload.name, payload.rtsp_url, payload.location or payload.id, payload.enabled, payload.zone_id)
         )
         conn.commit()
         cur.close()
@@ -357,8 +341,8 @@ def update_camera(camera_id: str, payload: CameraRequest):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE cameras SET name=%s, rtsp_url=%s, location=%s, enabled=%s WHERE id=%s",
-            (payload.name, payload.rtsp_url, payload.location or camera_id, payload.enabled, camera_id)
+            "UPDATE cameras SET name=%s, rtsp_url=%s, location=%s, enabled=%s, zone_id=%s WHERE id=%s",
+            (payload.name, payload.rtsp_url, payload.location or camera_id, payload.enabled, payload.zone_id, camera_id)
         )
         conn.commit()
         cur.close()
@@ -386,6 +370,37 @@ def _seed_cameras_from_config():
                 )
             conn.commit()
         cur.close()
+
+class ZoneRequest(BaseModel):
+    id: str
+    name: str
+
+@app.get("/zones", dependencies=[Depends(verify_token)])
+def list_zones():
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, name FROM zones ORDER BY id")
+        rows = cur.fetchall()
+        cur.close()
+    return [dict(r) for r in rows]
+
+@app.post("/zones", dependencies=[Depends(require_admin)])
+def add_zone(payload: ZoneRequest):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("INSERT INTO zones (id, name) VALUES (%s, %s)", (payload.id, payload.name))
+        conn.commit()
+        cur.close()
+    return {"message": "Zone added"}
+
+@app.delete("/zones/{zone_id}", dependencies=[Depends(require_admin)])
+def delete_zone(zone_id: str):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM zones WHERE id = %s", (zone_id,))
+        conn.commit()
+        cur.close()
+    return {"message": "Zone deleted"}
 
 @app.get("/status", dependencies=[Depends(verify_token)])
 def get_status():
@@ -430,11 +445,6 @@ def get_snapshot(filename: str):
 @app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_token)])
 def video_feed(camera_id: str):
     return StreamingResponse(_mjpeg_generator(camera_id), media_type="multipart/x-mixed-replace; boundary=frame")
-
-class CreateUserRequest(BaseModel):
-    username: str
-    password: str
-    role: str
 
 @app.post("/users", dependencies=[Depends(require_admin)])
 def create_user(payload: CreateUserRequest):
@@ -487,3 +497,20 @@ def delete_user(user_id: int, current_user: dict = Depends(verify_token)):
         cur.close()
 
     return {"message": "User deleted successfully"}
+
+
+@app.get("/incidents", dependencies=[Depends(verify_token)])
+def list_incidents(status: str = None, limit: int = 100):
+    query = "SELECT * FROM incidents WHERE 1=1"
+    params = []
+    if status:
+        query += " AND status = %s"
+        params.append(status)
+    query += " ORDER BY last_seen DESC LIMIT %s"
+    params.append(limit)
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, tuple(params))
+        rows = cur.fetchall()
+        cur.close()
+    return [dict(r) for r in rows]
