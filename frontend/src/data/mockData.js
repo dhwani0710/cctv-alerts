@@ -29,6 +29,12 @@ export const MOCK_STAFF_INITIAL = [
   { name: 'A. Iyer', role: 'Sales Associate', shift: '12:00 – 20:00', added: 'Jan 2026' },
 ];
 
+export const MOCK_ATTENDANCE = [
+  { name: 'S. Kapoor', role: 'Admin', firstSeen: '08:52 AM', lastSeen: '06:10 PM', date: '02 Sep 2026' },
+  { name: 'R. Verma', role: 'Sales Associate', firstSeen: '09:04 AM', lastSeen: '05:02 PM', date: '02 Sep 2026' },
+  { name: 'A. Iyer', role: 'Sales Associate', firstSeen: '12:15 PM', lastSeen: '08:03 PM', date: '02 Sep 2026' },
+];
+
 export function initials(name) {
   return name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 }

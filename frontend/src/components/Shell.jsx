@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth, dashboardFor } from '../context/AuthContext.jsx';
 import { MOCK_ALERTS, initials } from '../data/mockData.js';
@@ -28,6 +28,17 @@ const NAV_ICONS = {
       <rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" />
     </svg>
   ),
+  attendance: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" />
+    </svg>
+  ),
+  settings: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  ),
 };
 
 function useClock() {
@@ -48,6 +59,9 @@ export default function Shell({ active, dark = false, title, children }) {
   const [params, setParams] = useSearchParams();
   const clock = useClock();
   const [toast, setToast] = useState(false);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const settingsIconRef = useRef(null);
+  const settingsMenuRef = useRef(null);
 
   useEffect(() => {
     if (params.get('denied') === '1') {
@@ -61,6 +75,28 @@ export default function Shell({ active, dark = false, title, children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (
+        settingsMenuRef.current &&
+        !settingsMenuRef.current.contains(e.target) &&
+        settingsIconRef.current &&
+        !settingsIconRef.current.contains(e.target)
+      ) {
+        setSettingsMenuOpen(false);
+      }
+    }
+    function handleEscape(e) {
+      if (e.key === 'Escape') setSettingsMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
+
   const hasHighAlert = MOCK_ALERTS.some((a) => a.sev === 'high');
   const isAdmin = session.role === 'admin';
 
@@ -69,11 +105,26 @@ export default function Shell({ active, dark = false, title, children }) {
     navigate('/login');
   }
 
+  function closeSettingsMenu() {
+  setSettingsMenuOpen(false);
+  navigate('/settings');
+}
+
   const navItems = [
     { key: 'dashboard', label: 'Dashboard', to: dashboardFor(session.role) },
     ...(isAdmin ? [{ key: 'employees', label: 'Employees', to: '/admin-employees' }] : []),
     { key: 'cameras', label: 'Cameras & Alerts', to: '/cameras-alerts' },
     { key: 'records', label: 'Records', to: '/records' },
+    ...(isAdmin ? [{ key: 'attendance', label: 'Attendance', to: '/attendance' }] : []),
+    { key: 'settings', label: 'Settings', to: '/settings' },
+  ];
+
+  const settingsTabItems = [
+    { key: 'notifications', label: 'Notifications' },
+    { key: 'thresholds', label: 'Alert thresholds' },
+    { key: 'security', label: 'Security' },
+    { key: 'account', label: 'Account' },
+    ...(isAdmin ? [{ key: 'system', label: 'System' }] : []),
   ];
 
   return (
@@ -81,12 +132,72 @@ export default function Shell({ active, dark = false, title, children }) {
       {toast && <div className="toast">That page isn't available for your account.</div>}
       <nav className="rail">
         <div className="rail-brand"><HallmarkStamp alert={hasHighAlert} /></div>
-        {navItems.map((item) => (
-          <Link key={item.key} to={item.to} className={`rail-link ${active === item.key ? 'active' : ''}`}>
-            {NAV_ICONS[item.key]}
-            <span className="tip">{item.label}</span>
-          </Link>
-        ))}
+        {navItems.map((item) =>
+          item.key === 'settings' ? (
+            <div key={item.key} style={{ position: 'relative' }} ref={settingsIconRef}>
+              <button
+                type="button"
+                className={`rail-link ${active === item.key ? 'active' : ''}`}
+                onClick={() => setSettingsMenuOpen((v) => !v)}
+              >
+                {NAV_ICONS[item.key]}
+                <span className="tip">{item.label}</span>
+              </button>
+
+              {settingsMenuOpen && (
+                <div className="settings-menu" ref={settingsMenuRef} role="menu">
+                  <div className="settings-menu-group">
+                    {settingsTabItems.map((t) => (
+                      <button
+                        key={t.key}
+                        className="settings-menu-item"
+                        role="menuitem"
+                        onClick={() => closeSettingsMenu()}
+                      >
+                        <span>{t.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {isAdmin && (
+                    <>
+                      <div className="settings-menu-divider" />
+                      <div className="settings-menu-group">
+                        <button
+                          className="settings-menu-item settings-menu-item-danger"
+                          role="menuitem"
+                          onClick={() => {
+                            closeSettingsMenu();
+                            navigate('/settings?tab=system');
+                          }}
+                        >
+                          <span>Danger zone</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="settings-menu-divider" />
+                  <div className="settings-menu-group">
+                    <button
+                      className="settings-menu-item settings-menu-item-foot"
+                      role="menuitem"
+                      onClick={() => goToSettingsTab('account')}
+                    >
+                      <span className="settings-menu-avatar">{session.name?.[0] || '?'}</span>
+                      <span>{session.name}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link key={item.key} to={item.to} className={`rail-link ${active === item.key ? 'active' : ''}`}>
+              {NAV_ICONS[item.key]}
+              <span className="tip">{item.label}</span>
+            </Link>
+          )
+        )}
         <div className="rail-spacer" />
       </nav>
       <div className="main">
