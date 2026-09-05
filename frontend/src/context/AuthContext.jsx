@@ -1,92 +1,69 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext(null);
+const SESSION_KEY = 'vaultwatch_session';
+const API_BASE = 'http://localhost:8000';
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    const token = localStorage.getItem('cctv_auth_token');
-    const role = localStorage.getItem('cctv_user_role');
-    const username = localStorage.getItem('cctv_username');
-    if (!token) return null;
-    return { token, role, username };
-  });
+function readSession() {
+  const raw = sessionStorage.getItem(SESSION_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
 
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
-  const navigate = useNavigate();
+export function dashboardFor(role) {
+  return role === 'admin' ? '/admin-dashboard' : '/employee-dashboard';
+}
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('light', theme === 'light');
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+export function AuthProvider({ children }) {
+  const [session, setSession] = useState(readSession);
 
-  const toggleTheme = () => {
-    setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
-  };
+  async function login(username, password) {
+    try {
+      const res = await fetch(`${API_BASE}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      const data = await res.json();
+      if (!data.ok) return { ok: false };
 
-  const login = async (username, password) => {
-    const res = await fetch('/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
-    });
-
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || data.detail || 'Authentication failed');
+      const next = {
+        username: data.username,
+        role: data.role,
+        name: data.name,
+        token: data.token,
+        loggedInAt: Date.now(),
+      };
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+      setSession(next);
+      return { ok: true, session: next };
+    } catch (err) {
+      return { ok: false };
     }
+  }
 
-    const authData = {
-      token: data.token,
-      role: data.role.toLowerCase(),
-      username: data.username
-    };
+  function logout() {
+    sessionStorage.removeItem(SESSION_KEY);
+    setSession(null);
+  }
 
-    localStorage.setItem('cctv_auth_token', authData.token);
-    localStorage.setItem('cctv_user_role', authData.role);
-    localStorage.setItem('cctv_username', authData.username);
-
-    setUser(authData);
-    return authData;
-  };
-
-  const logout = () => {
-    localStorage.removeItem('cctv_auth_token');
-    localStorage.removeItem('cctv_user_role');
-    localStorage.removeItem('cctv_username');
-    setUser(null);
-    navigate('/login');
-  };
-
-  const getDefaultRedirect = (role) => {
-    const r = (role || '').toLowerCase();
-    if (r === 'guard') return '/dashboard';
-    return '/admin';
-  };
-
-  const apiFetch = async (url, options = {}) => {
+  async function apiFetch(path, options = {}) {
     const headers = {
       ...(options.headers || {}),
-      ...(user?.token ? { Authorization: `Bearer ${user.token}` } : {})
+      ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
     };
-
-    try {
-      const res = await fetch(url, { ...options, headers });
-      if (res.status === 401) {
-        logout();
-      }
-      return res;
-    } catch (err) {
-      console.error('API Fetch error:', err);
-      throw err;
-    }
-  };
+    const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    if (res.status === 401) logout();
+    return res;
+  }
 
   return (
-    <AuthContext.Provider value={{ user, theme, toggleTheme, login, logout, getDefaultRedirect, apiFetch }}>
+    <AuthContext.Provider value={{ session, login, logout, apiFetch }}>
       {children}
     </AuthContext.Provider>
   );
-};
+}
 
-export const useAuth = () => useContext(AuthContext);
+export function useAuth() {
+  return useContext(AuthContext);
+}
