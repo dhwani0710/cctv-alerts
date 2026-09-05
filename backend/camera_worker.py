@@ -7,7 +7,7 @@ import threading
 import time
 from datetime import datetime
 from recognition import recognize_faces
-from alerts import get_alert_priority, is_within_store_hours, log_alert, format_duration, get_shift_datetimes, already_alerted_recently
+from alerts import get_alert_priority, is_within_store_hours, log_alert, format_duration, get_shift_datetimes, already_alerted_recently, escalate_stale_incidents
 from database import get_db
 import config
 
@@ -286,4 +286,16 @@ def _health_check_loop():
 
 def start_health_check_thread():
     t = threading.Thread(target=_health_check_loop, daemon=True)
+    t.start()
+
+def _escalation_loop():
+    while True:
+        time.sleep(config.ESCALATION_CHECK_INTERVAL_SEC)
+        try:
+            escalate_stale_incidents()
+        except Exception as e:
+            print(f"[escalation] Error: {e}")
+
+def start_escalation_thread():
+    t = threading.Thread(target=_escalation_loop, daemon=True)
     t.start()

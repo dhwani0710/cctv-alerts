@@ -11,9 +11,12 @@ import storage
 SNAPSHOTS_DIR = "snapshots"
 
 def get_alert_priority(minutes_past):
-    if minutes_past <= config.LOW_THRESHOLD_MIN:
+    from app_settings import get_setting_float
+    low = get_setting_float("overstay_low_threshold_min") or config.LOW_THRESHOLD_MIN
+    medium = get_setting_float("overstay_medium_threshold_min") or config.MEDIUM_THRESHOLD_MIN
+    if minutes_past <= low:
         return "low"
-    elif minutes_past <= config.MEDIUM_THRESHOLD_MIN:
+    elif minutes_past <= medium:
         return "medium"
     else:
         return "high"
@@ -56,7 +59,10 @@ def is_within_store_hours(now: datetime):
     close_t = now.replace(hour=close_h, minute=close_m, second=0, microsecond=0)
     return open_t <= now <= close_t
 
-def already_alerted_recently(person_name, alert_type, priority, window_seconds=120):
+def already_alerted_recently(person_name, alert_type, priority, window_seconds=None):
+    from app_settings import get_setting_int
+    if window_seconds is None:
+        window_seconds = get_setting_int("alert_dedupe_window_sec") or 60
     cutoff = datetime.now() - timedelta(seconds=window_seconds)
     with get_db() as conn:
         cur = conn.cursor()
@@ -72,7 +78,10 @@ def already_alerted_recently(person_name, alert_type, priority, window_seconds=1
     alert_time = datetime.fromisoformat(row["timestamp"])
     return alert_time >= cutoff
 
-def get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id, window_seconds=120):
+def get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id, window_seconds=None):
+    from app_settings import get_setting_int
+    if window_seconds is None:
+        window_seconds = get_setting_int("alert_dedupe_window_sec") or 60
     now = datetime.now()
     cutoff = now - timedelta(seconds=window_seconds)
     with get_db() as conn:
@@ -144,3 +153,41 @@ def log_alert(person_name, alert_type, priority, message, frame=None, camera_id=
             send_telegram_photo(local_path, caption)
         else:
             send_telegram_alert(caption)
+
+def escalate_stale_incidents():
+    now = datetime.now()
+    low_to_medium, medium_to_high = get_escalation_thresholds()
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, priority, first_seen, person_name, alert_type FROM incidents WHERE status = 'new'")
+        rows = cur.fetchall()
+        cur.close()
+
+    for r in rows:
+        first_seen = datetime.fromisoformat(r["first_seen"])
+        elapsed = (now - first_seen).total_seconds()
+        new_priority = None
+
+        if r["priority"] == "low" and elapsed >= low_to_medium:
+            new_priority = "medium"
+        elif r["priority"] == "medium" and elapsed >= medium_to_high:
+            new_priority = "high"
+
+        if new_priority:
+            with get_db() as conn:
+                cur = conn.cursor()
+                cur.execute("UPDATE incidents SET priority = %s WHERE id = %s", (new_priority, r["id"]))
+                conn.commit()
+                cur.close()
+
+            emoji = PRIORITY_EMOJI.get(new_priority, "")
+            msg = (f"{emoji} Incident #{r['id']} escalated to {new_priority.upper()} — "
+                   f"{r['person_name']} ({r['alert_type']}) unacknowledged for {int(elapsed/60)} min")
+            send_telegram_alert(msg)
+
+def get_escalation_thresholds():
+    from app_settings import get_setting_int
+    low_to_medium = get_setting_int("escalation_low_to_medium_sec") or config.ESCALATION_LOW_TO_MEDIUM_SEC
+    medium_to_high = get_setting_int("escalation_medium_to_high_sec") or config.ESCALATION_MEDIUM_TO_HIGH_SEC
+    return low_to_medium, medium_to_high
