@@ -13,6 +13,7 @@ export default function CamerasAlerts() {
   const [cameras, setCameras] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [dismissTarget, setDismissTarget] = useState(null);
+  const [snapshotView, setSnapshotView] = useState(null);
 
   const loadCameras = useCallback(async () => {
     const res = await apiFetch('/cameras');
@@ -103,7 +104,7 @@ export default function CamerasAlerts() {
           </div>
           <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
             {incidents.map((a) => (
-              <div className="alert-item" key={a.id}>
+              <div className="alert-item" key={a.id} onClick={() => a.snapshot_filename && setSnapshotView(a)} style={{ cursor: a.snapshot_filename ? 'pointer' : 'default' }}>
                 <div className={`alert-sev ${a.priority === 'low' ? 'low' : ''}`} />
                 <div className="alert-body" style={{ minWidth: 0 }}>
                   <div className="t" style={{ overflowWrap: 'break-word' }}>{a.person_name} — {a.alert_type}</div>
@@ -164,6 +165,27 @@ export default function CamerasAlerts() {
         onConfirm={confirmDismiss}
         onCancel={() => setDismissTarget(null)}
       />
+      {snapshotView && (
+        <div className="cam-lightbox-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setSnapshotView(null); }}>
+          <div className="cam-lightbox">
+            <img
+              src={snapshotView.snapshot_filename.startsWith('http') ? snapshotView.snapshot_filename : `http://localhost:8000${snapshotView.snapshot_filename}?token=${encodeURIComponent(session.token)}`}
+              alt="Alert snapshot"
+              style={{ width: '100%', height: 'auto', display: 'block' }}
+            />
+            <div className="cam-lightbox-head">
+              <div>
+                <div className="name">{snapshotView.person_name} — {snapshotView.alert_type}</div>
+              </div>
+              <button className="cam-lightbox-close" onClick={() => setSnapshotView(null)} aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Shell>
   );
 }
