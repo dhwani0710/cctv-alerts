@@ -541,3 +541,18 @@ def list_incidents(status: str = None, limit: int = 100):
         rows = cur.fetchall()
         cur.close()
     return [dict(r) for r in rows]
+
+class IncidentUpdateRequest(BaseModel):
+    status: str
+
+@app.put("/incidents/{incident_id}", dependencies=[Depends(require_staff)])
+def update_incident(incident_id: int, payload: IncidentUpdateRequest):
+    status = payload.status.strip().lower()
+    if status not in ["new", "acknowledged", "dismissed", "resolved"]:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE incidents SET status = %s WHERE id = %s", (status, incident_id))
+        conn.commit()
+        cur.close()
+    return {"message": "Incident updated"}
