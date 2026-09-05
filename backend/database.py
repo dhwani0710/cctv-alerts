@@ -38,6 +38,7 @@ def init_db():
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS snapshot_filename TEXT")
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS camera_id TEXT")
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS zone_id TEXT")
+    cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS permanent BOOLEAN NOT NULL DEFAULT FALSE")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS employee_photos (

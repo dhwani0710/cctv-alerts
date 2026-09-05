@@ -89,7 +89,7 @@ function useClock() {
 }
 
 /* ---------------- SETTINGS WINDOW (VS Code style modal) ---------------- */
-function SettingsWindow({ onClose, session }) {
+function SettingsWindow({ onClose, session, alerts }) {
   const isAdmin = session.role === 'admin';
   const canSeeThresholds = session.role !== 'employee';
 
@@ -108,8 +108,8 @@ function SettingsWindow({ onClose, session }) {
   const [notifyMotion, setNotifyMotion] = useState(true);
   const [notifyPerson, setNotifyPerson] = useState(true);
   const [notifyEmail, setNotifyEmail] = useState(false);
-  const motionAlertCount = useMemo(() => MOCK_ALERTS.filter((a) => /motion/i.test(a.title || '')).length, []);
-  const personAlertCount = useMemo(() => MOCK_ALERTS.filter((a) => /face|person|unrecognized/i.test(a.title || '')).length, []);
+  const motionAlertCount = useMemo(() => alerts.filter((a) => a.alert_type === 'stranger' || a.alert_type === 'camera_tamper').length, [alerts]);
+  const personAlertCount = useMemo(() => alerts.filter((a) => a.alert_type === 'overstay' || a.alert_type === 'early_arrival').length, [alerts]);
 
   // ---- Alert thresholds ----
   const [sensitivity, setSensitivity] = useState('medium');
@@ -402,8 +402,8 @@ export default function Shell({ active, dark = false, title, children }) {
   const [params, setParams] = useSearchParams();
   const clock = useClock();
   const [toast, setToast] = useState(false);
-<<<<<<< Updated upstream
   const [hasHighAlert, setHasHighAlert] = useState(false);
+  const [recentAlerts, setRecentAlerts] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -413,6 +413,7 @@ export default function Shell({ active, dark = false, title, children }) {
         if (res.ok && !cancelled) {
           const data = await res.json();
           setHasHighAlert((data.recent_alerts || []).some((a) => a.priority === 'high'));
+          setRecentAlerts(data.recent_alerts || []);
         }
       } catch {}
     }
@@ -423,9 +424,7 @@ export default function Shell({ active, dark = false, title, children }) {
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const settingsIconRef = useRef(null);
   const settingsMenuRef = useRef(null);
-=======
   const [settingsWindowOpen, setSettingsWindowOpen] = useState(false);
->>>>>>> Stashed changes
 
   useEffect(() => {
     if (params.get('denied') === '1') {
@@ -439,7 +438,6 @@ export default function Shell({ active, dark = false, title, children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-<<<<<<< Updated upstream
   useEffect(() => {
     function handleClickOutside(e) {
       if (
@@ -462,9 +460,6 @@ export default function Shell({ active, dark = false, title, children }) {
     };
   }, []);
 
-=======
-  const hasHighAlert = MOCK_ALERTS.some((a) => a.sev === 'high');
->>>>>>> Stashed changes
   const isAdmin = session.role === 'admin';
   const isHr = session.role === 'hr';
   const isGuard = session.role === 'guard';
@@ -525,7 +520,7 @@ export default function Shell({ active, dark = false, title, children }) {
       </div>
 
       {settingsWindowOpen && (
-        <SettingsWindow session={session} onClose={() => setSettingsWindowOpen(false)} />
+        <SettingsWindow session={session} alerts={recentAlerts} onClose={() => setSettingsWindowOpen(false)} />
       )}
     </div>
   );

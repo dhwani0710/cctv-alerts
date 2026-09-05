@@ -325,8 +325,6 @@ table.records tr:last-child td{ border-bottom:none; }
 .settings-menu-item-foot{ gap:9px; }
 .settings-menu-avatar{ width:22px; height:22px; border-radius:50%; background:var(--brass);
   color:#1A1200; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-<<<<<<< Updated upstream
-=======
 
   /* ---------- settings window (VS Code style) ---------- */
 .settings-window-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.6); backdrop-filter:blur(2px);
@@ -379,4 +377,3 @@ table.records tr:last-child td{ border-bottom:none; }
 .settings-window-result:hover{ background:var(--chrome-hover); }
 .settings-window-result-cat{ font-size:11px; color:var(--text-on-chrome-muted); font-family:var(--font-mono); }
 .settings-window-noresults{ padding:16px; color:var(--text-on-chrome-muted); font-size:13px; }
->>>>>>> Stashed changes

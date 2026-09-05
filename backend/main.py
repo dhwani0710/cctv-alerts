@@ -16,6 +16,7 @@ from auth_users import verify_password, create_token, hash_password
 from settings_store import load_settings, save_settings
 import storage
 from PIL import Image, ImageOps
+from retention import start_retention_thread
 
 app = FastAPI(title="Jewellery Store Alert System")
 
@@ -41,6 +42,7 @@ def startup():
     start_camera_threads()
     start_health_check_thread()
     start_escalation_thread()
+    start_retention_thread()
 
 @app.get("/")
 def health_check():
@@ -539,8 +541,19 @@ def list_incidents(status: str = None, limit: int = 100):
         cur = conn.cursor()
         cur.execute(query, tuple(params))
         rows = cur.fetchall()
+
+        result = []
+        for r in rows:
+            row = dict(r)
+            cur.execute(
+                "SELECT snapshot_filename FROM alerts WHERE incident_id = %s AND snapshot_filename IS NOT NULL ORDER BY timestamp DESC LIMIT 1",
+                (r["id"],)
+            )
+            snap = cur.fetchone()
+            row["snapshot_filename"] = snap["snapshot_filename"] if snap else None
+            result.append(row)
         cur.close()
-    return [dict(r) for r in rows]
+    return result
 
 class IncidentUpdateRequest(BaseModel):
     status: str
@@ -556,3 +569,59 @@ def update_incident(incident_id: int, payload: IncidentUpdateRequest):
         conn.commit()
         cur.close()
     return {"message": "Incident updated"}
+
+@app.get("/reports/attendance-summary", dependencies=[Depends(require_staff)])
+def attendance_summary(start_date: str = None, end_date: str = None):
+    start_date = start_date or datetime.now().date().isoformat()
+    end_date = end_date or start_date
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT e.name, a.attendance_date, a.first_seen, a.last_seen FROM attendance a "
+            "JOIN employees e ON e.id = a.employee_id "
+            "WHERE a.attendance_date BETWEEN %s AND %s ORDER BY a.attendance_date DESC, e.name",
+            (start_date, end_date)
+        )
+        rows = cur.fetchall()
+        cur.close()
+    return [dict(r) for r in rows]
+
+@app.get("/reports/alert-frequency", dependencies=[Depends(require_staff)])
+def alert_frequency(start_date: str = None, end_date: str = None):
+    start_date = start_date or datetime.now().date().isoformat()
+    end_date = end_date or start_date
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT alert_type, priority, COUNT(*) as count FROM alerts "
+            "WHERE timestamp BETWEEN %s AND %s "
+            "GROUP BY alert_type, priority ORDER BY count DESC",
+            (f"{start_date}T00:00:00", f"{end_date}T23:59:59")
+        )
+        rows = cur.fetchall()
+        cur.close()
+    return [dict(r) for r in rows]
+
+@app.get("/reports/incident-response-times", dependencies=[Depends(require_staff)])
+def incident_response_times(start_date: str = None, end_date: str = None):
+    start_date = start_date or datetime.now().date().isoformat()
+    end_date = end_date or start_date
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, person_name, alert_type, priority, status, first_seen, last_seen, alert_count "
+            "FROM incidents WHERE first_seen BETWEEN %s AND %s ORDER BY first_seen DESC",
+            (f"{start_date}T00:00:00", f"{end_date}T23:59:59")
+        )
+        rows = cur.fetchall()
+        cur.close()
+    return [dict(r) for r in rows]
+
+@app.put("/records/{alert_id}/permanent", dependencies=[Depends(require_admin)])
+def mark_permanent(alert_id: int, permanent: bool = True):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE alerts SET permanent = %s WHERE id = %s", (permanent, alert_id))
+        conn.commit()
+        cur.close()
+    return {"message": "Updated"}
