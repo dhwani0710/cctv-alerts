@@ -62,9 +62,12 @@ def recognize_faces(frame):
                 folder_name = os.path.basename(os.path.dirname(identity_path))
                 matches_by_employee.setdefault(folder_name, []).append(row[distance_col])
 
+            from app_settings import get_setting_int
+            min_matching = get_setting_int("min_matching_photos") or 2
+
             accepted_name = "Unknown"
             for folder_name, distances in matches_by_employee.items():
-                required = min(getattr(config, "MIN_MATCHING_PHOTOS", 1), photo_counts.get(folder_name, 1))
+                required = min(min_matching, photo_counts.get(folder_name, 1))
                 print(f"[DEBUG] {folder_name}: {len(distances)} photo(s) matched (need {required}), distances: {distances}")
                 if len(distances) >= required:
                     accepted_name = folder_name.replace("_", " ")

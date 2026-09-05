@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from database import init_db, get_db
-from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat
+from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, start_escalation_thread
 from datetime import datetime, timedelta
 import config
 from auth import verify_token, require_admin, require_staff
@@ -40,6 +40,7 @@ def startup():
     storage.sync_known_faces_from_storage(KNOWN_FACES_DIR)
     start_camera_threads()
     start_health_check_thread()
+    start_escalation_thread()
 
 @app.get("/")
 def health_check():
@@ -251,19 +252,36 @@ def delete_employee(employee_id: int):
 
     return {"message": "Employee deleted"}
 
-@app.get("/settings", dependencies=[Depends(require_admin)])
-def get_settings():
-    return load_settings()
+from app_settings import get_all_settings, set_setting
 
-@app.post("/settings", dependencies=[Depends(require_admin)])
-def update_settings(store_open_time: str = Form(...), store_close_time: str = Form(...)):
-    save_settings({"store_open_time": store_open_time, "store_close_time": store_close_time})
-    return {"message": "Settings updated"}
+@app.get("/app-settings", dependencies=[Depends(require_admin)])
+def get_app_settings():
+    return get_all_settings()
+
+class AppSettingRequest(BaseModel):
+    key: str
+    value: str
+
+@app.post("/app-settings", dependencies=[Depends(require_admin)])
+def update_app_setting(payload: AppSettingRequest):
+    allowed_keys = [
+        "min_matching_photos", "match_distance_threshold",
+        "overstay_low_threshold_min", "overstay_medium_threshold_min",
+        "alert_dedupe_window_sec", "escalation_low_to_medium_sec", "escalation_medium_to_high_sec",
+    ]
+    if payload.key not in allowed_keys:
+        raise HTTPException(status_code=400, detail="Unknown setting key")
+    set_setting(payload.key, payload.value)
+    return {"message": "Setting updated"}
 
 @app.get("/records", dependencies=[Depends(verify_token)])
 def get_records(camera: str = None, status: str = None, date: str = None, limit: int = 100):
-    query = "SELECT person_name, alert_type, priority, message, timestamp, snapshot_filename FROM alerts WHERE 1=1"
+    query = "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM alerts WHERE 1=1"
     params = []
+
+    if camera:
+        query += " AND camera_id = %s"
+        params.append(camera)
 
     if status:
         status_map = {"flag": "high", "review": "medium", "clear": "low"}
@@ -285,6 +303,15 @@ def get_records(camera: str = None, status: str = None, date: str = None, limit:
         cur.close()
 
     return [dict(r) for r in rows]
+
+@app.delete("/records/{alert_id}", dependencies=[Depends(require_staff)])
+def delete_record(alert_id: int):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM alerts WHERE id = %s", (alert_id,))
+        conn.commit()
+        cur.close()
+    return {"message": "Record deleted"}
 
 @app.get("/attendance", dependencies=[Depends(verify_token)])
 def get_attendance(date: str = None):
