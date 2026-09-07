@@ -276,10 +276,6 @@ table.records tr:last-child td{ border-bottom:none; }
 .staff-card .row span:first-child{ color:var(--text-muted); }
 .staff-card .actions{ display:flex; gap:8px; margin-top:14px; }
 
-.alerts-activity-grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:stretch; }
-@media (max-width:900px){ .alerts-activity-grid{ grid-template-columns:1fr; } }
-
-.log-row{ grid-template-columns:10px auto 1fr auto; }
 /* ---------- settings page ---------- */
 .settings-stack{ display:flex; flex-direction:column; gap:16px; max-width:620px; }
 .settings-panel{ margin-bottom:0; }
@@ -325,55 +321,3 @@ table.records tr:last-child td{ border-bottom:none; }
 .settings-menu-item-foot{ gap:9px; }
 .settings-menu-avatar{ width:22px; height:22px; border-radius:50%; background:var(--brass);
   color:#1A1200; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-
-  /* ---------- settings window (VS Code style) ---------- */
-.settings-window-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.6); backdrop-filter:blur(2px);
-  display:flex; align-items:center; justify-content:center; z-index:200; padding:40px; }
-.settings-window{ width:100%; max-width:960px; height:100%; max-height:640px; background:var(--chrome);
-  border:1px solid var(--chrome-line); border-radius:var(--radius-lg); overflow:hidden;
-  display:flex; flex-direction:column; box-shadow:0 32px 80px rgba(0,0,0,.5); color:var(--text-on-chrome); }
-
-.settings-window-titlebar{ display:flex; align-items:center; justify-content:space-between;
-  padding:12px 16px; border-bottom:1px solid var(--chrome-line); flex-shrink:0; }
-.settings-window-title{ font-family:var(--font-display); font-size:15px; }
-.settings-window-close{ width:28px; height:28px; border-radius:var(--radius-sm); border:none; background:none;
-  color:var(--text-on-chrome-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; }
-.settings-window-close svg{ width:15px; height:15px; }
-.settings-window-close:hover{ background:var(--chrome-hover); color:var(--text-on-chrome); }
-
-.settings-window-search{ display:flex; align-items:center; gap:10px; margin:14px 16px; padding:9px 12px;
-  background:var(--chrome-hover); border:1px solid var(--chrome-line); border-radius:var(--radius-md);
-  flex-shrink:0; color:var(--text-on-chrome-muted); }
-.settings-window-search input{ flex:1; background:none; border:none; outline:none; color:var(--text-on-chrome);
-  font-size:13.5px; font-family:var(--font-body); }
-.settings-window-search input::placeholder{ color:var(--text-on-chrome-muted); }
-
-.settings-window-body{ flex:1; display:flex; min-height:0; }
-.settings-window-sidebar{ width:190px; flex-shrink:0; border-right:1px solid var(--chrome-line);
-  padding:6px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
-.settings-window-navitem{ display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:var(--radius-sm);
-  border:none; background:none; color:var(--text-on-chrome-muted); font-size:13px; font-weight:600;
-  cursor:pointer; text-align:left; }
-.settings-window-navitem svg{ width:15px; height:15px; flex-shrink:0; }
-.settings-window-navitem:hover{ background:var(--chrome-hover); color:var(--text-on-chrome); }
-.settings-window-navitem.active{ background:var(--chrome-active); color:var(--brass); }
-
-.settings-window-content{ flex:1; min-width:0; overflow-y:auto; padding:22px 26px; }
-.settings-window-section h3{ font-family:var(--font-display); font-size:17px; font-weight:500;
-  margin:0 0 16px; color:var(--text-on-chrome); }
-.settings-window-section .settings-toggle-row,
-.settings-window-section .settings-danger-row{ border-color:var(--chrome-line); }
-.settings-window-section .settings-toggle-t{ color:var(--text-on-chrome); }
-.settings-window-section .settings-toggle-d{ color:var(--text-on-chrome-muted); }
-.settings-window-section .settings-note{ color:var(--text-on-chrome-muted); }
-.settings-window-section .field label{ color:var(--text-on-chrome-muted); }
-.settings-window-section .field input,
-.settings-window-section .field select{ background:var(--chrome-hover); border-color:var(--chrome-line); color:var(--text-on-chrome); }
-
-.settings-window-results{ flex:1; overflow-y:auto; padding:0 16px 16px; display:flex; flex-direction:column; gap:2px; }
-.settings-window-result{ display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding:10px 12px; border-radius:var(--radius-sm); border:none; background:none;
-  color:var(--text-on-chrome); font-size:13.5px; cursor:pointer; text-align:left; }
-.settings-window-result:hover{ background:var(--chrome-hover); }
-.settings-window-result-cat{ font-size:11px; color:var(--text-on-chrome-muted); font-family:var(--font-mono); }
-.settings-window-noresults{ padding:16px; color:var(--text-on-chrome-muted); font-size:13px; }
