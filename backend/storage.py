@@ -6,28 +6,36 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
-BUCKET = os.getenv("SUPABASE_BUCKET_NAME")
+BUCKET = os.getenv("SUPABASE_BUCKET_NAME") or "cctv-alerts-photos"
 
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY) if (SUPABASE_URL and SUPABASE_SERVICE_KEY) else None
 
 def upload_file(local_path, remote_key):
+    if not supabase:
+        return local_path
     with open(local_path, "rb") as f:
         supabase.storage.from_(BUCKET).upload(remote_key, f, {"upsert": "true"})
     return supabase.storage.from_(BUCKET).get_public_url(remote_key)
 
 def download_file(remote_key, local_path):
+    if not supabase:
+        return
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
     data = supabase.storage.from_(BUCKET).download(remote_key)
     with open(local_path, "wb") as f:
         f.write(data)
 
 def delete_prefix(prefix):
+    if not supabase:
+        return
     files = supabase.storage.from_(BUCKET).list(prefix)
     paths = [f"{prefix}/{f['name']}" for f in files]
     if paths:
         supabase.storage.from_(BUCKET).remove(paths)
 
 def sync_known_faces_from_storage(local_dir="known_faces"):
+    if not supabase:
+        return
     try:
         employee_folders = supabase.storage.from_(BUCKET).list("known_faces")
     except Exception as e:

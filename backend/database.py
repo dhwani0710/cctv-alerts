@@ -71,7 +71,21 @@ def init_db():
             UNIQUE(employee_id, attendance_date)
         )
     """)
-    cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS last_camera_id TEXT")
+    cursor.execute("""
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS last_camera_id TEXT
+    """)
+    cursor.execute("""
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS zone_id TEXT
+    """)
+    cursor.execute("""
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'present'
+    """)
+    cursor.execute("""
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS override_reason TEXT
+    """)
+    cursor.execute("""
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS is_override BOOLEAN DEFAULT FALSE
+    """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS currently_detected (
