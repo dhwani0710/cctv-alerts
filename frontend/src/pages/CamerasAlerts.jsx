@@ -104,10 +104,16 @@ export default function CamerasAlerts() {
           </div>
           <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
             {incidents.map((a) => (
-              <div className="alert-item" key={a.id} onClick={() => a.snapshot_filename && setSnapshotView(a)} style={{ cursor: a.snapshot_filename ? 'pointer' : 'default' }}>
+              <div className="alert-item" key={a.id}>
                 <div className={`alert-sev ${a.priority === 'low' ? 'low' : ''}`} />
                 <div className="alert-body" style={{ minWidth: 0 }}>
-                  <div className="t" style={{ overflowWrap: 'break-word' }}>{a.person_name} — {a.alert_type}</div>
+                  <div
+                    className="t"
+                    style={{ overflowWrap: 'break-word', cursor: a.snapshot_filename ? 'pointer' : 'default' }}
+                    onClick={() => a.snapshot_filename && setSnapshotView(a)}
+                  >
+                    {a.person_name} — {a.alert_type}
+                  </div>
                   <div className="d" style={{ overflowWrap: 'break-word' }}>{a.alert_count} occurrence(s)</div>
                   {isAdmin && (
                     <div className="alert-actions">
