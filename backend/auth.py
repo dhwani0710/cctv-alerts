@@ -1,7 +1,8 @@
 from fastapi import Header, HTTPException, Query
 from typing import Optional
-from auth_users import decode_token
+from auth_users import decode_token, VALID_ROLES, ADMIN_ROLES
 import jwt
+
 
 def verify_token(authorization: Optional[str] = Header(None), token: Optional[str] = Query(None)):
     raw_token = None
@@ -22,5 +23,16 @@ def verify_token(authorization: Optional[str] = Header(None), token: Optional[st
 
     return payload
 
-    if role not in ["ceo", "owner", "guard", "hr"]:
-        raise HTTPException(status_code=400, detail="Role must be ceo, owner, guard, or hr")
+
+def require_admin(authorization: Optional[str] = Header(None)):
+    payload = verify_token(authorization)
+    if payload["role"] not in ("ceo", "owner"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return payload
+
+
+def require_staff(authorization: Optional[str] = Header(None)):
+    payload = verify_token(authorization)
+    if payload["role"] not in ("ceo", "owner", "guard", "hr"):
+        raise HTTPException(status_code=403, detail="Invalid role")
+    return payload

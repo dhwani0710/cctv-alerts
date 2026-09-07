@@ -9,6 +9,7 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
+DEFAULT_ADMIN_ROLE = os.getenv("DEFAULT_ADMIN_ROLE", "ceo")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
 
 def init_db():
@@ -135,7 +136,7 @@ def init_db():
         admin_pwd_hash = hash_password(DEFAULT_ADMIN_PASSWORD)
         cursor.execute(
             "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
-            (DEFAULT_ADMIN_USERNAME, admin_pwd_hash, "admin", DEFAULT_ADMIN_USERNAME)
+            (DEFAULT_ADMIN_USERNAME, admin_pwd_hash, DEFAULT_ADMIN_ROLE, DEFAULT_ADMIN_USERNAME)
         )
 
     conn.commit()

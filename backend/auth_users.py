@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+VALID_ROLES = {"ceo", "owner", "guard", "hr"}
+ADMIN_ROLES = {"ceo", "owner"}
+
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 12
