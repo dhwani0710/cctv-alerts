@@ -9,6 +9,7 @@ import CamerasAlerts from './pages/CamerasAlerts.jsx';
 import Records from './pages/Records.jsx';
 import AdminEmployees from './pages/AdminEmployees.jsx';
 import Attendance from './pages/Attendance.jsx';
+import AdminUsers from './pages/AdminUsers.jsx';
 
 function SettingsRedirect() {
   const { session } = useAuth();
@@ -25,45 +26,41 @@ export default function App() {
 
         <Route
           path="/admin-dashboard"
-          element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>}
-        />
-        <Route
-          path="/employee-dashboard"
-          element={<ProtectedRoute allowedRoles={['employee']}><EmployeeDashboard /></ProtectedRoute>}
-        />
-        <Route
-          path="/hr-dashboard"
-          element={<ProtectedRoute allowedRoles={['hr']}><EmployeeDashboard /></ProtectedRoute>}
+          element={<ProtectedRoute allowedRoles={['ceo', 'owner']}><AdminDashboard /></ProtectedRoute>}
         />
         <Route
           path="/guard-dashboard"
           element={<ProtectedRoute allowedRoles={['guard']}><EmployeeDashboard /></ProtectedRoute>}
         />
+        <Route
+          path="/hr-dashboard"
+          element={<ProtectedRoute allowedRoles={['hr']}><EmployeeDashboard /></ProtectedRoute>}
+        />
 
         <Route
           path="/admin-employees"
-          element={<ProtectedRoute allowedRoles={['admin']}><AdminEmployees /></ProtectedRoute>}
+          element={<ProtectedRoute allowedRoles={['ceo', 'owner']}><AdminEmployees /></ProtectedRoute>}
+        />
+        <Route
+          path="/admin-users"
+          element={<ProtectedRoute allowedRoles={['ceo', 'owner']}><AdminUsers /></ProtectedRoute>}
         />
 
         <Route
           path="/cameras-alerts"
-          element={<ProtectedRoute allowedRoles={['admin', 'guard']}><CamerasAlerts /></ProtectedRoute>}
+          element={<ProtectedRoute allowedRoles={['ceo', 'owner', 'guard']}><CamerasAlerts /></ProtectedRoute>}
         />
         <Route
           path="/records"
-          element={<ProtectedRoute allowedRoles={['admin', 'guard']}><Records /></ProtectedRoute>}
+          element={<ProtectedRoute allowedRoles={['ceo', 'owner', 'guard']}><Records /></ProtectedRoute>}
         />
 
         <Route
           path="/attendance"
-          element={<ProtectedRoute allowedRoles={['admin', 'hr']}><Attendance /></ProtectedRoute>}
+          element={<ProtectedRoute allowedRoles={['ceo', 'owner', 'hr']}><Attendance /></ProtectedRoute>}
         />
 
-        {/* Settings is now a modal opened from the nav rail icon, not a routed page.
-            Anyone who lands on /settings directly (old bookmark, typed URL) gets
-            bounced to their dashboard instead of a blank/broken page. */}
         <Route path="/settings" element={<SettingsRedirect />} />
-
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </AuthProvider>
