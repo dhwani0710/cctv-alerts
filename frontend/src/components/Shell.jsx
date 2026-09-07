@@ -415,7 +415,7 @@ export default function Shell({ active, dark = false, title, children }) {
           setHasHighAlert((data.recent_alerts || []).some((a) => a.priority === 'high'));
           setRecentAlerts(data.recent_alerts || []);
         }
-      } catch {}
+      } catch { }
     }
     checkAlerts();
     const t = setInterval(checkAlerts, 10000);
@@ -460,10 +460,9 @@ export default function Shell({ active, dark = false, title, children }) {
     };
   }, []);
 
-  const isAdmin = session.role === 'admin';
-  const isHr = session.role === 'hr';
+    const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const isGuard = session.role === 'guard';
-  const isEmployee = session.role === 'employee';
+  const isHr = session.role === 'hr';
 
   function handleLogout() {
     logout();
@@ -473,6 +472,7 @@ export default function Shell({ active, dark = false, title, children }) {
   const navItems = [
     { key: 'dashboard', label: 'Dashboard', to: dashboardFor(session.role) },
     ...(isAdmin ? [{ key: 'employees', label: 'Employees', to: '/admin-employees' }] : []),
+    ...(isAdmin ? [{ key: 'users', label: 'Users', to: '/admin-users' }] : []),
     ...((isAdmin || isGuard) ? [{ key: 'cameras', label: 'Cameras & Alerts', to: '/cameras-alerts' }] : []),
     ...((isAdmin || isGuard) ? [{ key: 'records', label: 'Records', to: '/records' }] : []),
     ...((isAdmin || isHr) ? [{ key: 'attendance', label: 'Attendance', to: '/attendance' }] : []),

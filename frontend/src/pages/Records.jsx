@@ -8,7 +8,7 @@ const STATUS_PILL = { high: 'flag', medium: 'review', low: 'clear' };
 
 export default function Records() {
   const { session, apiFetch } = useAuth();
-  const isAdmin = session.role === 'admin';
+  const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const [camera, setCamera] = useState('');
   const [status, setStatus] = useState('');
   const [date, setDate] = useState('');
