@@ -11,16 +11,28 @@ export default function Login() {
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState(false);
 
+  // Only redirect away from /login if a session already exists WHEN THE
+  // PAGE FIRST LOADS. This does not re-run on every keystroke or failed
+  // attempt, so a wrong-password error stays visible instead of getting
+  // overridden by a redirect.
   React.useEffect(() => {
-    if (session) navigate(dashboardFor(session.role), { replace: true });
-  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (session) {
+      navigate(dashboardFor(session.role), { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleSubmit(e) {
     e.preventDefault();
-    const result = login(username, password);
-    if (!result.ok) { setError(true); return; }
     setError(false);
-    navigate(dashboardFor(result.session.role));
+    const result = login(username, password);
+    if (!result.ok) {
+      setError(true);
+      return;
+    }
+    // Successful login: navigate explicitly here, not via the effect above,
+    // so there's no ambiguity about what triggered the redirect.
+    navigate(dashboardFor(result.session.role), { replace: true });
   }
 
   return (
@@ -137,7 +149,9 @@ export default function Login() {
           <div className="demo-note">
             <b>Demo credentials</b> — replace with your real login API when ready.<br />
             Admin&nbsp;&nbsp;→ admin / admin123<br />
-            Staff&nbsp;&nbsp;&nbsp;&nbsp;→ employee / employee123
+            Staff&nbsp;&nbsp;&nbsp;&nbsp;→ employee / employee123<br />
+            HR&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ hr / hr123<br />
+            Guard&nbsp;&nbsp;&nbsp;→ guard / guard123
           </div>
 
           <div className="login-card-foot">
