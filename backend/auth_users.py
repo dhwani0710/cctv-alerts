@@ -1,22 +1,22 @@
 import os
 import jwt
 from datetime import datetime, timedelta
-from passlib.context import CryptContext
-from dotenv import load_dotenv
+import bcrypt
 
-load_dotenv()
-
-JWT_SECRET = os.getenv("JWT_SECRET")
+JWT_SECRET = os.getenv("JWT_SECRET", "super-secret-cctv-jwt-key-change-in-prod")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 12
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+def hash_password(password: str) -> str:
+    pwd_bytes = password.encode('utf-8')[:72]
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
 
-def hash_password(password):
-    return pwd_context.hash(password)
-
-def verify_password(password, password_hash):
-    return pwd_context.verify(password, password_hash)
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode('utf-8')[:72], password_hash.encode('utf-8'))
+    except Exception:
+        return False
 
 def create_token(user_id, username, role, name):
     payload = {

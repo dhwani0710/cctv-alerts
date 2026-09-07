@@ -12,6 +12,8 @@ DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
 
 DB_TYPE = "postgres" if (DATABASE_URL and ("postgres" in DATABASE_URL or "postgresql" in DATABASE_URL)) else "sqlite"
 
+import re
+
 class SQLiteCursorWrapper:
     def __init__(self, cursor):
         self.cursor = cursor
@@ -21,6 +23,20 @@ class SQLiteCursorWrapper:
         sqlite_query = query.replace("%s", "?")
         # Replace Postgres SERIAL with INTEGER
         sqlite_query = sqlite_query.replace("SERIAL PRIMARY KEY", "INTEGER PRIMARY KEY AUTOINCREMENT")
+        sqlite_query = sqlite_query.replace("DEFAULT NOW()", "DEFAULT CURRENT_TIMESTAMP")
+
+        # Handle ALTER TABLE ... ADD COLUMN IF NOT EXISTS in SQLite
+        if re.search(r'ALTER\s+TABLE\s+.*?\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS', sqlite_query, re.IGNORECASE):
+            clean_query = re.sub(r'ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS', 'ADD COLUMN', sqlite_query, flags=re.IGNORECASE)
+            try:
+                if params is not None:
+                    return self.cursor.execute(clean_query, params)
+                return self.cursor.execute(clean_query)
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" in str(e).lower():
+                    return self.cursor
+                raise e
+
         if params is not None:
             return self.cursor.execute(sqlite_query, params)
         return self.cursor.execute(sqlite_query)
@@ -143,6 +159,18 @@ def init_db():
     cursor.execute("""
         ALTER TABLE attendance ADD COLUMN IF NOT EXISTS last_camera_id TEXT
     """)
+    cursor.execute("""
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS zone_id TEXT
+    """)
+    cursor.execute("""
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'present'
+    """)
+    cursor.execute("""
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS override_reason TEXT
+    """)
+    cursor.execute("""
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS is_override BOOLEAN DEFAULT FALSE
+    """)
 
     cursor.execute("DROP TABLE IF EXISTS currently_detected")
     cursor.execute("""
@@ -184,11 +212,11 @@ def init_db():
     # Auto-seed default Super Admin if not present
     cursor.execute("SELECT id FROM users WHERE username = %s", (DEFAULT_ADMIN_USERNAME,))
     if not cursor.fetchone():
-        import auth
-        admin_pwd_hash = auth.hash_password(DEFAULT_ADMIN_PASSWORD)
+        from auth_users import hash_password
+        admin_pwd_hash = hash_password(DEFAULT_ADMIN_PASSWORD)
         cursor.execute(
-            "INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, %s, %s)",
-            (DEFAULT_ADMIN_USERNAME, admin_pwd_hash, "admin", datetime.utcnow().isoformat())
+            "INSERT INTO users (username, password_hash, role, name, created_at) VALUES (%s, %s, %s, %s, %s)",
+            (DEFAULT_ADMIN_USERNAME, admin_pwd_hash, "admin", DEFAULT_ADMIN_USERNAME, datetime.utcnow().isoformat())
         )
 
     conn.commit()

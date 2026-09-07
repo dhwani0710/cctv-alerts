@@ -6,7 +6,6 @@ import { useAuth } from '../context/AuthContext';
 export const AdminPage = () => {
   const { user, apiFetch } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const isStaff = isAdmin || user?.role === 'manager';
 
   // Employee State
   const [employees, setEmployees] = useState([]);

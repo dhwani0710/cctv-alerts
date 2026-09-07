@@ -2,8 +2,11 @@ import os
 import shutil
 import cv2
 import time
+import csv
+import io
+import math
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException
+from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
@@ -278,15 +281,23 @@ def update_settings(store_open_time: str = Form(...), store_close_time: str = Fo
     return {"message": "Settings updated"}
 
 @app.get("/records", dependencies=[Depends(verify_token)])
+@app.get("/api/records", dependencies=[Depends(verify_token)])
 def get_records(camera: str = None, status: str = None, date: str = None, limit: int = 100):
-    query = "SELECT person_name, alert_type, priority, message, timestamp, snapshot_filename FROM alerts WHERE 1=1"
+    query = "SELECT person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM alerts WHERE 1=1"
     params = []
+
+    if camera:
+        query += " AND (camera_id = %s OR camera_id LIKE %s)"
+        params.extend([camera, f"%{camera}%"])
 
     if status:
         status_map = {"flag": "high", "review": "medium", "clear": "low"}
         if status in status_map:
             query += " AND priority = %s"
             params.append(status_map[status])
+        else:
+            query += " AND priority = %s"
+            params.append(status)
 
     if date:
         query += " AND timestamp LIKE %s"
@@ -303,20 +314,346 @@ def get_records(camera: str = None, status: str = None, date: str = None, limit:
 
     return [dict(r) for r in rows]
 
-@app.get("/attendance", dependencies=[Depends(verify_token)])
-def get_attendance(date: str = None):
-    target_date = date or datetime.now().date().isoformat()
+@app.get("/records/export", dependencies=[Depends(verify_token)])
+@app.get("/api/records/export", dependencies=[Depends(verify_token)])
+def export_records(camera: str = None, status: str = None, date: str = None):
+    query = "SELECT person_name, alert_type, priority, message, timestamp, camera_id FROM alerts WHERE 1=1"
+    params = []
+
+    if camera:
+        query += " AND (camera_id = %s OR camera_id LIKE %s)"
+        params.extend([camera, f"%{camera}%"])
+
+    if status:
+        status_map = {"flag": "high", "review": "medium", "clear": "low"}
+        if status in status_map:
+            query += " AND priority = %s"
+            params.append(status_map[status])
+        else:
+            query += " AND priority = %s"
+            params.append(status)
+
+    if date:
+        query += " AND timestamp LIKE %s"
+        params.append(f"{date}%")
+
+    query += " ORDER BY timestamp DESC"
+
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(
-            "SELECT e.name, a.first_seen, a.last_seen FROM attendance a "
-            "JOIN employees e ON e.id = a.employee_id "
-            "WHERE a.attendance_date = %s ORDER BY a.first_seen ASC",
-            (target_date,)
-        )
+        cur.execute(query, tuple(params))
         rows = cur.fetchall()
         cur.close()
-    return {"date": target_date, "records": [dict(r) for r in rows]}
+
+    output = io.StringIO()
+    output.write('\ufeff')
+    writer = csv.writer(output)
+    writer.writerow(["Timestamp", "Camera", "Person", "Event Type", "Message", "Priority / Status"])
+    for r in rows:
+        rec = dict(r)
+        writer.writerow([
+            rec.get("timestamp"),
+            rec.get("camera_id") or "Front Door",
+            rec.get("person_name") or "Unknown",
+            rec.get("alert_type") or "detection",
+            rec.get("message") or "",
+            rec.get("priority") or "low"
+        ])
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="records_{date or "all"}.csv"',
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+
+# --- Attendance Models, Helpers & Endpoints ---
+
+class AttendanceOverrideRequest(BaseModel):
+    employee_id: int
+    date: str
+    first_seen_at: Optional[str] = None
+    last_seen_at: Optional[str] = None
+    status: Optional[str] = "present"
+    reason: Optional[str] = None
+    zone_id: Optional[str] = "Manual Entry"
+
+def _calculate_hours(first_seen_str, last_seen_str):
+    if not first_seen_str or not last_seen_str:
+        return 0.0
+    try:
+        t1 = datetime.fromisoformat(str(first_seen_str).replace("Z", ""))
+        t2 = datetime.fromisoformat(str(last_seen_str).replace("Z", ""))
+        diff_sec = max(0, (t2 - t1).total_seconds())
+        return round(diff_sec / 3600.0, 2)
+    except Exception:
+        return 0.0
+
+def _normalize_time(date_str: str, time_val: Optional[str], default_time: str) -> str:
+    if not time_val or not str(time_val).strip():
+        return f"{date_str}T{default_time}"
+    val = str(time_val).strip()
+    if "T" in val:
+        return val
+    parts = val.split(":")
+    if len(parts) == 2:
+        return f"{date_str}T{parts[0].zfill(2)}:{parts[1].zfill(2)}:00"
+    if len(parts) == 3:
+        return f"{date_str}T{parts[0].zfill(2)}:{parts[1].zfill(2)}:{parts[2].zfill(2)}"
+    return f"{date_str}T{default_time}"
+
+def _build_attendance_query(start_date=None, end_date=None, date=None, employee_id=None, zone_id=None, status=None, search=None):
+    where_clauses = []
+    params = []
+
+    if start_date and end_date:
+        where_clauses.append("a.attendance_date >= %s AND a.attendance_date <= %s")
+        params.extend([start_date, end_date])
+    elif start_date:
+        where_clauses.append("a.attendance_date >= %s")
+        params.append(start_date)
+    elif end_date:
+        where_clauses.append("a.attendance_date <= %s")
+        params.append(end_date)
+    elif date:
+        where_clauses.append("a.attendance_date = %s")
+        params.append(date)
+
+    if employee_id:
+        where_clauses.append("a.employee_id = %s")
+        params.append(int(employee_id))
+
+    if zone_id and zone_id.strip():
+        where_clauses.append("(a.zone_id = %s OR a.last_camera_id = %s OR c.location = %s)")
+        params.extend([zone_id.strip(), zone_id.strip(), zone_id.strip()])
+
+    if status and status.strip() and status.lower() != "all":
+        where_clauses.append("LOWER(COALESCE(a.status, 'present')) = LOWER(%s)")
+        params.append(status.strip())
+
+    if search and search.strip():
+        where_clauses.append("LOWER(e.name) LIKE %s")
+        params.append(f"%{search.strip().lower()}%")
+
+    where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+    return where_sql, params
+
+@app.get("/attendance", dependencies=[Depends(verify_token)])
+@app.get("/api/attendance", dependencies=[Depends(verify_token)])
+def get_attendance(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    date: Optional[str] = None,
+    employee_id: Optional[int] = None,
+    zone_id: Optional[str] = None,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    limit: int = 20
+):
+    where_sql, params = _build_attendance_query(start_date, end_date, date, employee_id, zone_id, status, search)
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        count_query = (
+            "SELECT COUNT(*) as total FROM attendance a "
+            "JOIN employees e ON e.id = a.employee_id "
+            "LEFT JOIN cameras c ON c.id = a.last_camera_id"
+            + where_sql
+        )
+        cur.execute(count_query, tuple(params))
+        count_row = cur.fetchone()
+        total = count_row["total"] if count_row else 0
+
+        offset = max(0, (page - 1) * limit)
+        data_query = (
+            "SELECT a.id, a.employee_id, e.name, e.designation, e.shift_start, e.shift_end, "
+            "a.attendance_date, a.first_seen, a.last_seen, a.last_camera_id, "
+            "COALESCE(a.zone_id, c.location, a.last_camera_id, 'Front Door') as zone_id, "
+            "COALESCE(a.status, 'present') as status, a.override_reason, "
+            "COALESCE(a.is_override, 0) as is_override "
+            "FROM attendance a "
+            "JOIN employees e ON e.id = a.employee_id "
+            "LEFT JOIN cameras c ON c.id = a.last_camera_id"
+            + where_sql
+            + " ORDER BY a.attendance_date DESC, a.first_seen ASC LIMIT %s OFFSET %s"
+        )
+        data_params = list(params) + [limit, offset]
+        cur.execute(data_query, tuple(data_params))
+        rows = cur.fetchall()
+        cur.close()
+
+    formatted_records = []
+    for r in rows:
+        rec = dict(r)
+        hours = _calculate_hours(rec.get("first_seen"), rec.get("last_seen"))
+        rec["total_hours"] = hours
+        rec["first_seen_at"] = rec.get("first_seen")
+        rec["last_seen_at"] = rec.get("last_seen")
+        rec["is_override"] = bool(rec.get("is_override"))
+        formatted_records.append(rec)
+
+    total_pages = math.ceil(total / limit) if limit > 0 else 1
+
+    return {
+        "records": formatted_records,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
+        "start_date": start_date or date,
+        "end_date": end_date or date,
+        "date": date or start_date or datetime.now().date().isoformat()
+    }
+
+@app.get("/attendance/export", dependencies=[Depends(verify_token)])
+@app.get("/api/attendance/export", dependencies=[Depends(verify_token)])
+def export_attendance(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    date: Optional[str] = None,
+    employee_id: Optional[int] = None,
+    zone_id: Optional[str] = None,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    format: Optional[str] = "csv"
+):
+    where_sql, params = _build_attendance_query(start_date, end_date, date, employee_id, zone_id, status, search)
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        data_query = (
+            "SELECT a.id, a.employee_id, e.name, e.designation, "
+            "a.attendance_date, a.first_seen, a.last_seen, "
+            "COALESCE(a.zone_id, c.location, a.last_camera_id, 'Front Door') as zone_id, "
+            "COALESCE(a.status, 'present') as status, a.override_reason, "
+            "COALESCE(a.is_override, 0) as is_override "
+            "FROM attendance a "
+            "JOIN employees e ON e.id = a.employee_id "
+            "LEFT JOIN cameras c ON c.id = a.last_camera_id"
+            + where_sql
+            + " ORDER BY a.attendance_date DESC, a.first_seen ASC"
+        )
+        cur.execute(data_query, tuple(params))
+        rows = cur.fetchall()
+        cur.close()
+
+    output = io.StringIO()
+    output.write('\ufeff')  # UTF-8 BOM for Microsoft Excel
+    writer = csv.writer(output)
+
+    writer.writerow([
+        "Date",
+        "Employee ID",
+        "Employee Name",
+        "Designation",
+        "First Seen (In)",
+        "Last Seen (Out)",
+        "Total Hours",
+        "Zone / Location",
+        "Status",
+        "Method",
+        "Override Reason"
+    ])
+
+    for r in rows:
+        rec = dict(r)
+        hours = _calculate_hours(rec.get("first_seen"), rec.get("last_seen"))
+        first_time = rec.get("first_seen")
+        last_time = rec.get("last_seen")
+        try:
+            if first_time:
+                first_time = datetime.fromisoformat(first_time.replace("Z", "")).strftime("%Y-%m-%d %H:%M:%S")
+            if last_time:
+                last_time = datetime.fromisoformat(last_time.replace("Z", "")).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            pass
+
+        method = "Manual Override" if rec.get("is_override") else "Automated (CCTV)"
+        writer.writerow([
+            rec.get("attendance_date") or "",
+            rec.get("employee_id") or "",
+            rec.get("name") or "",
+            rec.get("designation") or "Staff",
+            first_time or "—",
+            last_time or "—",
+            f"{hours:.2f}",
+            rec.get("zone_id") or "Front Door",
+            (rec.get("status") or "present").capitalize(),
+            method,
+            rec.get("override_reason") or ""
+        ])
+
+    date_tag = f"{start_date}_to_{end_date}" if (start_date and end_date) else (start_date or date or datetime.now().date().isoformat())
+    filename = f"attendance_report_{date_tag}.csv"
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+
+@app.post("/attendance/override", dependencies=[Depends(require_staff)])
+@app.post("/api/attendance/override", dependencies=[Depends(require_staff)])
+def override_attendance(req: AttendanceOverrideRequest):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, name FROM employees WHERE id = %s", (req.employee_id,))
+        emp = cur.fetchone()
+        if not emp:
+            cur.close()
+            raise HTTPException(status_code=404, detail="Employee not found")
+
+        first_seen = _normalize_time(req.date, req.first_seen_at, "09:00:00")
+        last_seen = _normalize_time(req.date, req.last_seen_at, "18:00:00")
+        status = (req.status or "present").lower()
+        reason = req.reason or "Manual reconciliation"
+        zone = req.zone_id or "Manual Entry"
+
+        cur.execute("SELECT id FROM attendance WHERE employee_id = %s AND attendance_date = %s", (req.employee_id, req.date))
+        existing = cur.fetchone()
+
+        if existing:
+            cur.execute(
+                "UPDATE attendance SET first_seen = %s, last_seen = %s, zone_id = %s, status = %s, "
+                "override_reason = %s, is_override = 1 WHERE employee_id = %s AND attendance_date = %s",
+                (first_seen, last_seen, zone, status, reason, req.employee_id, req.date)
+            )
+        else:
+            cur.execute(
+                "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, last_camera_id, zone_id, status, override_reason, is_override) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1)",
+                (req.employee_id, req.date, first_seen, last_seen, "manual", zone, status, reason)
+            )
+
+        conn.commit()
+
+        cur.execute(
+            "SELECT a.id, a.employee_id, e.name, a.attendance_date, a.first_seen, a.last_seen, "
+            "a.zone_id, a.status, a.override_reason, a.is_override "
+            "FROM attendance a JOIN employees e ON e.id = a.employee_id "
+            "WHERE a.employee_id = %s AND a.attendance_date = %s",
+            (req.employee_id, req.date)
+        )
+        updated = cur.fetchone()
+        cur.close()
+
+    result = dict(updated) if updated else {}
+    result["first_seen_at"] = result.get("first_seen")
+    result["last_seen_at"] = result.get("last_seen")
+    result["total_hours"] = _calculate_hours(result.get("first_seen"), result.get("last_seen"))
+    result["is_override"] = bool(result.get("is_override"))
+
+    return {
+        "ok": True,
+        "message": f"Attendance for {emp['name']} on {req.date} reconciled successfully",
+        "record": result
+    }
 
 @app.get("/cameras", dependencies=[Depends(verify_token)])
 def list_cameras():

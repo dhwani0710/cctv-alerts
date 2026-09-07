@@ -7,6 +7,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      '/api': 'http://localhost:8000',
+      '/records': 'http://localhost:8000',
       '/auth': 'http://localhost:8000',
       '/employees': 'http://localhost:8000',
       '/settings': 'http://localhost:8000',
