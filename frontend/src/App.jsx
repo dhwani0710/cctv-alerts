@@ -10,12 +10,7 @@ import Records from './pages/Records.jsx';
 import AdminEmployees from './pages/AdminEmployees.jsx';
 import Attendance from './pages/Attendance.jsx';
 import AdminUsers from './pages/AdminUsers.jsx';
-
-function SettingsRedirect() {
-  const { session } = useAuth();
-  if (!session) return <Navigate to="/login" replace />;
-  return <Navigate to={dashboardFor(session.role)} replace />;
-}
+import Settings from './pages/Settings.jsx';
 
 export default function App() {
   return (
@@ -60,7 +55,10 @@ export default function App() {
           element={<ProtectedRoute allowedRoles={['ceo', 'owner', 'hr']}><Attendance /></ProtectedRoute>}
         />
 
-        <Route path="/settings" element={<SettingsRedirect />} />
+        <Route 
+        path="/settings" element={<ProtectedRoute allowedRoles={['ceo', 'owner', 'guard', 'hr']}><Settings /></ProtectedRoute>} 
+        />
+
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </AuthProvider>

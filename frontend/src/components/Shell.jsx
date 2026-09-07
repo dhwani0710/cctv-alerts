@@ -18,6 +18,11 @@ const NAV_ICONS = {
       <circle cx="17" cy="8" r="2.4" /><path d="M15.5 14.2c2.6.4 4.5 2.7 4.5 5.8" />
     </svg>
   ),
+  users: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" />
+    </svg>
+  ),
   cameras: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
       <rect x="2.5" y="7" width="14" height="11" rx="2" /><path d="M16.5 10.5 21 8v9l-4.5-2.5" />
@@ -421,10 +426,6 @@ export default function Shell({ active, dark = false, title, children }) {
     const t = setInterval(checkAlerts, 10000);
     return () => { cancelled = true; clearInterval(t); };
   }, [apiFetch]);
-  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
-  const settingsIconRef = useRef(null);
-  const settingsMenuRef = useRef(null);
-  const [settingsWindowOpen, setSettingsWindowOpen] = useState(false);
 
   useEffect(() => {
     if (params.get('denied') === '1') {
@@ -438,29 +439,7 @@ export default function Shell({ active, dark = false, title, children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (
-        settingsMenuRef.current &&
-        !settingsMenuRef.current.contains(e.target) &&
-        settingsIconRef.current &&
-        !settingsIconRef.current.contains(e.target)
-      ) {
-        setSettingsMenuOpen(false);
-      }
-    }
-    function handleEscape(e) {
-      if (e.key === 'Escape') setSettingsMenuOpen(false);
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, []);
-
-    const isAdmin = session.role === 'ceo' || session.role === 'owner';
+  const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const isGuard = session.role === 'guard';
   const isHr = session.role === 'hr';
 
@@ -491,14 +470,10 @@ export default function Shell({ active, dark = false, title, children }) {
           </Link>
         ))}
 
-        <button
-          type="button"
-          className={`rail-link ${active === 'settings' ? 'active' : ''}`}
-          onClick={() => setSettingsWindowOpen(true)}
-        >
+        <Link to="/settings" className={`rail-link ${active === 'settings' ? 'active' : ''}`}>
           {NAV_ICONS.settings}
           <span className="tip">Settings</span>
-        </button>
+        </Link>
 
         <div className="rail-spacer" />
       </nav>
@@ -518,10 +493,6 @@ export default function Shell({ active, dark = false, title, children }) {
         </header>
         <main className={`content ${dark ? 'dark' : ''}`}>{children}</main>
       </div>
-
-      {settingsWindowOpen && (
-        <SettingsWindow session={session} alerts={recentAlerts} onClose={() => setSettingsWindowOpen(false)} />
-      )}
     </div>
   );
 }

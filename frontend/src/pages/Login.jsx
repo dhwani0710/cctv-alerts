@@ -22,16 +22,14 @@ export default function Login() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError(false);
-    const result = login(username, password);
+    const result = await login(username, password);
     if (!result.ok) {
       setError(true);
       return;
     }
-    // Successful login: navigate explicitly here, not via the effect above,
-    // so there's no ambiguity about what triggered the redirect.
     navigate(dashboardFor(result.session.role), { replace: true });
   }
 
@@ -145,14 +143,6 @@ export default function Login() {
               </svg>
             </button>
           </form>
-
-          <div className="demo-note">
-            <b>Demo credentials</b> — replace with your real login API when ready.<br />
-            Admin&nbsp;&nbsp;→ admin / admin123<br />
-            Staff&nbsp;&nbsp;&nbsp;&nbsp;→ employee / employee123<br />
-            HR&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ hr / hr123<br />
-            Guard&nbsp;&nbsp;&nbsp;→ guard / guard123
-          </div>
 
           <div className="login-card-foot">
             <span className="status-dot" /> All systems operational <span className="dot-sep">·</span> Encrypted connection

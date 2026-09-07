@@ -74,7 +74,7 @@ def update_user(user_id: int, req: UpdateUserRequest):
     params = []
     if req.role:
         role = req.role.strip().lower()
-        if role not in ["admin", "manager", "guard"]:
+        if role not in ["ceo", "owner", "guard", "hr"]:
             raise HTTPException(status_code=400, detail="Role must be admin, manager, or guard")
         updates.append("role = %s")
         params.append(role)
@@ -479,7 +479,7 @@ def video_feed(camera_id: str):
 def create_user(payload: CreateUserRequest):
     username = payload.username.strip()
     role = payload.role.strip().lower()
-    if role not in ["admin", "manager", "guard"]:
+    if role not in ["ceo", "owner", "guard", "hr"]:
         raise HTTPException(status_code=400, detail="Role must be admin, manager, or guard")
     if not username or not payload.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
