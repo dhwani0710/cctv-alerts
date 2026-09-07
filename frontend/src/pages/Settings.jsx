@@ -5,7 +5,7 @@ import { MOCK_ALERTS } from '../data/mockData.js';
 
 export default function Settings() {
   const { session } = useAuth();
-  const isAdmin = session.role === 'admin';
+  const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const canSeeThresholds = session.role !== 'employee';
 
   // ---- Notifications ----

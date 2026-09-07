@@ -14,10 +14,9 @@ const DEMO_USERS = [
 ];
 
 export function dashboardFor(role) {
-  if (role === 'admin') return '/admin-dashboard';
+  if (role === 'ceo' || role === 'owner') return '/admin-dashboard';
   if (role === 'hr') return '/hr-dashboard';
-  if (role === 'guard') return '/guard-dashboard';
-  return '/employee-dashboard';
+  return '/guard-dashboard';
 }
 
 function loadSession() {
