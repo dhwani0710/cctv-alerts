@@ -6,7 +6,7 @@ import { initials } from '../data/mockData.js';
 
 export default function AdminEmployees() {
   const { session, apiFetch } = useAuth();
-  const isAdmin = session.role === 'admin';
+  const isAdmin = session.role === 'ceo' || session.role === 'owner';
 
   const [staff, setStaff] = useState([]);
   const [showAdd, setShowAdd] = useState(false);

@@ -5,10 +5,9 @@ const SESSION_KEY = 'vaultwatch_session';
 const API_BASE = 'http://localhost:8000';
 
 export function dashboardFor(role) {
-  if (role === 'admin') return '/admin-dashboard';
+  if (role === 'ceo' || role === 'owner') return '/admin-dashboard';
   if (role === 'hr') return '/hr-dashboard';
-  if (role === 'guard') return '/guard-dashboard';
-  return '/employee-dashboard';
+  return '/guard-dashboard';
 }
 
 function loadSession() {
