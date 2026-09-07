@@ -115,8 +115,8 @@ def _clear_face_cache():
         if f.startswith("representations_") or f.endswith(".pkl"):
             os.remove(os.path.join(KNOWN_FACES_DIR, f))
 
-@app.post("/login")
-def login(payload: LoginRequest):
+@app.post("/auth/login")
+async def login(payload: LoginRequest):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT * FROM users WHERE username = %s", (payload.username,))

@@ -17,7 +17,6 @@ export default defineConfig({
       '/snapshots': { target: 'http://localhost:8000', changeOrigin: true },
       '/video_feed': { target: 'http://localhost:8000', changeOrigin: true },
       '/users': { target: 'http://localhost:8000', changeOrigin: true },
-      '/login': { target: 'http://localhost:8000', changeOrigin: true },
       '/records': { target: 'http://localhost:8000', changeOrigin: true },
     }
   }
