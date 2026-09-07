@@ -44,7 +44,7 @@ export const LoginPage = () => {
         <div>
           <h1 className="text-3xl font-medium leading-tight mb-3 max-w-sm">Every door, every hour, on record.</h1>
           <p className="text-[var(--text-muted)] text-sm max-w-sm leading-relaxed">
-            Sign in to view live camera feeds, respond to alerts, and review the store's access log.
+            Sign in to view live camera feeds, respond to alerts, and review the store&apos;s access log.
           </p>
         </div>
         <div className="flex gap-8 font-mono">

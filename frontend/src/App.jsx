@@ -4,7 +4,8 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AdminPage } from './pages/AdminPage';
-import { AttendancePage } from './pages/AttendancePage';
+import { Attendance } from './pages/Attendance';
+import { Records } from './pages/Records';
 import { SettingsPage } from './pages/SettingsPage';
 
 const RootRedirect = () => {
@@ -44,7 +45,16 @@ function App() {
             path="/attendance"
             element={
               <ProtectedRoute allowedRoles={['admin', 'manager']}>
-                <AttendancePage />
+                <Attendance />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/records"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'manager', 'guard']}>
+                <Records />
               </ProtectedRoute>
             }
           />
