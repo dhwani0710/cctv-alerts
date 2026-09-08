@@ -42,6 +42,20 @@ def init_db():
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS permanent BOOLEAN NOT NULL DEFAULT FALSE")
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alert_records (
+            id SERIAL PRIMARY KEY,
+            person_name TEXT NOT NULL,
+            alert_type TEXT NOT NULL,
+            priority TEXT NOT NULL,
+            message TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            snapshot_filename TEXT,
+            camera_id TEXT,
+            zone_id TEXT
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS employee_photos (
             id SERIAL PRIMARY KEY,
             employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,

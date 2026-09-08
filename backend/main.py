@@ -282,7 +282,13 @@ def update_app_setting(payload: AppSettingRequest):
 
 @app.get("/records", dependencies=[Depends(verify_token)])
 def get_records(camera: str = None, status: str = None, date: str = None, limit: int = 100):
-    query = "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM alerts WHERE 1=1"
+    query = """
+        SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM (
+            SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM alerts
+            UNION ALL
+            SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM alert_records
+        ) combined WHERE 1=1
+    """
     params = []
 
     if camera:
@@ -308,7 +314,7 @@ def get_records(camera: str = None, status: str = None, date: str = None, limit:
         cur.close()
 
     return [dict(r) for r in rows]
-
+    
 @app.delete("/records/{alert_id}", dependencies=[Depends(require_staff)])
 def delete_record(alert_id: int):
     with get_db() as conn:
