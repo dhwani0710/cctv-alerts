@@ -30,6 +30,23 @@ export default function Records() {
     if (res.ok) setRecords(await res.json());
   }, [apiFetch, camera, status, date]);
 
+  const groupedRecords = React.useMemo(() => {
+    const map = new Map();
+    for (const r of records) {
+      const key = r.incident_id ?? r.id;
+      if (!map.has(key)) {
+        map.set(key, { ...r, occurrences: 1 });
+      } else {
+        const existing = map.get(key);
+        existing.occurrences += 1;
+        if (new Date(r.timestamp) > new Date(existing.timestamp)) {
+          existing.timestamp = r.timestamp;
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [records]);
+
   useEffect(() => { loadCameras(); }, [loadCameras]);
   useEffect(() => { loadRecords(); }, [loadRecords]);
 
@@ -65,23 +82,24 @@ export default function Records() {
           <table className="records">
             <thead>
               <tr>
-                <th>Time</th><th>Camera</th><th>Person</th><th>Event</th><th>Status</th>
+                <th>Time</th><th>Camera</th><th>Person</th><th>Event</th><th>Occurrences</th><th>Status</th>
                 {isAdmin && <th></th>}
               </tr>
             </thead>
             <tbody>
               {records.map((r) => (
-                <tr key={r.id}>
+                <tr key={r.incident_id ?? r.id}>
                   <td className="mono">{new Date(r.timestamp).toLocaleString()}</td>
                   <td>{r.camera_id}</td>
                   <td>{r.person_name}</td>
                   <td>{r.message}</td>
+                  <td className="mono">{r.occurrences}</td>
                   <td><span className={`pill ${STATUS_PILL[r.priority]}`}>{STATUS_LABEL[r.priority]}</span></td>
                   {isAdmin && <td><button className="btn btn-outline btn-sm" onClick={() => setDeleteTarget(r)}>Delete</button></td>}
                 </tr>
               ))}
               {records.length === 0 && (
-                <tr><td colSpan={isAdmin ? 6 : 5} style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No records match these filters.</td></tr>
+                <tr><td colSpan={isAdmin ? 7 : 6} style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No records match these filters.</td></tr>
               )}
             </tbody>
           </table>
