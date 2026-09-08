@@ -8,12 +8,13 @@ const API_BASE = 'http://localhost:8000';
 
 export default function CamerasAlerts() {
   const { session, apiFetch } = useAuth();
-  const isAdmin = session.role === 'ceo' || session.role === 'owner';
+  const isAdmin = session.role === 'ceo' || session.role === 'owner' || session.role === 'hr';
   const [selected, setSelected] = useState(null);
   const [cameras, setCameras] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [dismissTarget, setDismissTarget] = useState(null);
   const [snapshotView, setSnapshotView] = useState(null);
+  const [detected, setDetected] = useState({});
 
   const loadCameras = useCallback(async () => {
     const res = await apiFetch('/cameras');
@@ -40,6 +41,31 @@ export default function CamerasAlerts() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadStatus() {
+      const res = await apiFetch('/status');
+      if (res.ok && !cancelled) {
+        const data = await res.json();
+        const incoming = (data.currently_detected || []).filter(
+          (d) => d.name && d.name.toLowerCase() !== 'unknown'
+        );
+        setDetected((prev) => {
+          const next = { ...prev };
+          incoming.forEach((d) => {
+            next[`${d.name}|${d.camera}`] = d;
+          });
+          return next;
+        });
+      }
+    }
+    loadStatus();
+    const id = setInterval(loadStatus, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [apiFetch]);
+
+  const detectedList = Object.values(detected);
+
   async function acknowledge(id) {
     await apiFetch(`/incidents/${id}`, {
       method: 'PUT',
@@ -65,6 +91,36 @@ export default function CamerasAlerts() {
         <span className="eyebrow">Live Monitoring</span>
         <h1>Cameras & alerts</h1>
         <p>{cameras.length} camera{cameras.length === 1 ? '' : 's'}, monitored continuously. Click a camera to enlarge it.</p>
+      </div>
+
+      <div className="panel" style={{ marginBottom: 20 }}>
+        <div className="panel-head">
+          <h2>Currently detected</h2>
+          <span className="eyebrow">{detectedList.length} on camera now</span>
+        </div>
+        <div className="table-wrap">
+          <table className="records">
+            <thead>
+              <tr>
+                <th>Person</th>
+                <th>Camera</th>
+                <th>Last seen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detectedList.map((d, i) => (
+                <tr key={i}>
+                  <td>{d.name}</td>
+                  <td className="mono">{d.camera}</td>
+                  <td className="mono">{new Date(d.last_seen).toLocaleTimeString()}</td>
+                </tr>
+              ))}
+              {detectedList.length === 0 && (
+                <tr><td colSpan={3} style={{ color: 'var(--text-muted)' }}>No one currently detected.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="two-col" style={{ gridTemplateColumns: '1fr 340px' }}>
@@ -104,16 +160,10 @@ export default function CamerasAlerts() {
           </div>
           <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
             {incidents.map((a) => (
-              <div className="alert-item" key={a.id}>
+              <div className="alert-item" key={a.id} onClick={() => a.snapshot_filename && setSnapshotView(a)} style={{ cursor: a.snapshot_filename ? 'pointer' : 'default' }}>
                 <div className={`alert-sev ${a.priority === 'low' ? 'low' : ''}`} />
                 <div className="alert-body" style={{ minWidth: 0 }}>
-                  <div
-                    className="t"
-                    style={{ overflowWrap: 'break-word', cursor: a.snapshot_filename ? 'pointer' : 'default' }}
-                    onClick={() => a.snapshot_filename && setSnapshotView(a)}
-                  >
-                    {a.person_name} — {a.alert_type}
-                  </div>
+                  <div className="t" style={{ overflowWrap: 'break-word' }}>{a.person_name} — {a.alert_type}</div>
                   <div className="d" style={{ overflowWrap: 'break-word' }}>{a.alert_count} occurrence(s)</div>
                   {isAdmin && (
                     <div className="alert-actions">
