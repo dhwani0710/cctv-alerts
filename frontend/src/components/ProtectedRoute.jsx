@@ -11,9 +11,23 @@ export const ProtectedRoute = ({ children, allowedRoles = [] }) => {
 
   if (allowedRoles.length > 0) {
     const userRole = (user.role || '').toLowerCase();
-    const normalized = allowedRoles.map(r => r.toLowerCase());
-    if (!normalized.includes(userRole)) {
-      return <Navigate to={getDefaultRedirect(user.role)} replace />;
+    const effectiveRoles = [userRole];
+    if (['ceo', 'owner', 'admin'].includes(userRole)) {
+      effectiveRoles.push('admin', 'ceo', 'owner');
+    }
+    if (['manager', 'hr'].includes(userRole) || ['ceo', 'owner', 'admin'].includes(userRole)) {
+      effectiveRoles.push('manager', 'hr');
+    }
+
+    const normalizedAllowed = allowedRoles.map(r => r.toLowerCase());
+    const hasAccess = effectiveRoles.some(r => normalizedAllowed.includes(r));
+
+    if (!hasAccess) {
+      const redirectPath = getDefaultRedirect(user.role);
+      if (location.pathname === redirectPath) {
+        return <Navigate to="/dashboard" replace />;
+      }
+      return <Navigate to={redirectPath} replace />;
     }
   }
 
