@@ -112,36 +112,46 @@ def get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id
             cur.close()
             return incident_id, 1, True
 
+import threading
+
+def _upload_snapshot_async(alert_id, filepath, filename):
+    try:
+        public_url = storage.upload_file(filepath, f"snapshots/{filename}")
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE alerts SET snapshot_filename = %s WHERE id = %s", (public_url, alert_id))
+            conn.commit()
+            cur.close()
+    except Exception as e:
+        print(f"[alerts] Snapshot upload failed, continuing without cloud URL: {e}")
+
 def save_snapshot(frame):
     os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
     filename = f"{uuid.uuid4().hex}.jpg"
     filepath = os.path.join(SNAPSHOTS_DIR, filename)
     cv2.imwrite(filepath, frame)
-    try:
-        public_url = storage.upload_file(filepath, f"snapshots/{filename}")
-    except Exception as e:
-        print(f"[alerts] Snapshot upload failed, continuing without cloud URL: {e}")
-        public_url = None
-    return filepath, public_url
+    return filepath, filename
 
 PRIORITY_EMOJI = {"low": "🟡", "medium": "🟠", "high": "🔴"}
 
 def log_alert(person_name, alert_type, priority, message, frame=None, camera_id=None, zone_id=None):
-    local_path, snapshot_url = (save_snapshot(frame) if frame is not None else (None, None))
-    final_url = snapshot_url
-    if local_path and not snapshot_url:
-        final_url = f"/snapshots/{os.path.basename(local_path)}"
+    local_path, filename = (save_snapshot(frame) if frame is not None else (None, None))
+    final_url = f"/snapshots/{filename}" if filename else None
 
     incident_id, alert_count, is_new = get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id)
 
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id, zone_id, incident_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id, zone_id, incident_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (person_name, alert_type, priority, message, datetime.now().isoformat(), final_url, camera_id, zone_id, incident_id)
         )
+        alert_id = cur.fetchone()["id"]
         conn.commit()
         cur.close()
+
+    if local_path and filename:
+        threading.Thread(target=_upload_snapshot_async, args=(alert_id, local_path, filename), daemon=True).start()
 
     emoji = PRIORITY_EMOJI.get(priority, "")
     caption = f"{emoji} [{priority.upper()}] {message}"
