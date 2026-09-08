@@ -60,11 +60,16 @@ def _next_seven_pm(now):
 def _clear_daily_alerts():
     with get_db() as conn:
         cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO alert_records (person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id, zone_id)
+            SELECT person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id, zone_id
+            FROM alerts WHERE permanent = FALSE
+        """)
         cur.execute("DELETE FROM alerts WHERE permanent = FALSE")
         cur.execute("DELETE FROM currently_detected")
         conn.commit()
         cur.close()
-    print("[daily-reset] Cleared non-permanent alerts and currently_detected at 7:00 PM")
+    print("[daily-reset] Archived and cleared non-permanent alerts, cleared currently_detected at 7:00 PM")
 
 def _daily_reset_loop():
     while True:
