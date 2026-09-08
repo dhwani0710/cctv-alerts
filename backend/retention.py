@@ -50,3 +50,32 @@ def _retention_loop():
 def start_retention_thread():
     t = threading.Thread(target=_retention_loop, daemon=True)
     t.start()
+
+def _next_seven_pm(now):
+    target = now.replace(hour=19, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return target
+
+def _clear_daily_alerts():
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM alerts WHERE permanent = FALSE")
+        cur.execute("DELETE FROM currently_detected")
+        conn.commit()
+        cur.close()
+    print("[daily-reset] Cleared non-permanent alerts and currently_detected at 7:00 PM")
+
+def _daily_reset_loop():
+    while True:
+        now = datetime.now()
+        target = _next_seven_pm(now)
+        time.sleep((target - now).total_seconds())
+        try:
+            _clear_daily_alerts()
+        except Exception as e:
+            print(f"[daily-reset] Error: {e}")
+
+def start_daily_reset_thread():
+    t = threading.Thread(target=_daily_reset_loop, daemon=True)
+    t.start()

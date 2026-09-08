@@ -19,7 +19,7 @@ from auth_users import verify_password, create_token, hash_password
 from settings_store import load_settings, save_settings
 import storage
 from PIL import Image, ImageOps
-from retention import start_retention_thread
+from retention import start_retention_thread, start_daily_reset_thread
 
 app = FastAPI(title="Jewellery Store Alert System")
 
@@ -46,6 +46,7 @@ def startup():
     start_health_check_thread()
     start_escalation_thread()
     start_retention_thread()
+    start_daily_reset_thread()
 
 @app.get("/")
 def health_check():
