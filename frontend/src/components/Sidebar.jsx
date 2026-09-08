@@ -11,13 +11,15 @@ const ICONS = {
 export const Sidebar = () => {
   const { user } = useAuth();
   const role = (user?.role || '').toLowerCase();
+  const isAdmin = ['admin', 'ceo', 'owner'].includes(role);
+  const isManager = ['manager', 'hr'].includes(role) || isAdmin;
 
   const links = [{ path: '/dashboard', label: 'Cameras', icon: 'dashboard' }];
-  if (role === 'admin' || role === 'manager') {
+  if (isManager) {
     links.push({ path: '/admin', label: 'Employees', icon: 'employees' });
     links.push({ path: '/attendance', label: 'Attendance', icon: 'attendance' });
   }
-  if (role === 'admin') {
+  if (isAdmin) {
     links.push({ path: '/settings', label: 'Settings', icon: 'settings' });
   }
 

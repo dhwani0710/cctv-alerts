@@ -67,7 +67,8 @@ function logout() {
   window.location.href = 'login.html';
 }
 function dashboardFor(role) {
-  return role === 'admin' ? 'admin-dashboard.html' : 'employee-dashboard.html';
+  const r = (role || '').toLowerCase();
+  return (r === 'admin' || r === 'ceo' || r === 'owner') ? 'admin-dashboard.html' : 'employee-dashboard.html';
 }
 /**
  * Call at the top of every protected page.
@@ -79,9 +80,19 @@ function requireAuth(allowedRoles) {
     window.location.href = 'login.html';
     return null;
   }
-  if (!allowedRoles.includes(session.role)) {
-    // Authenticated, but not allowed on this page — send them
-    // back to their own dashboard rather than to login.
+  const userRole = (session.role || '').toLowerCase();
+  const effectiveRoles = [userRole];
+  if (['ceo', 'owner', 'admin'].includes(userRole)) {
+    effectiveRoles.push('admin', 'ceo', 'owner');
+  }
+  if (['employee', 'guard', 'hr', 'manager'].includes(userRole) || ['ceo', 'owner', 'admin'].includes(userRole)) {
+    effectiveRoles.push('employee', 'guard', 'hr', 'manager');
+  }
+
+  const normalizedAllowed = (allowedRoles || []).map(r => r.toLowerCase());
+  const hasAccess = effectiveRoles.some(r => normalizedAllowed.includes(r));
+
+  if (!hasAccess) {
     window.location.href = dashboardFor(session.role) + '?denied=1';
     return null;
   }

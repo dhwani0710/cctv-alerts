@@ -125,6 +125,14 @@
             <option value="absent">Absent</option>
           </select>
           <input type="date" id="fDate" />
+          <button class="btn btn-brass" id="exportCsvBtn" style="margin-left:auto; display:inline-flex; align-items:center; gap:6px;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export CSV
+          </button>
         </div>
 
         <div class="panel">
@@ -166,16 +174,21 @@
         document.getElementById('fEmployee').style.display = 'none';
       }
 
+      let loadedRecords = [];
+      let loadedDate = '';
+
       async function loadAttendance() {
         const date = document.getElementById('fDate').value || new Date().toISOString().split('T')[0];
+        loadedDate = date;
         const res = await fetch(`${API_BASE}/attendance?date=${date}`, { headers });
         const data = await res.json();
-        let records = data.records;
+        let records = data.records || [];
         if (session.role !== 'admin') records = records.filter(r => r.name === session.name);
+        loadedRecords = records;
 
         document.getElementById('attendanceBody').innerHTML = records.map(r => `
       <tr>
-        <td class="mono">${data.date}</td>
+        <td class="mono">${data.date || date}</td>
         <td>${r.name}</td>
         <td class="mono">${new Date(r.first_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
         <td class="mono">${new Date(r.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
@@ -187,7 +200,41 @@
       <div class="stat-card good"><span class="eyebrow">Present</span><div class="value">${records.length}</div></div>`;
       }
 
+      function exportCSV() {
+        const date = loadedDate || document.getElementById('fDate').value || new Date().toISOString().split('T')[0];
+        if (!loadedRecords || loadedRecords.length === 0) {
+          alert('No attendance records to export for this date.');
+          return;
+        }
+
+        const headers = ['Date', 'Employee', 'Clock In', 'Clock Out', 'Status'];
+        const rows = loadedRecords.map(r => {
+          const clockIn = r.first_seen ? new Date(r.first_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+          const clockOut = r.last_seen ? new Date(r.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+          return [
+            `="${date}"`,
+            `"${(r.name || '').replace(/"/g, '""')}"`,
+            `="${clockIn}"`,
+            `="${clockOut}"`,
+            '"Present"'
+          ].join(',');
+        });
+
+        // Prepend UTF-8 BOM (\uFEFF) so Excel parses all text properly
+        const csvContent = '\uFEFF' + headers.join(',') + '\r\n' + rows.join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `attendance_${date}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      }
+
       document.getElementById('fDate').addEventListener('change', loadAttendance);
+      document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
       loadAttendance();
     }
   </script>
