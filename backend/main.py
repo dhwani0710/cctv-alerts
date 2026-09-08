@@ -469,7 +469,7 @@ def get_attendance(
             "a.attendance_date, a.first_seen, a.last_seen, a.last_camera_id, "
             "COALESCE(a.zone_id, c.location, a.last_camera_id, 'Front Door') as zone_id, "
             "COALESCE(a.status, 'present') as status, a.override_reason, "
-            "COALESCE(a.is_override, 0) as is_override "
+            "COALESCE(a.is_override, FALSE) as is_override "
             "FROM attendance a "
             "JOIN employees e ON e.id = a.employee_id "
             "LEFT JOIN cameras c ON c.id = a.last_camera_id"
@@ -524,7 +524,7 @@ def export_attendance(
             "a.attendance_date, a.first_seen, a.last_seen, "
             "COALESCE(a.zone_id, c.location, a.last_camera_id, 'Front Door') as zone_id, "
             "COALESCE(a.status, 'present') as status, a.override_reason, "
-            "COALESCE(a.is_override, 0) as is_override "
+            "COALESCE(a.is_override, FALSE) as is_override "
             "FROM attendance a "
             "JOIN employees e ON e.id = a.employee_id "
             "LEFT JOIN cameras c ON c.id = a.last_camera_id"
@@ -616,13 +616,13 @@ def override_attendance(req: AttendanceOverrideRequest):
         if existing:
             cur.execute(
                 "UPDATE attendance SET first_seen = %s, last_seen = %s, zone_id = %s, status = %s, "
-                "override_reason = %s, is_override = 1 WHERE employee_id = %s AND attendance_date = %s",
+                "override_reason = %s, is_override = FALSE WHERE employee_id = %s AND attendance_date = %s",
                 (first_seen, last_seen, zone, status, reason, req.employee_id, req.date)
             )
         else:
             cur.execute(
                 "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, last_camera_id, zone_id, status, override_reason, is_override) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, FALSE)",
                 (req.employee_id, req.date, first_seen, last_seen, "manual", zone, status, reason)
             )
 
