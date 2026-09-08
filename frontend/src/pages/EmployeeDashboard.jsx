@@ -2,26 +2,16 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useStatus } from '../context/StatusContext.jsx';
 
 export default function EmployeeDashboard() {
   const { apiFetch } = useAuth();
-  const [status, setStatus] = useState({ recent_alerts: [], currently_detected: [] });
+  const { status, cameras } = useStatus();
   const [cameraCount, setCameraCount] = useState({ live: 0, total: 0 });
 
-  const load = useCallback(async () => {
-    const [statusRes, camRes] = await Promise.all([apiFetch('/status'), apiFetch('/cameras')]);
-    if (statusRes.ok) setStatus(await statusRes.json());
-    if (camRes.ok) {
-      const cams = await camRes.json();
-      setCameraCount({ live: cams.filter((c) => c.live).length, total: cams.length });
-    }
-  }, [apiFetch]);
-
   useEffect(() => {
-    load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
-  }, [load]);
+    setCameraCount({ live: cameras.filter((c) => c.live).length, total: cameras.length });
+  }, [cameras]);
 
   return (
     <Shell active="dashboard" dark title="Overview">

@@ -4,10 +4,24 @@ import psycopg2.extras
 from contextlib import contextmanager
 from datetime import datetime
 from dotenv import load_dotenv
+from psycopg2 import pool
 
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+_pg_pool = None
+def _get_pg_pool():
+    global _pg_pool
+    if _pg_pool is None:
+        _pg_pool = pool.ThreadedConnectionPool(
+            minconn=2,
+            maxconn=20,
+            dsn=DATABASE_URL,
+            cursor_factory=psycopg2.extras.RealDictCursor,
+        )
+    return _pg_pool
+
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_ROLE = os.getenv("DEFAULT_ADMIN_ROLE", "ceo")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
@@ -149,7 +163,7 @@ def init_db():
         from auth_users import hash_password
         admin_pwd_hash = hash_password(DEFAULT_ADMIN_PASSWORD)
         cursor.execute(
-            "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
+            " INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
             (DEFAULT_ADMIN_USERNAME, admin_pwd_hash, DEFAULT_ADMIN_ROLE, DEFAULT_ADMIN_USERNAME)
         )
 
@@ -159,8 +173,9 @@ def init_db():
 
 @contextmanager
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    p = _get_pg_pool()
+    conn = p.getconn()
     try:
         yield conn
     finally:
-        conn.close()
+        p.putconn(conn)

@@ -2,35 +2,33 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useStatus } from '../context/StatusContext.jsx';
 
 export default function AdminDashboard() {
   const { apiFetch } = useAuth();
-  const [status, setStatus] = useState({ recent_alerts: [], currently_detected: [] });
+  const { status, cameras } = useStatus();
   const [employeeCount, setEmployeeCount] = useState(0);
   const [cameraCount, setCameraCount] = useState({ live: 0, total: 0 });
   const [records, setRecords] = useState([]);
 
   const load = useCallback(async () => {
-    const [statusRes, empRes, camRes, recRes] = await Promise.all([
-      apiFetch('/status'),
+    const [empRes, recRes] = await Promise.all([
       apiFetch('/employees'),
-      apiFetch('/cameras'),
       apiFetch('/records?limit=10'),
     ]);
-    if (statusRes.ok) setStatus(await statusRes.json());
     if (empRes.ok) setEmployeeCount((await empRes.json()).length);
-    if (camRes.ok) {
-      const cams = await camRes.json();
-      setCameraCount({ live: cams.filter((c) => c.live).length, total: cams.length });
-    }
     if (recRes.ok) setRecords(await recRes.json());
   }, [apiFetch]);
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000);
+    const t = setInterval(load, 15000);
     return () => clearInterval(t);
   }, [load]);
+
+  useEffect(() => {
+    setCameraCount({ live: cameras.filter((c) => c.live).length, total: cameras.length });
+  }, [cameras]);
 
   const highAlerts = status.recent_alerts.filter((a) => a.priority === 'high').length;
 
