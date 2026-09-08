@@ -2167,3 +2167,19 @@ table.records tr:last-child td {
   background: #352124;
   border-color: #c14b4b;
 }
+
+/* Recent Alerts + Activity Log */
+.alerts-activity-grid {
+  width: 100%;
+}
+
+.alerts-activity-grid .panel {
+  min-width: 0;
+}
+
+/* Mobile: stack the panels */
+@media (max-width: 768px) {
+  .alerts-activity-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

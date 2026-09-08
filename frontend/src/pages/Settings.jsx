@@ -1,8 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { MOCK_ALERTS } from '../data/mockData.js';
-
 export default function Settings() {
   const { session } = useAuth();
 
