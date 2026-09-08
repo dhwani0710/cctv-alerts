@@ -93,36 +93,6 @@ export default function CamerasAlerts() {
         <p>{cameras.length} camera{cameras.length === 1 ? '' : 's'}, monitored continuously. Click a camera to enlarge it.</p>
       </div>
 
-      <div className="panel" style={{ marginBottom: 20 }}>
-        <div className="panel-head">
-          <h2>Currently detected</h2>
-          <span className="eyebrow">{detectedList.length} on camera now</span>
-        </div>
-        <div className="table-wrap">
-          <table className="records">
-            <thead>
-              <tr>
-                <th>Person</th>
-                <th>Camera</th>
-                <th>Last seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detectedList.map((d, i) => (
-                <tr key={i}>
-                  <td>{d.name}</td>
-                  <td className="mono">{d.camera}</td>
-                  <td className="mono">{new Date(d.last_seen).toLocaleTimeString()}</td>
-                </tr>
-              ))}
-              {detectedList.length === 0 && (
-                <tr><td colSpan={3} style={{ color: 'var(--text-muted)' }}>No one currently detected.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       <div className="two-col" style={{ gridTemplateColumns: '1fr 340px' }}>
         <div className="panel" style={{ display: 'flex', flexDirection: 'column', height: PANEL_HEIGHT }}>
           <div className="panel-head" style={{ flexShrink: 0 }}><h2>Camera feeds</h2></div>
@@ -153,7 +123,25 @@ export default function CamerasAlerts() {
           </div>
         </div>
 
-        <div className="panel" style={{ display: 'flex', flexDirection: 'column', height: PANEL_HEIGHT }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: PANEL_HEIGHT, gap: 20 }}>
+          <div className="panel" style={{ display: 'flex', flexDirection: 'column', flex: '0 0 auto' }}>
+            <div className="panel-head" style={{ flexShrink: 0 }}>
+              <h2>Currently detected</h2>
+              <span className="eyebrow">{detectedList.length} on camera now</span>
+            </div>
+            <div style={{ overflowY: 'auto', maxHeight: 114, paddingRight: 4 }}>
+              {detectedList.map((d, i) => (
+                <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid var(--border, #2a2a2a)' }}>
+                  {d.name}
+                </div>
+              ))}
+              {detectedList.length === 0 && (
+                <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No one currently detected.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="panel" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <div className="panel-head" style={{ flexShrink: 0 }}>
             <h2>Alerts</h2>
             <span className="eyebrow">{incidents.length} active</span>
@@ -176,6 +164,7 @@ export default function CamerasAlerts() {
               </div>
             ))}
             {incidents.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No active alerts.</p>}
+          </div>
           </div>
         </div>
       </div>
