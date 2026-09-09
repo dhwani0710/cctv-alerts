@@ -18,7 +18,7 @@ const NAV_ICONS = {
       <circle cx="17" cy="8" r="2.4" /><path d="M15.5 14.2c2.6.4 4.5 2.7 4.5 5.8" />
     </svg>
   ),
-  users: (
+    users: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
       <circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" />
     </svg>
@@ -33,9 +33,12 @@ const NAV_ICONS = {
       <rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" />
     </svg>
   ),
-  attendance: (
+    attendance: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-      <circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" />
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M4 9h16" />
+      <circle cx="8" cy="6.5" r="0.8" fill="currentColor" stroke="none" />
+      <path d="M8 13h4M8 16h8" />
     </svg>
   ),
   'my-attendance': (
@@ -450,11 +453,11 @@ export default function Shell({ active, dark = false, title, children }) {
 
   const navItems = [
     { key: 'dashboard', label: 'Dashboard', to: dashboardFor(session.role) },
+    ...((isAdmin || isGuard) ? [{ key: 'cameras', label: 'Cameras & Alerts', to: '/cameras-alerts' }] : []),
+    ...((isAdmin || isHr) ? [{ key: 'attendance', label: 'Attendance', to: '/attendance' }] : []),
+    ...((isAdmin || isGuard) ? [{ key: 'records', label: 'Records', to: '/records' }] : []),
     ...(isAdmin ? [{ key: 'employees', label: 'Employees', to: '/admin-employees' }] : []),
     ...(isAdmin ? [{ key: 'users', label: 'Users', to: '/admin-users' }] : []),
-    ...((isAdmin || isGuard) ? [{ key: 'cameras', label: 'Cameras & Alerts', to: '/cameras-alerts' }] : []),
-    ...((isAdmin || isGuard) ? [{ key: 'records', label: 'Records', to: '/records' }] : []),
-    ...((isAdmin || isHr) ? [{ key: 'attendance', label: 'Attendance', to: '/attendance' }] : []),
   ];
 
   return (
