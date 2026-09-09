@@ -1,113 +1,262 @@
-# Jewellery Store Security Alert System
+# CCTV Alerts
 
-A modern facial-recognition CCTV monitoring and alert application with Role-Based Access Control (RBAC), built with **FastAPI** on the backend and **React + Vite** on the frontend.
+A real-time CCTV monitoring and alert platform for a jewellery store environment. The project combines a FastAPI backend for authentication, camera handling, employee recognition, attendance tracking, and alert workflows with a React + Vite frontend for dashboards and admin controls.
 
 ---
 
-## 🔐 Role-Based Access Control (RBAC)
+## Overview
 
-The system supports three user roles with granular permission levels:
+This system is designed to:
 
-| Role | Live CCTV & Alerts (`/dashboard`) | Attendance Logs (`/attendance`) | Staff & Photo Setup (`/admin`) | Store Hours (`/admin`) | User Management (`/admin`) |
+- monitor live camera feeds and detect persons in configured zones
+- match visitors or staff against a known-face database
+- generate alert records for suspicious or unexpected activity
+- track employee attendance by shift and presence
+- support role-based access for different team responsibilities
+- store snapshots and media references locally and in cloud storage when configured
+- notify staff via Telegram when alerts are raised
+
+The application is currently structured around these primary roles:
+
+- ceo
+- owner
+- guard
+- hr
+
+---
+
+## Role Access Model
+
+The backend and frontend enforce route-level access using JWT-based auth.
+
+| Role | Live camera / alerts | Employee management | User management | Attendance | Settings |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **👑 Admin** | ✅ Full Access | ✅ Full Access | ✅ Full Access | ✅ Full Access | ✅ Full Access |
-| **👔 Manager** | ✅ Full Access | ✅ Full Access | ✅ Full Access | ❌ Restricted | ❌ Restricted |
-| **🛡️ Security Guard** | ✅ Full Access | ❌ Restricted | ❌ Restricted | ❌ Restricted | ❌ Restricted |
+| ceo | ✅ | ✅ | ✅ | ✅ | ✅ |
+| owner | ✅ | ✅ | ✅ | ✅ | ✅ |
+| guard | ✅ | ❌ | ❌ | ❌ | ✅ |
+| hr | ❌ | ✅ | ❌ | ✅ | ✅ |
+
+Routes are protected in the frontend via the React router and in the backend via required auth dependencies.
 
 ---
 
-## 🚀 Quick Start Guide
+## Current Features
 
-### 1. Prerequisites
-- **Python**: 3.10, 3.11, or 3.12+
-- **Node.js**: 18+ and npm
+### Authentication and RBAC
+
+- JWT-based login flow with username/password verification
+- default admin user is created automatically on database initialization
+- protected API endpoints for admin-only or staff-only actions
+- user management endpoints for creating, updating, and deleting users
+
+### Employee and Face Management
+
+- add employee records with shift times and designation
+- upload one or more employee photos
+- store face images in the known_faces folder and sync to configured storage
+- clear cached face representation data after updates
+
+### Camera and Incident Monitoring
+
+- configured camera sources loaded from backend settings
+- live status endpoint for camera and alert health
+- incident tracking with first-seen and last-seen timestamps
+- zone and camera configuration APIs
+- snapshot retrieval endpoints for captured evidence
+
+### Attendance Tracking
+
+- attendance records keyed by employee and date
+- first/last seen timestamps
+- override support and status tracking
+- attendance export endpoints and dashboard views
+
+### Notification and Storage
+
+- Telegram notifications for alert and escalation events
+- local snapshots and cloud uploads via Supabase-compatible storage
+- retention and daily reset jobs for cleanup and system maintenance
 
 ---
 
-### 2. Backend Setup
-1. Open a terminal and navigate to the `backend/` folder:
+## Default Login
+
+On first database initialization, the app seeds a default admin account:
+
+- username: admin
+- password: ceo123
+
+You can then create additional users from the admin user management flow.
+
+---
+
+## Project Structure
+
+```text
+cctv-alerts/
+├── backend/
+│   ├── alerts.py              # alert generation and anomaly logic
+│   ├── app_settings.py        # app settings management
+│   ├── auth.py                # JWT verification and role checks
+│   ├── auth_users.py          # password hashing, token creation, role constants
+│   ├── camera_worker.py       # camera worker and processing loops
+│   ├── config.py              # default camera configuration
+│   ├── database.py            # PostgreSQL database setup and migrations
+│   ├── main.py                # FastAPI app, routes, and endpoints
+│   ├── notifications.py       # Telegram notification helpers
+│   ├── recognition.py         # face-recognition flows
+│   ├── requirements.txt       # backend Python dependencies
+│   ├── retention.py           # retention and cleanup tasks
+│   ├── settings_store.py      # settings persistence helpers
+│   ├── storage.py             # local/cloud storage sync helpers
+│   ├── known_faces/           # known employee photos
+│   ├── snapshots/             # captured snapshots
+│   ├── .env.example           # sample environment configuration
+│   └── .env                   # local runtime settings (not committed)
+├── frontend/
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── css/
+│   └── src/
+│       ├── App.jsx
+│       ├── components/
+│       ├── context/
+│       ├── data/
+│       └── pages/
+├── README.md
+└── .gitignore
+```
+
+---
+
+## Prerequisites
+
+- Python 3.10+
+- Node.js 18+
+- npm
+- PostgreSQL connection string for the backend database
+
+---
+
+## Backend Setup
+
+1. Open a terminal and change to the backend folder:
+
    ```bash
    cd backend
    ```
 2. Install Python dependencies:
+
    ```bash
    python -m pip install -r requirements.txt
    ```
-3. (Optional) Copy `.env.example` to `.env` to configure PostgreSQL (Neon/Supabase) or Telegram alerts. If omitted, the backend will automatically use a local SQLite database (`cctv.db`).
-4. Start the backend API server:
+
+3. Copy the sample environment file and define your values:
+
+   ```bash
+   copy .env.example .env
+   ```
+
+   Then update the variables in .env, including:
+
+   - DATABASE_URL
+   - JWT_SECRET
+   - API_SECRET_KEY
+   - DEFAULT_ADMIN_USERNAME
+   - DEFAULT_ADMIN_PASSWORD
+   - TELEGRAM_BOT_TOKEN
+   - TELEGRAM_CHAT_ID
+   - Supabase settings if you want cloud storage
+
+4. Start the API server:
+
    ```bash
    python -m uvicorn main:app --reload --port 8000
    ```
-   * The API server runs at: `http://localhost:8000`
-   * Interactive Swagger docs: `http://localhost:8000/docs`
+
+5. Open the API docs in a browser:
+
+   - http://localhost:8000
+   - http://localhost:8000/docs
 
 ---
 
-### 3. Frontend Setup
-1. Open a second terminal and navigate to the `frontend/` folder:
+## Frontend Setup
+
+1. Open a second terminal and change to the frontend folder:
+
    ```bash
    cd frontend
    ```
-2. Install Node dependencies (if not already installed):
+
+2. Install dependencies:
+
    ```bash
    npm install
    ```
-3. Start the Vite React development server:
+
+3. Start the development server:
+
    ```bash
    npm run dev
    ```
-4. Open the application in your browser at:
-   👉 **[http://localhost:5173](http://localhost:5173)**
+
+4. Open the app in the browser:
+
+   - http://localhost:5173
 
 ---
 
-## 🔑 Default Super Admin Login
+## Environment File Example
 
-On initial startup, the database automatically seeds a default Super Admin account:
-* **Username**: `admin`
-* **Password**: `admin123`
+The project expects backend environment values similar to those in [backend/.env.example](backend/.env.example):
 
-Once logged in as Admin, you can navigate to the **User Management (RBAC)** section on the Admin page to create separate accounts for **Managers** and **Security Guards**.
+```env
+API_SECRET_KEY=your-secret-key-here
+JWT_SECRET=your-jwt-secret-key-here
+DEFAULT_ADMIN_USERNAME=admin
+DEFAULT_ADMIN_PASSWORD=admin123
 
----
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token-here
+TELEGRAM_CHAT_ID=your-telegram-chat-id-here
 
-## 🛠️ Project Structure
+DATABASE_URL=your-neon-connection-string-here
 
-```
-cctv-alerts/
-├── backend/
-│   ├── auth.py             # JWT token generation, password hashing & role guards
-│   ├── database.py         # Database layer (PostgreSQL + SQLite auto-fallback)
-│   ├── main.py             # FastAPI REST endpoints & MJPEG stream
-│   ├── camera_worker.py    # Multi-threaded camera processing
-│   ├── recognition.py      # Face recognition module
-│   ├── alerts.py           # Anomaly detection & alert triggers
-│   ├── storage.py          # Cloud & local snapshot/face storage
-│   └── requirements.txt    # Python dependencies
-├── frontend/
-│   ├── src/
-│   │   ├── components/     # Navbar, ProtectedRoute
-│   │   ├── context/        # AuthContext (JWT & state management)
-│   │   ├── pages/          # LoginPage, DashboardPage, AdminPage, AttendancePage
-│   │   ├── App.jsx         # React Router configuration
-│   │   └── main.jsx        # React root entry
-│   ├── package.json        # Frontend dependencies & build scripts
-│   ├── vite.config.js      # Vite dev server & API proxy config
-│   └── tailwind.config.js  # Tailwind CSS configuration
-└── README.md
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+SUPABASE_BUCKET_NAME=cctv-alerts-photos
 ```
 
+> The backend currently expects a PostgreSQL database via DATABASE_URL rather than an automatic SQLite fallback.
+
 ---
 
-## 🧪 Verification & Build Commands
+## Useful Commands
 
-* **Run Lint**:
-  ```bash
-  cd frontend
-  npm run lint
-  ```
-* **Build Frontend Production Bundle**:
-  ```bash
-  cd frontend
-  npm run build
-  ```
+### Backend
+
+```bash
+cd backend
+python -m pip install -r requirements.txt
+python -m uvicorn main:app --reload --port 8000
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+npm run build
+```
+
+---
+
+## Notes
+
+- The app is built for a specific jewellery store use case, but the underlying architecture is reusable for other CCTV, access, and attendance scenarios.
+- The actual frontend route structure includes dashboards such as admin-dashboard, guard-dashboard, hr-dashboard, cameras-alerts, records, attendance, and settings.
+- Face recognition and media processing are active features, but they depend on working camera sources, uploaded employee images, and compatible environment settings.
+
+This README reflects the current codebase and setup requirements as implemented in the project today.
