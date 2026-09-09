@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth, dashboardFor } from '../context/AuthContext.jsx';
 import { initials } from '../data/mockData.js';
+import { useStatus } from '../context/StatusContext.jsx';
 import HallmarkStamp from './HallmarkStamp.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
 
@@ -410,26 +411,8 @@ export default function Shell({ active, dark = false, title, children }) {
   const [params, setParams] = useSearchParams();
   const clock = useClock();
   const [toast, setToast] = useState(false);
-  const [hasHighAlert, setHasHighAlert] = useState(false);
-  const [recentAlerts, setRecentAlerts] = useState([]);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function checkAlerts() {
-      try {
-        const res = await apiFetch('/status');
-        if (res.ok && !cancelled) {
-          const data = await res.json();
-          setHasHighAlert((data.recent_alerts || []).some((a) => a.priority === 'high'));
-          setRecentAlerts(data.recent_alerts || []);
-        }
-      } catch { }
-    }
-    checkAlerts();
-    const t = setInterval(checkAlerts, 10000);
-    return () => { cancelled = true; clearInterval(t); };
-  }, [apiFetch]);
-
+  const { hasHighAlert, recentAlerts } = useStatus();
   useEffect(() => {
     if (params.get('denied') === '1') {
       setToast(true);
