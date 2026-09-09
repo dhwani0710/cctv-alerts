@@ -5,6 +5,8 @@ import time
 import csv
 import io
 import math
+import threading
+import numpy as np
 from typing import List, Optional
 from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -179,10 +181,7 @@ async def add_employee(
             filename = f"photo_{i+1}.jpg"
             photo_path = os.path.join(employee_folder, filename)
             _save_resized_photo(photo, photo_path)
-            try:
-                storage.upload_file(photo_path, f"known_faces/{folder_name}/{filename}")
-            except Exception as e:
-                print(f"[main] Photo cloud upload failed, continuing with local copy only: {e}")
+            threading.Thread(target=_upload_photo_async, args=(photo_path, f"known_faces/{folder_name}/{filename}"), daemon=True).start()
             cur.execute(
                 "INSERT INTO employee_photos (employee_id, filename) VALUES (%s, %s)",
                 (employee_id, filename)
@@ -230,10 +229,7 @@ async def update_employee(
             os.makedirs(employee_folder, exist_ok=True)
             photo_path = os.path.join(employee_folder, "photo_1.jpg")
             _save_resized_photo(photo, photo_path)
-            try:
-                storage.upload_file(photo_path, f"known_faces/{folder_name}/photo_1.jpg")
-            except Exception as e:
-                print(f"[main] Photo cloud upload failed, continuing with local copy only: {e}")
+            threading.Thread(target=_upload_photo_async, args=(photo_path, f"known_faces/{folder_name}/photo_1.jpg")).start()
             _clear_face_cache()
 
         cur.execute(
@@ -992,6 +988,9 @@ def get_status():
     alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
 
+_, _offline_jpeg = cv2.imencode(".jpg", np.zeros((480, 640, 3), dtype="uint8"))
+offline_bytes = (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + _offline_jpeg.tobytes() + b"\r\n")
+
 def _mjpeg_generator(camera_id):
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, 70]
     while True:
@@ -1070,30 +1069,28 @@ def delete_user(user_id: int, current_user: dict = Depends(verify_token)):
 
 @app.get("/incidents", dependencies=[Depends(verify_token)])
 def list_incidents(status: str = None, limit: int = 100):
-    query = "SELECT * FROM incidents WHERE 1=1"
+    query = """
+        SELECT i.*,
+            (SELECT a.snapshot_filename FROM alerts a
+             WHERE a.incident_id = i.id AND a.snapshot_filename IS NOT NULL
+             ORDER BY a.timestamp DESC LIMIT 1) AS snapshot_filename
+        FROM incidents i
+        WHERE 1=1
+    """
     params = []
     if status:
-        query += " AND status = %s"
+        query += " AND i.status = %s"
         params.append(status)
-    query += " ORDER BY last_seen DESC LIMIT %s"
+    query += " ORDER BY i.last_seen DESC LIMIT %s"
     params.append(limit)
+
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(query, tuple(params))
         rows = cur.fetchall()
-
-        result = []
-        for r in rows:
-            row = dict(r)
-            cur.execute(
-                "SELECT snapshot_filename FROM alerts WHERE incident_id = %s AND snapshot_filename IS NOT NULL ORDER BY timestamp DESC LIMIT 1",
-                (r["id"],)
-            )
-            snap = cur.fetchone()
-            row["snapshot_filename"] = snap["snapshot_filename"] if snap else None
-            result.append(row)
         cur.close()
-    return result
+
+    return [dict(r) for r in rows]
 
 class IncidentUpdateRequest(BaseModel):
     status: str

@@ -210,12 +210,12 @@ def _camera_loop(camera_config):
             time.sleep(5)
 
     last_recognition = 0
+    last_heartbeat = 0
     consecutive_failures = 0
     MAX_FAILURES_BEFORE_RECONNECT = 15
 
     while True:
-        for _ in range(3):
-            cap.grab()
+        cap.grab()
         success, frame = cap.retrieve()
         if not success or frame is None or frame.size == 0:
             consecutive_failures += 1
@@ -231,7 +231,10 @@ def _camera_loop(camera_config):
 
         with frame_locks[camera_id]:
             latest_frames[camera_id] = frame.copy()
-        update_camera_heartbeat(camera_id, datetime.now())
+
+        if time.time() - last_heartbeat > config.CAMERA_HEARTBEAT_INTERVAL_SEC:
+            update_camera_heartbeat(camera_id, datetime.now())
+            last_heartbeat = time.time()
 
         if time.time() - last_recognition > config.RECOGNITION_INTERVAL_SEC:
             start_new = False
@@ -243,7 +246,7 @@ def _camera_loop(camera_config):
                 threading.Thread(target=_recognition_worker, args=(frame.copy(), camera_id, camera_name), daemon=True).start()
             last_recognition = time.time()
 
-        time.sleep(0.03)
+        time.sleep(0.1)
 
 def start_camera_threads():
     cameras = _load_cameras_from_db()

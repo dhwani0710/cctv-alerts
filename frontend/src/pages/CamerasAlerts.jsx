@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Shell from '../components/Shell.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useStatus } from '../context/StatusContext.jsx';
 
 const PANEL_HEIGHT = 620;
 const API_BASE = 'http://localhost:8000';
@@ -9,29 +10,24 @@ const API_BASE = 'http://localhost:8000';
 export default function CamerasAlerts() {
   const { session, apiFetch } = useAuth();
   const isAdmin = session.role === 'ceo' || session.role === 'owner' || session.role === 'hr';
+  const isAdmin = session.role === 'ceo' || session.role === 'owner';
+  const { cameras } = useStatus();
   const [selected, setSelected] = useState(null);
-  const [cameras, setCameras] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [dismissTarget, setDismissTarget] = useState(null);
   const [snapshotView, setSnapshotView] = useState(null);
   const [detected, setDetected] = useState({});
 
-  const loadCameras = useCallback(async () => {
-    const res = await apiFetch('/cameras');
-    if (res.ok) setCameras(await res.json());
-  }, [apiFetch]);
-
-  const loadIncidents = useCallback(async () => {
+    const loadIncidents = useCallback(async () => {
     const res = await apiFetch('/incidents?status=new');
     if (res.ok) setIncidents(await res.json());
   }, [apiFetch]);
 
   useEffect(() => {
-    loadCameras();
     loadIncidents();
-    const t = setInterval(() => { loadCameras(); loadIncidents(); }, 5000);
+    const t = setInterval(loadIncidents, 5000);
     return () => clearInterval(t);
-  }, [loadCameras, loadIncidents]);
+  }, [loadIncidents]);
 
   useEffect(() => {
     function onKey(e) {
