@@ -320,8 +320,14 @@ def delete_record(alert_id: int):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM alerts WHERE id = %s", (alert_id,))
+        deleted = cur.rowcount
+        if deleted == 0:
+            cur.execute("DELETE FROM alert_records WHERE id = %s", (alert_id,))
+            deleted = cur.rowcount
         conn.commit()
         cur.close()
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="Record not found")
     return {"message": "Record deleted"}
 
 @app.get("/records/export", dependencies=[Depends(require_staff)])
@@ -949,6 +955,9 @@ def mark_permanent(alert_id: int, permanent: bool = True):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("UPDATE alerts SET permanent = %s WHERE id = %s", (permanent, alert_id))
+        updated = cur.rowcount
         conn.commit()
         cur.close()
+    if updated == 0:
+        raise HTTPException(status_code=404, detail="Record not found or already archived")
     return {"message": "Updated"}

@@ -59,7 +59,6 @@ def is_within_store_hours(now: datetime):
     close_t = now.replace(hour=close_h, minute=close_m, second=0, microsecond=0)
     return open_t <= now <= close_t
 
-def already_alerted_recently(person_name, alert_type, priority, window_seconds=None):
     from app_settings import get_setting_int
     if window_seconds is None:
         window_seconds = get_setting_int("alert_dedupe_window_sec") or 60
@@ -87,7 +86,7 @@ def get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, alert_count FROM incidents WHERE person_name = %s AND alert_type = %s "
+            "SELECT id, alert_count, last_notified FROM incidents WHERE person_name = %s AND alert_type = %s "
             "AND camera_id = %s AND last_seen >= %s ORDER BY last_seen DESC LIMIT 1",
             (person_name, alert_type, camera_id, cutoff.isoformat())
         )
@@ -100,17 +99,17 @@ def get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id
             )
             conn.commit()
             cur.close()
-            return row["id"], row["alert_count"] + 1, False
+            return row["id"], row["alert_count"] + 1, False, row["last_notified"]
         else:
             cur.execute(
-                "INSERT INTO incidents (person_name, alert_type, priority, camera_id, zone_id, first_seen, last_seen, alert_count) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, 1) RETURNING id",
-                (person_name, alert_type, priority, camera_id, zone_id, now.isoformat(), now.isoformat())
+                "INSERT INTO incidents (person_name, alert_type, priority, camera_id, zone_id, first_seen, last_seen, alert_count, last_notified) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s) RETURNING id",
+                (person_name, alert_type, priority, camera_id, zone_id, now.isoformat(), now.isoformat(), now.isoformat())
             )
             incident_id = cur.fetchone()["id"]
             conn.commit()
             cur.close()
-            return incident_id, 1, True
+            return incident_id, 1, True, now.isoformat()
 
 def save_snapshot(frame):
     os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
@@ -126,13 +125,16 @@ def save_snapshot(frame):
 
 PRIORITY_EMOJI = {"low": "🟡", "medium": "🟠", "high": "🔴"}
 
+REPEAT_ALERT_THRESHOLD = 5
+REPEAT_ALERT_INTERVAL_SEC = 5 * 60
+
 def log_alert(person_name, alert_type, priority, message, frame=None, camera_id=None, zone_id=None):
     local_path, snapshot_url = (save_snapshot(frame) if frame is not None else (None, None))
     final_url = snapshot_url
     if local_path and not snapshot_url:
         final_url = f"/snapshots/{os.path.basename(local_path)}"
 
-    incident_id, alert_count, is_new = get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id)
+    incident_id, alert_count, is_new, last_notified = get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id)
 
     with get_db() as conn:
         cur = conn.cursor()
@@ -153,6 +155,26 @@ def log_alert(person_name, alert_type, priority, message, frame=None, camera_id=
             send_telegram_photo(local_path, caption)
         else:
             send_telegram_alert(caption)
+        return
+
+    if alert_count > REPEAT_ALERT_THRESHOLD:
+        now = datetime.now()
+        should_notify = True
+        if last_notified:
+            elapsed = (now - datetime.fromisoformat(last_notified)).total_seconds()
+            should_notify = elapsed >= REPEAT_ALERT_INTERVAL_SEC
+
+        if should_notify:
+            repeat_caption = (
+                f"{emoji} [{priority.upper()}] Repeated alert — {message} "
+                f"(incident #{incident_id}, {alert_count} occurrences so far)"
+            )
+            send_telegram_alert(repeat_caption)
+            with get_db() as conn:
+                cur = conn.cursor()
+                cur.execute("UPDATE incidents SET last_notified = %s WHERE id = %s", (now.isoformat(), incident_id))
+                conn.commit()
+                cur.close()
 
 def escalate_stale_incidents():
     now = datetime.now()
