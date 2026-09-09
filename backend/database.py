@@ -12,6 +12,7 @@ DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_ROLE = os.getenv("DEFAULT_ADMIN_ROLE", "ceo")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
 
+
 def init_db():
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
@@ -179,3 +180,5 @@ def get_db():
         yield conn
     finally:
         conn.close()
+
+        
