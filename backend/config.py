@@ -6,14 +6,16 @@ MEDIUM_THRESHOLD_MIN = 60
 
 RECOGNITION_INTERVAL_SEC = 10
 CURRENTLY_DETECTED_TIMEOUT_SEC = 30
-
 UNKNOWN_STREAK_THRESHOLD = 2
 
 ALERT_DEDUPE_WINDOW_SEC = 120
 
+import os
+from dotenv import load_dotenv
+load_dotenv()
 CAMERAS = [
-    {"id": "cam1", "name": "201 Door", "source": "rtsp://admin:FWXDNE@192.168.1.6:554/Streaming/Channels/102", "location": "front"},
-    {"id": "cam2", "name": "201 Room", "source": "rtsp://admin:JZLMEH@192.168.1.4:554/Streaming/Channels/102", "location": "front"},
+    {"id": "cam1", "name": "201 Door", "source": os.getenv("CAM1_RTSP_URL", ""), "location": "front"},
+    {"id": "cam2", "name": "201 Room", "source": os.getenv("CAM2_RTSP_URL", ""), "location": "front"},
 ]
 
 CAMERA_OFFLINE_THRESHOLD_SEC = 30

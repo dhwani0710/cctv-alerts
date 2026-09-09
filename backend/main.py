@@ -6,6 +6,7 @@ import csv
 import io
 import math
 import threading
+import numpy as np
 from typing import List, Optional
 from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -766,6 +767,9 @@ def get_status():
     detected = [{"name": r["person_name"], "camera": r["camera_id"], "last_seen": r["last_seen"]} for r in detected_rows]
     alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
+
+_, _offline_jpeg = cv2.imencode(".jpg", np.zeros((480, 640, 3), dtype="uint8"))
+offline_bytes = (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + _offline_jpeg.tobytes() + b"\r\n")
 
 def _mjpeg_generator(camera_id):
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, 70]
