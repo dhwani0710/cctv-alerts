@@ -280,11 +280,10 @@ def update_app_setting(payload: AppSettingRequest):
     return {"message": "Setting updated"}
 
 @app.get("/records", dependencies=[Depends(verify_token)])
-def get_records(camera: str = None, status: str = None, date: str = None, limit: int = 100):
-    query = """
-        SELECT i.id, i.person_name, i.alert_type, i.priority, i.camera_id,
-               i.first_seen, i.last_seen, i.alert_count, i.status,
-               a.message, a.snapshot_filename
+def get_records(camera: str = None, status: str = None, date: str = None, page: int = 1, limit: int = 10):
+    offset = (page - 1) * limit
+
+    base_query = """
         FROM incidents i
         LEFT JOIN LATERAL (
             SELECT message, snapshot_filename
@@ -298,24 +297,33 @@ def get_records(camera: str = None, status: str = None, date: str = None, limit:
     params = []
 
     if camera:
-        query += " AND (i.camera_id = %s OR i.camera_id LIKE %s)"
+        base_query += " AND (i.camera_id = %s OR i.camera_id LIKE %s)"
         params.extend([camera, f"%{camera}%"])
 
     if status:
         status_map = {"flag": "high", "review": "medium", "clear": "low"}
-        query += " AND i.priority = %s"
+        base_query += " AND i.priority = %s"
         params.append(status_map.get(status, status))
 
     if date:
-        query += " AND i.last_seen LIKE %s"
+        base_query += " AND i.last_seen LIKE %s"
         params.append(f"{date}%")
 
-    query += " ORDER BY i.last_seen DESC LIMIT %s"
-    params.append(limit)
+    count_query = "SELECT COUNT(*) AS count " + base_query
+    data_query = """
+        SELECT i.id, i.person_name, i.alert_type, i.priority, i.camera_id, i.zone_id,
+               i.first_seen, i.last_seen, i.alert_count, i.status,
+               a.message, a.snapshot_filename
+    """ + base_query + " ORDER BY i.last_seen DESC LIMIT %s OFFSET %s"
+
+    data_params = params + [limit, offset]
 
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(query, tuple(params))
+        cur.execute(count_query, tuple(params))
+        total = cur.fetchone()["count"]
+
+        cur.execute(data_query, tuple(data_params))
         rows = cur.fetchall()
         cur.close()
 
@@ -326,7 +334,13 @@ def get_records(camera: str = None, status: str = None, date: str = None, limit:
         rec["occurrences"] = rec.get("alert_count")
         results.append(rec)
 
-    return results
+    return {
+        "records": results,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": math.ceil(total / limit) if limit > 0 else 1
+    }
 
 @app.delete("/records/{alert_id}", dependencies=[Depends(require_staff)])
 def delete_record(alert_id: int):
