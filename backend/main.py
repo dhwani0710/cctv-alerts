@@ -476,23 +476,35 @@ def get_records(camera: str = None, status: str = None, date: str = None, limit:
             UNION ALL
             SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM alert_records
         ) combined WHERE 1=1
+        SELECT i.id, i.person_name, i.alert_type, i.priority, i.camera_id,
+               i.first_seen, i.last_seen, i.alert_count, i.status,
+               a.message, a.snapshot_filename
+        FROM incidents i
+        LEFT JOIN LATERAL (
+            SELECT message, snapshot_filename
+            FROM alerts
+            WHERE alerts.incident_id = i.id
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ) a ON true
+        WHERE 1=1
     """
     params = []
 
     if camera:
-        query += " AND (camera_id = %s OR camera_id LIKE %s)"
+        query += " AND (i.camera_id = %s OR i.camera_id LIKE %s)"
         params.extend([camera, f"%{camera}%"])
 
     if status:
         status_map = {"flag": "high", "review": "medium", "clear": "low"}
-        query += " AND priority = %s"
+        query += " AND i.priority = %s"
         params.append(status_map.get(status, status))
 
     if date:
-        query += " AND timestamp LIKE %s"
+        query += " AND i.last_seen LIKE %s"
         params.append(f"{date}%")
 
-    query += " ORDER BY timestamp DESC LIMIT %s"
+    query += " ORDER BY i.last_seen DESC LIMIT %s"
     params.append(limit)
 
     with get_db() as conn:
@@ -501,8 +513,15 @@ def get_records(camera: str = None, status: str = None, date: str = None, limit:
         rows = cur.fetchall()
         cur.close()
 
-    return [dict(r) for r in rows]
-    
+    results = []
+    for r in rows:
+        rec = dict(r)
+        rec["timestamp"] = rec.get("last_seen")
+        rec["occurrences"] = rec.get("alert_count")
+        results.append(rec)
+
+    return results
+
 @app.delete("/records/{alert_id}", dependencies=[Depends(require_staff)])
 def delete_record(alert_id: int):
     with get_db() as conn:
