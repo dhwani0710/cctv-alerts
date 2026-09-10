@@ -144,7 +144,15 @@ def init_db():
         ALTER TABLE attendance ADD COLUMN IF NOT EXISTS last_camera_id TEXT
     """)
 
-    cursor.execute("DROP TABLE IF EXISTS currently_detected")
+    try:
+        cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'")
+        cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_by TEXT")
+        cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_at TEXT")
+        cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_proof_image TEXT")
+        cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_notes TEXT")
+    except Exception as e:
+        print(f"[database] Note on alerts columns: {e}")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS currently_detected (
             person_name TEXT NOT NULL,
@@ -153,6 +161,11 @@ def init_db():
             PRIMARY KEY (person_name, camera_id)
         )
     """)
+    try:
+        cursor.execute("DELETE FROM currently_detected")
+    except Exception as e:
+        pass
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS system_state (
             key TEXT PRIMARY KEY,
@@ -170,26 +183,45 @@ def init_db():
         )
     """)
 
-    # Users Table for Role Based Access Control
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE IF NOT EXISTS audit_logs (
             id SERIAL PRIMARY KEY,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            user_id INTEGER,
+            username TEXT NOT NULL,
+            user_role TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target_module TEXT NOT NULL,
+            details TEXT NOT NULL,
+            proof_image TEXT,
+            timestamp TEXT NOT NULL
         )
     """)
 
-    # Auto-seed default Super Admin if not present
-    cursor.execute("SELECT id FROM users WHERE username = %s", (DEFAULT_ADMIN_USERNAME,))
-    if not cursor.fetchone():
-        import auth
-        admin_pwd_hash = auth.hash_password(DEFAULT_ADMIN_PASSWORD)
-        cursor.execute(
-            "INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, %s, %s)",
-            (DEFAULT_ADMIN_USERNAME, admin_pwd_hash, "admin", datetime.utcnow().isoformat())
-        )
+    # Seed the 4 core role accounts (Owner, CEO, HR, Guard) + admin
+    from auth_users import hash_password
+    default_users = [
+        {"username": "admin", "password": "ceo123", "role": "owner", "name": "System Owner"},
+        {"username": "owner", "password": "ceo123", "role": "owner", "name": "System Owner"},
+        {"username": "ceo", "password": "ceo123", "role": "ceo", "name": "Chief Executive Officer"},
+        {"username": "hr", "password": "hr1234", "role": "hr", "name": "HR Department"},
+        {"username": "guard", "password": "guard123", "role": "guard", "name": "Security Guard"},
+    ]
+
+    for u in default_users:
+        cursor.execute("SELECT id FROM users WHERE username = %s", (u["username"],))
+        existing = cursor.fetchone()
+        pwd_hash = hash_password(u["password"])
+        if not existing:
+            cursor.execute(
+                "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
+                (u["username"], pwd_hash, u["role"], u["name"])
+            )
+        else:
+            # Ensure proper role and password hash are active
+            cursor.execute(
+                "UPDATE users SET password_hash = %s, role = %s, name = %s WHERE username = %s",
+                (pwd_hash, u["role"], u["name"], u["username"])
+            )
 
     conn.commit()
     cursor.close()

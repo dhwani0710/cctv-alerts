@@ -7,7 +7,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      '/login': 'http://localhost:8000',
       '/auth': 'http://localhost:8000',
+      '/alerts': 'http://localhost:8000',
+      '/audit-logs': 'http://localhost:8000',
       '/employees': 'http://localhost:8000',
       '/settings': 'http://localhost:8000',
       '/attendance': 'http://localhost:8000',
@@ -16,7 +19,6 @@ export default defineConfig({
       '/snapshots': 'http://localhost:8000',
       '/video_feed': 'http://localhost:8000',
       '/users': 'http://localhost:8000',
-      '/login': 'http://localhost:8000',
     }
   }
 })

@@ -12,11 +12,15 @@ export const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   if (allowedRoles.length > 0) {
     const userRole = (user.role || '').toLowerCase();
     const effectiveRoles = [userRole];
-    if (['ceo', 'owner', 'admin'].includes(userRole)) {
-      effectiveRoles.push('admin', 'ceo', 'owner');
-    }
-    if (['manager', 'hr'].includes(userRole) || ['ceo', 'owner', 'admin'].includes(userRole)) {
-      effectiveRoles.push('manager', 'hr');
+
+    if (userRole === 'owner') {
+      effectiveRoles.push('owner', 'ceo', 'admin', 'hr', 'manager', 'guard');
+    } else if (userRole === 'ceo' || userRole === 'admin') {
+      effectiveRoles.push('ceo', 'admin', 'hr', 'manager', 'guard');
+    } else if (userRole === 'hr' || userRole === 'manager') {
+      effectiveRoles.push('hr', 'manager');
+    } else if (userRole === 'guard') {
+      effectiveRoles.push('guard');
     }
 
     const normalizedAllowed = allowedRoles.map(r => r.toLowerCase());
@@ -25,7 +29,7 @@ export const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     if (!hasAccess) {
       const redirectPath = getDefaultRedirect(user.role);
       if (location.pathname === redirectPath) {
-        return <Navigate to="/dashboard" replace />;
+        return <Navigate to="/login" replace />;
       }
       return <Navigate to={redirectPath} replace />;
     }
