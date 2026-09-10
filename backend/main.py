@@ -6,9 +6,10 @@ import csv
 import io
 import math
 import threading
+import uuid
 import numpy as np
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Response
+from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Query, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
@@ -16,9 +17,11 @@ from database import init_db, get_db
 from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, start_escalation_thread, start_single_camera, stop_single_camera, restart_single_camera
 from datetime import datetime, timedelta
 import config
-from auth import verify_token, require_admin, require_staff
+from auth import verify_token, require_owner, require_admin, require_hr, require_guard, require_staff
 from auth_users import verify_password, create_token, hash_password
 from app_settings import get_all_settings, set_setting
+from settings_store import load_settings, save_settings
+from audit import log_audit_event
 import storage
 from PIL import Image, ImageOps
 from retention import start_retention_thread, start_daily_reset_thread
@@ -54,6 +57,7 @@ def startup():
     init_db()
     _seed_cameras_from_config()
     os.makedirs(KNOWN_FACES_DIR, exist_ok=True)
+    os.makedirs("snapshots/acknowledgments", exist_ok=True)
     storage.sync_known_faces_from_storage(KNOWN_FACES_DIR)
     start_camera_threads()
     start_health_check_thread()
@@ -84,15 +88,128 @@ class UpdateUserRequest(BaseModel):
 def get_me(current_user: dict = Depends(verify_token)):
     return current_user
 
-# --- User Management Endpoints (Admin Only) ---
+@app.post("/login")
+def login(payload: LoginRequest):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE username = %s", (payload.username,))
+        user = cur.fetchone()
+        cur.close()
+
+    if not user or not verify_password(payload.password, user["password_hash"]):
+        return {"ok": False, "error": "Incorrect username or password"}
+
+    token = create_token(user["id"], user["username"], user["role"], user["name"])
+
+    log_audit_event(
+        username=user["username"],
+        user_role=user["role"],
+        action="USER_LOGIN",
+        target_module="Auth",
+        details=f"User {user['username']} logged in with role {user['role']}",
+        user_id=user["id"]
+    )
+
+    return {
+        "ok": True,
+        "role": user["role"],
+        "name": user["name"],
+        "username": user["username"],
+        "token": token
+    }
+
+# --- System Audit Log (Owner Exclusive) ---
+
+@app.get("/audit-logs", dependencies=[Depends(require_owner)])
+def get_audit_logs(
+    role: Optional[str] = None,
+    module: Optional[str] = None,
+    date: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 200
+):
+    query = "SELECT id, user_id, username, user_role, action, target_module, details, proof_image, timestamp FROM audit_logs WHERE 1=1"
+    params = []
+    if role:
+        query += " AND LOWER(user_role) = %s"
+        params.append(role.lower())
+    if module:
+        query += " AND LOWER(target_module) = %s"
+        params.append(module.lower())
+    if date:
+        query += " AND timestamp LIKE %s"
+        params.append(f"{date}%")
+    if search:
+        query += " AND (LOWER(details) LIKE %s OR LOWER(username) LIKE %s OR LOWER(action) LIKE %s)"
+        s = f"%{search.lower()}%"
+        params.extend([s, s, s])
+
+    query += " ORDER BY timestamp DESC LIMIT %s"
+    params.append(limit)
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, tuple(params))
+        rows = cur.fetchall()
+        cur.close()
+
+    return [dict(r) for r in rows]
+
+# --- User Management (Owner & CEO) ---
+
+@app.get("/users", dependencies=[Depends(require_admin)])
+def list_users():
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, role, name, created_at FROM users ORDER BY id")
+        rows = cur.fetchall()
+        cur.close()
+        return [dict(r) for r in rows]
+
+@app.post("/users", dependencies=[Depends(require_admin)])
+def create_user(payload: CreateUserRequest, current_user: dict = Depends(require_admin)):
+    username = payload.username.strip()
+    role = payload.role.strip().lower()
+    valid_roles = ["owner", "ceo", "admin", "hr", "manager", "guard"]
+    if role not in valid_roles:
+        raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(valid_roles)}")
+    if not username or not payload.password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+        if cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=400, detail=f"Username '{username}' already exists")
+
+        cur.execute(
+            "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
+            (username, hash_password(payload.password), role, username)
+        )
+        conn.commit()
+        cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="USER_CREATED",
+        target_module="Users",
+        details=f"Created user account '{username}' with role '{role}'",
+        user_id=current_user.get("user_id")
+    )
+
+    return {"message": "User created"}
+
 @app.put("/users/{user_id}", dependencies=[Depends(require_admin)])
-def update_user(user_id: int, req: UpdateUserRequest):
+def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depends(require_admin)):
     updates = []
     params = []
+    valid_roles = ["owner", "ceo", "admin", "hr", "manager", "guard"]
     if req.role:
         role = req.role.strip().lower()
-        if role not in ["ceo", "owner", "guard", "hr"]:
-            raise HTTPException(status_code=400, detail="Role must be ceo, owner, guard, or hr")
+        if role not in valid_roles:
+            raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(valid_roles)}")
         updates.append("role = %s")
         params.append(role)
     if req.password:
@@ -112,9 +229,48 @@ def update_user(user_id: int, req: UpdateUserRequest):
 
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="USER_UPDATED",
+        target_module="Users",
+        details=f"Updated user ID {user_id} (username: {updated['username']}, role: {updated['role']})",
+        user_id=current_user.get("user_id")
+    )
+
     return dict(updated)
 
-# --- Employee Management (Admin & Manager) ---
+@app.delete("/users/{user_id}", dependencies=[Depends(require_admin)])
+def delete_user(user_id: int, current_user: dict = Depends(require_admin)):
+    if str(user_id) == str(current_user.get("user_id")):
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, role FROM users WHERE id = %s", (user_id,))
+        u = cur.fetchone()
+        if not u:
+            cur.close()
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        conn.commit()
+        cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="USER_DELETED",
+        target_module="Users",
+        details=f"Deleted user account '{u['username']}' (role: {u['role']})",
+        user_id=current_user.get("user_id")
+    )
+
+    return {"message": "User deleted successfully"}
+
+# --- Employee Management (Owner, CEO & HR) ---
+
 MAX_PHOTO_DIMENSION = 1024
 
 def _save_resized_photo(upload_file, destination_path):
@@ -132,33 +288,20 @@ def _clear_face_cache():
         if f.startswith("representations_") or f.endswith(".pkl"):
             os.remove(os.path.join(KNOWN_FACES_DIR, f))
 
-@app.post("/auth/login")
-async def login(payload: LoginRequest):
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM users WHERE username = %s", (payload.username,))
-        user = cur.fetchone()
-        cur.close()
+def _upload_photo_async(local_path, remote_path):
+    try:
+        storage.upload_file(local_path, remote_path)
+    except Exception as e:
+        print(f"[main] Photo cloud upload failed: {e}")
 
-    if not user or not verify_password(payload.password, user["password_hash"]):
-        return {"ok": False, "error": "Incorrect username or password"}
-
-    token = create_token(user["id"], user["username"], user["role"], user["name"])
-    return {
-    "ok": True,
-    "role": user["role"],
-    "name": user["name"],
-    "username": user["username"],
-    "token": token
-}
-
-@app.post("/employees", dependencies=[Depends(require_staff)])
+@app.post("/employees", dependencies=[Depends(require_hr)])
 async def add_employee(
     name: str = Form(...),
     shift_start: str = Form(...),
     shift_end: str = Form(...),
     designation: str = Form("Staff"),
-    photos: List[UploadFile] = File(...)
+    photos: List[UploadFile] = File(...),
+    current_user: dict = Depends(require_hr)
 ):
     if shift_start == shift_end:
         return {"error": "Shift start and end time cannot be the same."}
@@ -192,25 +335,35 @@ async def add_employee(
 
     _clear_face_cache()
 
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="EMPLOYEE_ADDED",
+        target_module="Employees",
+        details=f"Added employee '{name}' ({designation}), shift: {shift_start}-{shift_end} with {len(photos)} photo(s)",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": f"Employee {name} added successfully with {len(photos)} photo(s)"}
 
-@app.get("/employees", dependencies=[Depends(require_staff)])
+@app.get("/employees", dependencies=[Depends(require_hr)])
 def list_employees():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM employees")
+        cur.execute("SELECT * FROM employees ORDER BY id ASC")
         rows = cur.fetchall()
         cur.close()
         return [dict(row) for row in rows]
 
-@app.put("/employees/{employee_id}", dependencies=[Depends(require_staff)])
+@app.put("/employees/{employee_id}", dependencies=[Depends(require_hr)])
 async def update_employee(
     employee_id: int,
     name: str = Form(...),
     shift_start: str = Form(...),
     shift_end: str = Form(...),
     designation: str = Form("Staff"),
-    photo: Optional[UploadFile] = File(None)
+    photo: Optional[UploadFile] = File(None),
+    current_user: dict = Depends(require_hr)
 ):
     if shift_start == shift_end:
         return {"error": "Shift start and end time cannot be the same."}
@@ -223,13 +376,13 @@ async def update_employee(
             cur.close()
             return {"message": "Employee not found"}
 
-        if photo is not None:
+        if photo is not None and photo.filename:
             folder_name = name.replace(" ", "_")
             employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
             os.makedirs(employee_folder, exist_ok=True)
             photo_path = os.path.join(employee_folder, "photo_1.jpg")
             _save_resized_photo(photo, photo_path)
-            threading.Thread(target=_upload_photo_async, args=(photo_path, f"known_faces/{folder_name}/photo_1.jpg")).start()
+            threading.Thread(target=_upload_photo_async, args=(photo_path, f"known_faces/{folder_name}/photo_1.jpg"), daemon=True).start()
             _clear_face_cache()
 
         cur.execute(
@@ -239,10 +392,19 @@ async def update_employee(
         conn.commit()
         cur.close()
 
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="EMPLOYEE_UPDATED",
+        target_module="Employees",
+        details=f"Updated employee ID {employee_id} ('{name}', {designation}, shift: {shift_start}-{shift_end})",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": f"Employee {name} updated successfully"}
 
-@app.delete("/employees/{employee_id}", dependencies=[Depends(require_staff)])
-def delete_employee(employee_id: int):
+@app.delete("/employees/{employee_id}", dependencies=[Depends(require_hr)])
+def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT * FROM employees WHERE id = %s", (employee_id,))
@@ -263,9 +425,19 @@ def delete_employee(employee_id: int):
         conn.commit()
         cur.close()
 
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="EMPLOYEE_DELETED",
+        target_module="Employees",
+        details=f"Deleted employee '{emp['name']}' (ID: {employee_id})",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": "Employee deleted"}
+
 # ============================================================
-# APPLICATION SETTINGS
+# APPLICATION SETTINGS (granular thresholds/notifications — Owner/CEO)
 # ============================================================
 
 class AppSettingRequest(BaseModel):
@@ -274,18 +446,13 @@ class AppSettingRequest(BaseModel):
 
 
 ALLOWED_SETTING_KEYS = {
-    # Notification settings
     "notify_motion",
     "notify_person",
     "notify_email",
-
-    # General settings
     "sensitivity",
     "after_hours_start",
     "after_hours_end",
     "door_held_seconds",
-
-    # Detection / alert settings
     "min_matching_photos",
     "match_distance_threshold",
     "overstay_low_threshold_min",
@@ -298,103 +465,46 @@ ALLOWED_SETTING_KEYS = {
 
 @app.get("/app-settings", dependencies=[Depends(require_admin)])
 def get_app_settings():
-    """
-    Get all application settings from PostgreSQL.
-    """
     try:
         return get_all_settings()
     except Exception as e:
         print(f"[settings] Failed to load settings: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to load application settings"
-        )
+        raise HTTPException(status_code=500, detail="Failed to load application settings")
 
 
 @app.post("/app-settings", dependencies=[Depends(require_admin)])
 def update_app_setting(payload: AppSettingRequest):
-    """
-    Save one application setting to PostgreSQL.
-    """
-
     key = payload.key.strip()
     value = payload.value.strip()
 
-    # --------------------------------------------------------
-    # Validate setting key
-    # --------------------------------------------------------
     if key not in ALLOWED_SETTING_KEYS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown setting key: {key}"
-        )
+        raise HTTPException(status_code=400, detail=f"Unknown setting key: {key}")
 
-    # --------------------------------------------------------
-    # Notification settings
-    # --------------------------------------------------------
-    if key in {
-        "notify_motion",
-        "notify_person",
-        "notify_email",
-    }:
+    if key in {"notify_motion", "notify_person", "notify_email"}:
         value = value.lower()
-
         if value not in {"true", "false"}:
-            raise HTTPException(
-                status_code=400,
-                detail=f"{key} must be true or false"
-            )
+            raise HTTPException(status_code=400, detail=f"{key} must be true or false")
 
-    # --------------------------------------------------------
-    # Sensitivity
-    # --------------------------------------------------------
     elif key == "sensitivity":
         value = value.lower()
-
         if value not in {"low", "medium", "high"}:
-            raise HTTPException(
-                status_code=400,
-                detail="sensitivity must be low, medium, or high"
-            )
+            raise HTTPException(status_code=400, detail="sensitivity must be low, medium, or high")
 
-    # --------------------------------------------------------
-    # After-hours settings
-    # --------------------------------------------------------
-    elif key in {
-        "after_hours_start",
-        "after_hours_end",
-    }:
+    elif key in {"after_hours_start", "after_hours_end"}:
         try:
             datetime.strptime(value, "%H:%M")
         except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=f"{key} must use HH:MM format"
-            )
+            raise HTTPException(status_code=400, detail=f"{key} must use HH:MM format")
 
-    # --------------------------------------------------------
-    # Door held seconds
-    # --------------------------------------------------------
     elif key == "door_held_seconds":
         try:
             seconds = int(value)
         except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail="door_held_seconds must be a number"
-            )
-
+            raise HTTPException(status_code=400, detail="door_held_seconds must be a number")
         if seconds < 5 or seconds > 300:
-            raise HTTPException(
-                status_code=400,
-                detail="door_held_seconds must be between 5 and 300 seconds"
-            )
-
+            raise HTTPException(status_code=400, detail="door_held_seconds must be between 5 and 300 seconds")
         value = str(seconds)
 
-    # --------------------------------------------------------
-    # Integer settings
-    # --------------------------------------------------------
     elif key in {
         "min_matching_photos",
         "overstay_low_threshold_min",
@@ -406,72 +516,60 @@ def update_app_setting(payload: AppSettingRequest):
         try:
             number = int(value)
         except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=f"{key} must be a number"
-            )
-
+            raise HTTPException(status_code=400, detail=f"{key} must be a number")
         if number < 0:
-            raise HTTPException(
-                status_code=400,
-                detail=f"{key} cannot be negative"
-            )
-
+            raise HTTPException(status_code=400, detail=f"{key} cannot be negative")
         value = str(number)
 
-    # --------------------------------------------------------
-    # Match distance threshold
-    # --------------------------------------------------------
     elif key == "match_distance_threshold":
-
-        # Empty value is allowed
         if value != "":
             try:
                 threshold = float(value)
             except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail="match_distance_threshold must be a number"
-                )
-
+                raise HTTPException(status_code=400, detail="match_distance_threshold must be a number")
             if threshold < 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail="match_distance_threshold cannot be negative"
-                )
-
+                raise HTTPException(status_code=400, detail="match_distance_threshold cannot be negative")
             value = str(threshold)
 
-    # --------------------------------------------------------
-    # Save to PostgreSQL
-    # --------------------------------------------------------
     try:
         set_setting(key, value)
-
     except Exception as e:
         print(f"[settings] Failed to save '{key}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to save setting")
 
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to save setting"
-        )
-
-    return {
-        "ok": True,
-        "message": "Setting updated successfully",
-        "key": key,
-        "value": value,
-    }
+    return {"ok": True, "message": "Setting updated successfully", "key": key, "value": value}
 
 
-@app.get("/records", dependencies=[Depends(verify_token)])
+# --- Store Hours Settings (Owner & CEO) ---
+
+@app.get("/settings", dependencies=[Depends(require_admin)])
+def get_settings():
+    return load_settings()
+
+@app.post("/settings", dependencies=[Depends(require_admin)])
+def update_settings(
+    store_open_time: str = Form(...),
+    store_close_time: str = Form(...),
+    current_user: dict = Depends(require_admin)
+):
+    save_settings({"store_open_time": store_open_time, "store_close_time": store_close_time})
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="SETTINGS_UPDATED",
+        target_module="Settings",
+        details=f"Updated store open hours: {store_open_time} - {store_close_time}",
+        user_id=current_user.get("user_id")
+    )
+
+    return {"message": "Settings updated"}
+
+# --- Records & Ledgers (Owner & CEO) ---
+
+@app.get("/records", dependencies=[Depends(require_admin)])
 def get_records(camera: str = None, status: str = None, date: str = None, limit: int = 100):
     query = """
-        SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM (
-            SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM alerts
-            UNION ALL
-            SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM alert_records
-        ) combined WHERE 1=1
         SELECT i.id, i.person_name, i.alert_type, i.priority, i.camera_id,
                i.first_seen, i.last_seen, i.alert_count, i.status,
                a.message, a.snapshot_filename
@@ -493,8 +591,12 @@ def get_records(camera: str = None, status: str = None, date: str = None, limit:
 
     if status:
         status_map = {"flag": "high", "review": "medium", "clear": "low"}
-        query += " AND i.priority = %s"
-        params.append(status_map.get(status, status))
+        if status in status_map:
+            query += " AND i.priority = %s"
+            params.append(status_map[status])
+        elif status in ("high", "medium", "low"):
+            query += " AND i.priority = %s"
+            params.append(status)
 
     if date:
         query += " AND i.last_seen LIKE %s"
@@ -519,7 +621,7 @@ def get_records(camera: str = None, status: str = None, date: str = None, limit:
     return results
 
 @app.delete("/records/{alert_id}", dependencies=[Depends(require_staff)])
-def delete_record(alert_id: int):
+def delete_record(alert_id: int, current_user: dict = Depends(require_staff)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM alerts WHERE id = %s", (alert_id,))
@@ -531,6 +633,16 @@ def delete_record(alert_id: int):
         cur.close()
     if deleted == 0:
         raise HTTPException(status_code=404, detail="Record not found")
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="RECORD_DELETED",
+        target_module="Records",
+        details=f"Deleted record/alert #{alert_id}",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": "Record deleted"}
 
 @app.get("/records/export", dependencies=[Depends(require_staff)])
@@ -583,7 +695,7 @@ def export_records(camera: str = None, status: str = None, date: str = None):
         }
     )
 
-# --- Attendance Models, Helpers & Endpoints ---
+# --- Attendance Models, Helpers & Endpoints (Owner, CEO & HR) ---
 class AttendanceOverrideRequest(BaseModel):
     employee_id: int
     date: str
@@ -752,21 +864,13 @@ def export_attendance(
         cur.close()
 
     output = io.StringIO()
-    output.write('\ufeff')  # UTF-8 BOM for Microsoft Excel
+    output.write('\ufeff')
     writer = csv.writer(output)
 
     writer.writerow([
-        "Date",
-        "Employee ID",
-        "Employee Name",
-        "Designation",
-        "First Seen (In)",
-        "Last Seen (Out)",
-        "Total Hours",
-        "Zone / Location",
-        "Status",
-        "Method",
-        "Override Reason"
+        "Date", "Employee ID", "Employee Name", "Designation",
+        "First Seen (In)", "Last Seen (Out)", "Total Hours",
+        "Zone / Location", "Status", "Method", "Override Reason"
     ])
 
     for r in rows:
@@ -866,7 +970,90 @@ def override_attendance(req: AttendanceOverrideRequest):
         "record": result
     }
 
-@app.get("/cameras", dependencies=[Depends(verify_token)])
+# --- Guard Alert Protocol & Status (Owner, CEO & Guard) ---
+
+@app.post("/alerts/{alert_id}/acknowledge")
+async def acknowledge_alert(
+    alert_id: int,
+    notes: str = Form(...),
+    proof: Optional[UploadFile] = File(None),
+    current_user: dict = Depends(verify_token)
+):
+    user_role = current_user.get("role", "").lower()
+    if user_role not in ("owner", "ceo", "admin", "guard"):
+        raise HTTPException(status_code=403, detail="Only Security Guards or Admins can acknowledge alerts")
+
+    # Guard Protocol Enforcement: proof image & text details are strictly required for Guards
+    if user_role == "guard":
+        if not notes or not notes.strip():
+            raise HTTPException(status_code=400, detail="Guard protocol requires text explanation/inspection notes")
+        if not proof or not proof.filename:
+            raise HTTPException(status_code=400, detail="Guard protocol strictly requires a mandatory proof image upload")
+
+    proof_url = None
+    if proof and proof.filename:
+        os.makedirs("snapshots/acknowledgments", exist_ok=True)
+        safe_fn = f"ack_{alert_id}_{uuid.uuid4().hex[:8]}.jpg"
+        local_path = os.path.join("snapshots/acknowledgments", safe_fn)
+        with open(local_path, "wb") as buf:
+            shutil.copyfileobj(proof.file, buf)
+
+        try:
+            cloud_url = storage.upload_file(local_path, f"acknowledgments/{safe_fn}")
+            proof_url = cloud_url or f"/snapshots/acknowledgments/{safe_fn}"
+        except Exception:
+            proof_url = f"/snapshots/acknowledgments/{safe_fn}"
+
+    now_iso = datetime.now().isoformat()
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE alerts
+            SET status = 'acknowledged', acknowledged_by = %s, acknowledged_at = %s, ack_proof_image = %s, ack_notes = %s
+            WHERE id = %s
+            """,
+            (current_user.get("username"), now_iso, proof_url, notes.strip(), alert_id)
+        )
+        conn.commit()
+        cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="ALERT_ACKNOWLEDGED",
+        target_module="Alerts",
+        details=f"Acknowledged alert #{alert_id}. Notes: {notes.strip()}",
+        proof_image=proof_url,
+        user_id=current_user.get("user_id")
+    )
+
+    return {"ok": True, "message": f"Alert #{alert_id} acknowledged successfully"}
+
+@app.get("/status", dependencies=[Depends(require_guard)])
+def get_status():
+    now = datetime.now()
+    cutoff = now - timedelta(seconds=config.CURRENTLY_DETECTED_TIMEOUT_SEC)
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT person_name, camera_id, last_seen FROM currently_detected WHERE last_seen >= %s",
+            (cutoff.isoformat(),)
+        )
+        detected_rows = cur.fetchall()
+        cur.execute(
+            "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, status, acknowledged_by, acknowledged_at, ack_proof_image, ack_notes FROM alerts ORDER BY timestamp DESC LIMIT 20"
+        )
+        alert_rows = cur.fetchall()
+        cur.close()
+
+    detected = [{"name": r["person_name"], "camera": r["camera_id"], "last_seen": r["last_seen"]} for r in detected_rows]
+    alerts = [dict(r) for r in alert_rows]
+    return {"currently_detected": detected, "recent_alerts": alerts}
+
+# --- Camera Streaming & Management ---
+
+@app.get("/cameras", dependencies=[Depends(require_guard)])
 def list_cameras():
     now = datetime.now()
     with get_db() as conn:
@@ -890,7 +1077,7 @@ class CameraRequest(BaseModel):
     enabled: bool = True
 
 @app.post("/cameras", dependencies=[Depends(require_admin)])
-def add_camera(payload: CameraRequest):
+def add_camera(payload: CameraRequest, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -909,10 +1096,19 @@ def add_camera(payload: CameraRequest):
             "zone_id": payload.zone_id,
         })
 
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="CAMERA_ADDED",
+        target_module="Cameras",
+        details=f"Added camera '{payload.name}' ({payload.id}) at location '{payload.location}'",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": "Camera added and connected"}
 
 @app.put("/cameras/{camera_id}", dependencies=[Depends(require_admin)])
-def update_camera(camera_id: str, payload: CameraRequest):
+def update_camera(camera_id: str, payload: CameraRequest, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -932,16 +1128,35 @@ def update_camera(camera_id: str, payload: CameraRequest):
             "zone_id": payload.zone_id,
         })
 
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="CAMERA_UPDATED",
+        target_module="Cameras",
+        details=f"Updated camera '{payload.name}' ({camera_id})",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": "Camera updated and reconnected"}
 
 @app.delete("/cameras/{camera_id}", dependencies=[Depends(require_admin)])
-def delete_camera(camera_id: str):
+def delete_camera(camera_id: str, current_user: dict = Depends(require_admin)):
     stop_single_camera(camera_id)
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM cameras WHERE id = %s", (camera_id,))
         conn.commit()
         cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="CAMERA_DELETED",
+        target_module="Cameras",
+        details=f"Deleted camera {camera_id}",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": "Camera deleted and disconnected"}
 
 def _seed_cameras_from_config():
@@ -957,6 +1172,8 @@ def _seed_cameras_from_config():
                 )
             conn.commit()
         cur.close()
+
+# --- Zones ---
 
 class ZoneRequest(BaseModel):
     id: str
@@ -989,105 +1206,7 @@ def delete_zone(zone_id: str):
         cur.close()
     return {"message": "Zone deleted"}
 
-@app.get("/status", dependencies=[Depends(verify_token)])
-def get_status():
-    now = datetime.now()
-    cutoff = now - timedelta(seconds=config.CURRENTLY_DETECTED_TIMEOUT_SEC)
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT person_name, camera_id, last_seen FROM currently_detected WHERE last_seen >= %s",
-            (cutoff.isoformat(),)
-        )
-        detected_rows = cur.fetchall()
-        cur.execute(
-            "SELECT person_name, alert_type, priority, message, timestamp, snapshot_filename FROM alerts ORDER BY timestamp DESC LIMIT 15"
-        )
-        alert_rows = cur.fetchall()
-        cur.close()
-
-    detected = [{"name": r["person_name"], "camera": r["camera_id"], "last_seen": r["last_seen"]} for r in detected_rows]
-    alerts = [dict(r) for r in alert_rows]
-    return {"currently_detected": detected, "recent_alerts": alerts}
-
-_, _offline_jpeg = cv2.imencode(".jpg", np.zeros((480, 640, 3), dtype="uint8"))
-offline_bytes = (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + _offline_jpeg.tobytes() + b"\r\n")
-
-def _mjpeg_generator(camera_id):
-    encode_params = [cv2.IMWRITE_JPEG_QUALITY, 70]
-    while True:
-        frame = get_current_frame(camera_id)
-        if frame is not None:
-            _, buffer = cv2.imencode(".jpg", frame, encode_params)
-            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
-            time.sleep(1/15)
-        else:
-            yield offline_bytes
-            time.sleep(1.0)
-
-@app.get("/snapshots/{filename}", dependencies=[Depends(verify_token)])
-def get_snapshot(filename: str):
-    filepath = os.path.join("snapshots", filename)
-    if not os.path.exists(filepath):
-        return {"error": "Snapshot not found"}
-    return FileResponse(filepath, media_type="image/jpeg")
-
-@app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_token)])
-def video_feed(camera_id: str):
-    return StreamingResponse(_mjpeg_generator(camera_id), media_type="multipart/x-mixed-replace; boundary=frame")
-
-@app.post("/users", dependencies=[Depends(require_admin)])
-def create_user(payload: CreateUserRequest):
-    username = payload.username.strip()
-    role = payload.role.strip().lower()
-    if role not in ["ceo", "owner", "guard", "hr"]:
-        raise HTTPException(status_code=400, detail="Role must be ceo, owner, guard, or hr")
-    if not username or not payload.password:
-        raise HTTPException(status_code=400, detail="Username and password are required")
-
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-        if cur.fetchone():
-            cur.close()
-            raise HTTPException(status_code=400, detail=f"Username '{username}' already exists")
-
-        cur.execute(
-            "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
-            (username, hash_password(payload.password), role, username)
-        )
-        conn.commit()
-        cur.close()
-
-    return {"message": "User created"}
-
-@app.get("/users", dependencies=[Depends(require_admin)])
-def list_users():
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, username, role, name, created_at FROM users ORDER BY id")
-        rows = cur.fetchall()
-        cur.close()
-        return [dict(r) for r in rows]
-
-@app.delete("/users/{user_id}", dependencies=[Depends(require_admin)])
-def delete_user(user_id: int, current_user: dict = Depends(verify_token)):
-    if str(user_id) == str(current_user.get("user_id")):
-        raise HTTPException(status_code=400, detail="You cannot delete your own account")
-
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
-        if not cur.fetchone():
-            cur.close()
-            raise HTTPException(status_code=404, detail="User not found")
-
-        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
-        conn.commit()
-        cur.close()
-
-    return {"message": "User deleted successfully"}
-
+# --- Incidents ---
 
 @app.get("/incidents", dependencies=[Depends(verify_token)])
 def list_incidents(status: str = None, limit: int = 100):
@@ -1128,6 +1247,8 @@ def update_incident(incident_id: int, payload: IncidentUpdateRequest):
         conn.commit()
         cur.close()
     return {"message": "Incident updated"}
+
+# --- Reporting ---
 
 @app.get("/reports/attendance-summary", dependencies=[Depends(require_staff)])
 def attendance_summary(start_date: str = None, end_date: str = None):
@@ -1187,3 +1308,34 @@ def mark_permanent(alert_id: int, permanent: bool = True):
     if updated == 0:
         raise HTTPException(status_code=404, detail="Record not found or already archived")
     return {"message": "Updated"}
+
+# --- Streaming ---
+
+def _mjpeg_generator(camera_id):
+    encode_params = [cv2.IMWRITE_JPEG_QUALITY, 70]
+    offline_frame = cv2.imread("snapshots/offline.jpg") if os.path.exists("snapshots/offline.jpg") else None
+    offline_bytes = b""
+    if offline_frame is not None:
+        _, buffer = cv2.imencode(".jpg", offline_frame, encode_params)
+        offline_bytes = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+
+    while True:
+        frame = get_current_frame(camera_id)
+        if frame is not None:
+            _, buffer = cv2.imencode(".jpg", frame, encode_params)
+            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
+            time.sleep(1/15)
+        else:
+            yield offline_bytes
+            time.sleep(1.0)
+
+@app.get("/snapshots/{filename:path}")
+def get_snapshot(filename: str):
+    filepath = os.path.join("snapshots", filename)
+    if not os.path.exists(filepath):
+        return {"error": "Snapshot not found"}
+    return FileResponse(filepath, media_type="image/jpeg")
+
+@app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_token)])
+def video_feed(camera_id: str):
+    return StreamingResponse(_mjpeg_generator(camera_id), media_type="multipart/x-mixed-replace; boundary=frame")
