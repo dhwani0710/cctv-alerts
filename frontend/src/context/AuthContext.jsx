@@ -1,73 +1,88 @@
 import React, { createContext, useContext, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const AuthContext = createContext(null);
-const SESSION_KEY = 'vaultwatch_session';
-const API_BASE = 'http://localhost:8000';
 
-export function dashboardFor(role) {
-  if (role === 'ceo' || role === 'owner') return '/admin-dashboard';
-  if (role === 'hr') return '/hr-dashboard';
-  if (role === 'guard') return '/guard-dashboard';
-  return '/login';
+function loadUser() {
+  const token = localStorage.getItem('cctv_auth_token');
+  const role = localStorage.getItem('cctv_user_role');
+  const username = localStorage.getItem('cctv_username');
+  if (!token || !role) return null;
+  return { token, role, username };
 }
 
-function loadSession() {
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || !parsed.role || !parsed.name) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+export function dashboardFor(role) {
+  const r = (role || '').toLowerCase();
+  if (r === 'hr' || r === 'manager') return '/attendance';
+  return '/dashboard';
 }
 
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState(loadSession);
+  const [user, setUser] = useState(loadUser);
+  const navigate = useNavigate();
 
-  async function login(username, password) {
+  const login = async (username, password) => {
+    let res;
     try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
+      res = await fetch('/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify({ username, password })
       });
-      const data = await res.json();
-      if (!data.ok) return { ok: false };
-
-      const next = {
-        username: data.username,
-        role: data.role,
-        name: data.name,
-        token: data.token,
-        loggedInAt: Date.now(),
-      };
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
-      setSession(next);
-      return { ok: true, session: next };
-    } catch (err) {
-      return { ok: false };
+    } catch (netErr) {
+      throw new Error('Could not connect to backend server. Please check if backend is running on port 8000.');
     }
-  }
 
-  function logout() {
-    sessionStorage.removeItem(SESSION_KEY);
-    setSession(null);
-  }
+    let data = {};
+    const text = await res.text();
+    try {
+      data = JSON.parse(text);
+    } catch (parseErr) {
+      if (!res.ok) {
+        throw new Error(`Server returned error (${res.status}): ${text.slice(0, 100)}`);
+      }
+      throw new Error('Invalid response format from server');
+    }
 
-  async function apiFetch(path, options = {}) {
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || data.detail || 'Authentication failed: Incorrect credentials');
+    }
+
+    const authData = {
+      token: data.token,
+      role: (data.role || '').toLowerCase(),
+      username: data.username,
+      name: data.name,
+    };
+
+    localStorage.setItem('cctv_auth_token', authData.token);
+    localStorage.setItem('cctv_user_role', authData.role);
+    localStorage.setItem('cctv_username', authData.username);
+
+    setUser(authData);
+    return authData;
+  };
+
+  const logout = () => {
+    localStorage.removeItem('cctv_auth_token');
+    localStorage.removeItem('cctv_user_role');
+    localStorage.removeItem('cctv_username');
+    setUser(null);
+    navigate('/login');
+  };
+
+  const apiFetch = async (url, options = {}) => {
     const headers = {
       ...(options.headers || {}),
-      ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+      ...(user?.token ? { Authorization: `Bearer ${user.token}` } : {}),
     };
-    const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    const res = await fetch(url, { ...options, headers });
     if (res.status === 401) logout();
     return res;
-  }
+  };
 
   return (
-    <AuthContext.Provider value={{ session, login, logout, apiFetch }}>
+    <AuthContext.Provider value={{ user, login, logout, apiFetch }}>
       {children}
     </AuthContext.Provider>
   );
