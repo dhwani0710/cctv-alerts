@@ -7,7 +7,7 @@ import threading
 import time
 from datetime import datetime
 from recognition import recognize_faces
-from alerts import get_alert_priority, is_within_store_hours, log_alert, format_duration, get_shift_datetimes, already_alerted_recently, escalate_stale_incidents
+from alerts import get_alert_priority, is_within_store_hours, log_alert, format_duration, get_shift_datetimes, escalate_stale_incidents
 from database import get_db
 import config
 

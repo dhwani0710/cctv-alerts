@@ -4,6 +4,13 @@ import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { initials } from '../data/mockData.js';
 
+function classifyShift(shift) {
+  if (!shift || !shift.includes('–')) return null;
+  const startHour = parseInt(shift.split('–')[0].trim().split(':')[0], 10);
+  if (Number.isNaN(startHour)) return null;
+  return startHour >= 5 && startHour < 17 ? 'day' : 'night';
+}
+
 export default function AdminEmployees() {
   const { session, apiFetch } = useAuth();
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
@@ -46,14 +53,13 @@ export default function AdminEmployees() {
   useEffect(() => { loadStaff(); }, [loadStaff]);
 
   const roles = useMemo(() => Array.from(new Set(staff.map((s) => s.role))), [staff]);
-  const shifts = useMemo(() => Array.from(new Set(staff.map((s) => s.shift))), [staff]);
 
   const filteredStaff = useMemo(
     () =>
       staff.filter(
         (s) =>
           (!roleFilter || s.role === roleFilter) &&
-          (!shiftFilter || s.shift === shiftFilter) &&
+          (!shiftFilter || classifyShift(s.shift) === shiftFilter) &&
           (!search || s.name.toLowerCase().includes(search.toLowerCase()))
       ),
     [staff, search, roleFilter, shiftFilter]
@@ -136,7 +142,8 @@ export default function AdminEmployees() {
         </select>
         <select value={shiftFilter} onChange={(e) => setShiftFilter(e.target.value)}>
           <option value="">All shifts</option>
-          {shifts.map((s) => <option key={s} value={s}>{s}</option>)}
+          <option value="day">Day shift</option>
+          <option value="night">Night shift</option>
         </select>
       </div>
 

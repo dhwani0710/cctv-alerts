@@ -18,10 +18,10 @@ from datetime import datetime, timedelta
 import config
 from auth import verify_token, require_admin, require_staff
 from auth_users import verify_password, create_token, hash_password
-from settings_store import load_settings, save_settings
+from app_settings import get_all_settings, set_setting
 import storage
 from PIL import Image, ImageOps
-from retention import start_retention_thread
+from retention import start_retention_thread, start_daily_reset_thread
 
 app = FastAPI(title="Jewellery Store Alert System")
 
@@ -38,6 +38,17 @@ app.add_middleware(
 
 KNOWN_FACES_DIR = "known_faces"
 
+
+def _make_offline_frame_bytes() -> bytes:
+    image = Image.new("RGB", (640, 480), color=(0, 0, 0))
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=70)
+    return buffer.getvalue()
+
+
+offline_bytes = _make_offline_frame_bytes()
+
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -48,6 +59,7 @@ def startup():
     start_health_check_thread()
     start_escalation_thread()
     start_retention_thread()
+    start_daily_reset_thread()
 
 @app.get("/")
 def health_check():
@@ -252,48 +264,243 @@ def delete_employee(employee_id: int):
         cur.close()
 
     return {"message": "Employee deleted"}
-
-from app_settings import get_all_settings, set_setting
-
-@app.get("/app-settings", dependencies=[Depends(require_admin)])
-def get_app_settings():
-    return get_all_settings()
+# ============================================================
+# APPLICATION SETTINGS
+# ============================================================
 
 class AppSettingRequest(BaseModel):
     key: str
     value: str
 
+
+ALLOWED_SETTING_KEYS = {
+    # Notification settings
+    "notify_motion",
+    "notify_person",
+    "notify_email",
+
+    # General settings
+    "sensitivity",
+    "after_hours_start",
+    "after_hours_end",
+    "door_held_seconds",
+
+    # Detection / alert settings
+    "min_matching_photos",
+    "match_distance_threshold",
+    "overstay_low_threshold_min",
+    "overstay_medium_threshold_min",
+    "alert_dedupe_window_sec",
+    "escalation_low_to_medium_sec",
+    "escalation_medium_to_high_sec",
+}
+
+
+@app.get("/app-settings", dependencies=[Depends(require_admin)])
+def get_app_settings():
+    """
+    Get all application settings from PostgreSQL.
+    """
+    try:
+        return get_all_settings()
+    except Exception as e:
+        print(f"[settings] Failed to load settings: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to load application settings"
+        )
+
+
 @app.post("/app-settings", dependencies=[Depends(require_admin)])
 def update_app_setting(payload: AppSettingRequest):
-    allowed_keys = [
-        "min_matching_photos", "match_distance_threshold",
-        "overstay_low_threshold_min", "overstay_medium_threshold_min",
-        "alert_dedupe_window_sec", "escalation_low_to_medium_sec", "escalation_medium_to_high_sec",
-    ]
-    if payload.key not in allowed_keys:
-        raise HTTPException(status_code=400, detail="Unknown setting key")
-    set_setting(payload.key, payload.value)
-    return {"message": "Setting updated"}
+    """
+    Save one application setting to PostgreSQL.
+    """
+
+    key = payload.key.strip()
+    value = payload.value.strip()
+
+    # --------------------------------------------------------
+    # Validate setting key
+    # --------------------------------------------------------
+    if key not in ALLOWED_SETTING_KEYS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown setting key: {key}"
+        )
+
+    # --------------------------------------------------------
+    # Notification settings
+    # --------------------------------------------------------
+    if key in {
+        "notify_motion",
+        "notify_person",
+        "notify_email",
+    }:
+        value = value.lower()
+
+        if value not in {"true", "false"}:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{key} must be true or false"
+            )
+
+    # --------------------------------------------------------
+    # Sensitivity
+    # --------------------------------------------------------
+    elif key == "sensitivity":
+        value = value.lower()
+
+        if value not in {"low", "medium", "high"}:
+            raise HTTPException(
+                status_code=400,
+                detail="sensitivity must be low, medium, or high"
+            )
+
+    # --------------------------------------------------------
+    # After-hours settings
+    # --------------------------------------------------------
+    elif key in {
+        "after_hours_start",
+        "after_hours_end",
+    }:
+        try:
+            datetime.strptime(value, "%H:%M")
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{key} must use HH:MM format"
+            )
+
+    # --------------------------------------------------------
+    # Door held seconds
+    # --------------------------------------------------------
+    elif key == "door_held_seconds":
+        try:
+            seconds = int(value)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="door_held_seconds must be a number"
+            )
+
+        if seconds < 5 or seconds > 300:
+            raise HTTPException(
+                status_code=400,
+                detail="door_held_seconds must be between 5 and 300 seconds"
+            )
+
+        value = str(seconds)
+
+    # --------------------------------------------------------
+    # Integer settings
+    # --------------------------------------------------------
+    elif key in {
+        "min_matching_photos",
+        "overstay_low_threshold_min",
+        "overstay_medium_threshold_min",
+        "alert_dedupe_window_sec",
+        "escalation_low_to_medium_sec",
+        "escalation_medium_to_high_sec",
+    }:
+        try:
+            number = int(value)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{key} must be a number"
+            )
+
+        if number < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{key} cannot be negative"
+            )
+
+        value = str(number)
+
+    # --------------------------------------------------------
+    # Match distance threshold
+    # --------------------------------------------------------
+    elif key == "match_distance_threshold":
+
+        # Empty value is allowed
+        if value != "":
+            try:
+                threshold = float(value)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="match_distance_threshold must be a number"
+                )
+
+            if threshold < 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="match_distance_threshold cannot be negative"
+                )
+
+            value = str(threshold)
+
+    # --------------------------------------------------------
+    # Save to PostgreSQL
+    # --------------------------------------------------------
+    try:
+        set_setting(key, value)
+
+    except Exception as e:
+        print(f"[settings] Failed to save '{key}': {e}")
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save setting"
+        )
+
+    return {
+        "ok": True,
+        "message": "Setting updated successfully",
+        "key": key,
+        "value": value,
+    }
+
 
 @app.get("/records", dependencies=[Depends(verify_token)])
 def get_records(camera: str = None, status: str = None, date: str = None, limit: int = 100):
-    query = "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM alerts WHERE 1=1"
+    query = """
+        SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM (
+            SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM alerts
+            UNION ALL
+            SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM alert_records
+        ) combined WHERE 1=1
+        SELECT i.id, i.person_name, i.alert_type, i.priority, i.camera_id,
+               i.first_seen, i.last_seen, i.alert_count, i.status,
+               a.message, a.snapshot_filename
+        FROM incidents i
+        LEFT JOIN LATERAL (
+            SELECT message, snapshot_filename
+            FROM alerts
+            WHERE alerts.incident_id = i.id
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ) a ON true
+        WHERE 1=1
+    """
     params = []
 
     if camera:
-        query += " AND (camera_id = %s OR camera_id LIKE %s)"
+        query += " AND (i.camera_id = %s OR i.camera_id LIKE %s)"
         params.extend([camera, f"%{camera}%"])
 
     if status:
         status_map = {"flag": "high", "review": "medium", "clear": "low"}
-        query += " AND priority = %s"
+        query += " AND i.priority = %s"
         params.append(status_map.get(status, status))
 
     if date:
-        query += " AND timestamp LIKE %s"
+        query += " AND i.last_seen LIKE %s"
         params.append(f"{date}%")
 
-    query += " ORDER BY timestamp DESC LIMIT %s"
+    query += " ORDER BY i.last_seen DESC LIMIT %s"
     params.append(limit)
 
     with get_db() as conn:
@@ -302,15 +509,28 @@ def get_records(camera: str = None, status: str = None, date: str = None, limit:
         rows = cur.fetchall()
         cur.close()
 
-    return [dict(r) for r in rows]
+    results = []
+    for r in rows:
+        rec = dict(r)
+        rec["timestamp"] = rec.get("last_seen")
+        rec["occurrences"] = rec.get("alert_count")
+        results.append(rec)
+
+    return results
 
 @app.delete("/records/{alert_id}", dependencies=[Depends(require_staff)])
 def delete_record(alert_id: int):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM alerts WHERE id = %s", (alert_id,))
+        deleted = cur.rowcount
+        if deleted == 0:
+            cur.execute("DELETE FROM alert_records WHERE id = %s", (alert_id,))
+            deleted = cur.rowcount
         conn.commit()
         cur.close()
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="Record not found")
     return {"message": "Record deleted"}
 
 @app.get("/records/export", dependencies=[Depends(require_staff)])
@@ -961,6 +1181,9 @@ def mark_permanent(alert_id: int, permanent: bool = True):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("UPDATE alerts SET permanent = %s WHERE id = %s", (permanent, alert_id))
+        updated = cur.rowcount
         conn.commit()
         cur.close()
+    if updated == 0:
+        raise HTTPException(status_code=404, detail="Record not found or already archived")
     return {"message": "Updated"}

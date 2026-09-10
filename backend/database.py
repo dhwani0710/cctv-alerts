@@ -26,6 +26,7 @@ DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_ROLE = os.getenv("DEFAULT_ADMIN_ROLE", "ceo")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
 
+
 def init_db():
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
@@ -54,6 +55,20 @@ def init_db():
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS camera_id TEXT")
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS zone_id TEXT")
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS permanent BOOLEAN NOT NULL DEFAULT FALSE")
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alert_records (
+            id SERIAL PRIMARY KEY,
+            person_name TEXT NOT NULL,
+            alert_type TEXT NOT NULL,
+            priority TEXT NOT NULL,
+            message TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            snapshot_filename TEXT,
+            camera_id TEXT,
+            zone_id TEXT
+        )
+    """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS employee_photos (
@@ -157,6 +172,7 @@ def init_db():
         )
     """)
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS incident_id INTEGER REFERENCES incidents(id)")
+    cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS last_notified TEXT")
 
     cursor.execute("SELECT id FROM users WHERE username = %s", (DEFAULT_ADMIN_USERNAME,))
     if not cursor.fetchone():
@@ -178,4 +194,7 @@ def get_db():
     try:
         yield conn
     finally:
+        conn.close()
+
+        
         p.putconn(conn)
