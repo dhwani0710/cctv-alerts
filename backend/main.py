@@ -88,7 +88,7 @@ class UpdateUserRequest(BaseModel):
 def get_me(current_user: dict = Depends(verify_token)):
     return current_user
 
-@app.post("/login")
+@app.post("/auth/login")
 def login(payload: LoginRequest):
     with get_db() as conn:
         cur = conn.cursor()

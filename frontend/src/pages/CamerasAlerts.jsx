@@ -10,7 +10,6 @@ const API_BASE = 'http://localhost:8000';
 
 export default function CamerasAlerts() {
   const { session, apiFetch } = useAuth();
-  const isAdmin = session.role === 'ceo' || session.role === 'owner' || session.role === 'hr';
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const { cameras, refreshCameras } = useStatus();
   const [selected, setSelected] = useState(null);
