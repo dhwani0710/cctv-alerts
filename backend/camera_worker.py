@@ -16,6 +16,10 @@ latest_frames = {}
 recognition_locks = {}
 recognition_in_progress = {}
 
+_camera_threads = {}
+_camera_stop_events = {}
+_registry_lock = threading.Lock()
+
 def get_unknown_streak(camera_id):
     location = _get_camera_location(camera_id)
     with get_db() as conn:
@@ -186,7 +190,7 @@ def _recognition_worker(frame, camera_id, camera_name):
         with recognition_locks[camera_id]:
             recognition_in_progress[camera_id] = False
 
-def _camera_loop(camera_config):
+def _camera_loop(camera_config, stop_event):
     camera_id = camera_config["id"]
     camera_name = camera_config["name"]
     source = camera_config["source"]
@@ -206,15 +210,17 @@ def _camera_loop(camera_config):
 
     if not cap.isOpened():
         print(f"[camera_worker] Camera '{camera_name}' ({camera_id}) not detected — running without live video.")
-        while True:
+        while not stop_event.is_set():
             time.sleep(5)
+        _cleanup_camera_state(camera_id)
+        return
 
     last_recognition = 0
     last_heartbeat = 0
     consecutive_failures = 0
     MAX_FAILURES_BEFORE_RECONNECT = 15
 
-    while True:
+    while not stop_event.is_set():
         cap.grab()
         success, frame = cap.retrieve()
         if not success or frame is None or frame.size == 0:
@@ -248,11 +254,43 @@ def _camera_loop(camera_config):
 
         time.sleep(0.1)
 
+    cap.release()
+    _cleanup_camera_state(camera_id)
+
+def _cleanup_camera_state(camera_id):
+    frame_locks.pop(camera_id, None)
+    latest_frames.pop(camera_id, None)
+    recognition_locks.pop(camera_id, None)
+    recognition_in_progress.pop(camera_id, None)
+
 def start_camera_threads():
     cameras = _load_cameras_from_db()
     for camera_config in cameras:
-        t = threading.Thread(target=_camera_loop, args=(camera_config,), daemon=True)
+        start_single_camera(camera_config)
+
+def start_single_camera(camera_config):
+    camera_id = camera_config["id"]
+    with _registry_lock:
+        if camera_id in _camera_threads:
+            return
+        stop_event = threading.Event()
+        t = threading.Thread(target=_camera_loop, args=(camera_config, stop_event), daemon=True)
+        _camera_stop_events[camera_id] = stop_event
+        _camera_threads[camera_id] = t
         t.start()
+
+def stop_single_camera(camera_id):
+    with _registry_lock:
+        stop_event = _camera_stop_events.pop(camera_id, None)
+        t = _camera_threads.pop(camera_id, None)
+    if stop_event:
+        stop_event.set()
+    if t:
+        t.join(timeout=5)
+
+def restart_single_camera(camera_config):
+    stop_single_camera(camera_config["id"])
+    start_single_camera(camera_config)
 
 def get_current_frame(camera_id):
     lock = frame_locks.get(camera_id)

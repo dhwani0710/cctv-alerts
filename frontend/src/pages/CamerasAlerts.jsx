@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Shell from '../components/Shell.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
+import AddCameraModal from '../components/AddCameraModal.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useStatus } from '../context/StatusContext.jsx';
 
@@ -10,8 +11,9 @@ const API_BASE = 'http://localhost:8000';
 export default function CamerasAlerts() {
   const { session, apiFetch } = useAuth();
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
-  const { cameras } = useStatus();
+  const { cameras, refreshCameras } = useStatus();
   const [selected, setSelected] = useState(null);
+  const [showAddCamera, setShowAddCamera] = useState(false);
   const [incidents, setIncidents] = useState([]);
   const [dismissTarget, setDismissTarget] = useState(null);
   const [snapshotView, setSnapshotView] = useState(null);
@@ -64,7 +66,14 @@ export default function CamerasAlerts() {
 
       <div className="two-col" style={{ gridTemplateColumns: '1fr 340px' }}>
         <div className="panel" style={{ display: 'flex', flexDirection: 'column', height: PANEL_HEIGHT }}>
-          <div className="panel-head" style={{ flexShrink: 0 }}><h2>Camera feeds</h2></div>
+          <div className="panel-head" style={{ flexShrink: 0 }}>
+            <h2>Camera feeds</h2>
+            {isAdmin && (
+              <button className="btn btn-brass btn-sm" onClick={() => setShowAddCamera(true)}>
+                + Add camera
+              </button>
+            )}
+          </div>
           <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
             <div className="cam-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
               {cameras.map((c) => (
@@ -186,6 +195,12 @@ export default function CamerasAlerts() {
             </div>
           </div>
         </div>
+      )}
+      {showAddCamera && (
+        <AddCameraModal
+          onClose={() => setShowAddCamera(false)}
+          onAdded={refreshCameras}
+        />
       )}
     </Shell>
   );

@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from database import init_db, get_db
-from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, start_escalation_thread
+from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, start_escalation_thread, start_single_camera, stop_single_camera, restart_single_camera
 from datetime import datetime, timedelta
 import config
 from auth import verify_token, require_admin, require_staff
@@ -679,7 +679,17 @@ def add_camera(payload: CameraRequest):
         )
         conn.commit()
         cur.close()
-    return {"message": "Camera added — restart backend to apply"}
+
+    if payload.enabled:
+        start_single_camera({
+            "id": payload.id,
+            "name": payload.name,
+            "source": payload.rtsp_url,
+            "location": payload.location or payload.id,
+            "zone_id": payload.zone_id,
+        })
+
+    return {"message": "Camera added and connected"}
 
 @app.put("/cameras/{camera_id}", dependencies=[Depends(require_admin)])
 def update_camera(camera_id: str, payload: CameraRequest):
@@ -691,16 +701,28 @@ def update_camera(camera_id: str, payload: CameraRequest):
         )
         conn.commit()
         cur.close()
-    return {"message": "Camera updated — restart backend to apply"}
+
+    stop_single_camera(camera_id)
+    if payload.enabled:
+        start_single_camera({
+            "id": camera_id,
+            "name": payload.name,
+            "source": payload.rtsp_url,
+            "location": payload.location or camera_id,
+            "zone_id": payload.zone_id,
+        })
+
+    return {"message": "Camera updated and reconnected"}
 
 @app.delete("/cameras/{camera_id}", dependencies=[Depends(require_admin)])
 def delete_camera(camera_id: str):
+    stop_single_camera(camera_id)
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM cameras WHERE id = %s", (camera_id,))
         conn.commit()
         cur.close()
-    return {"message": "Camera deleted — restart backend to apply"}
+    return {"message": "Camera deleted and disconnected"}
 
 def _seed_cameras_from_config():
     with get_db() as conn:
