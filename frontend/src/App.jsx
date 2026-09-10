@@ -6,6 +6,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { AdminPage } from './pages/AdminPage';
 import { AttendancePage } from './pages/AttendancePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { AuditLogPage } from './pages/AuditLogPage';
 
 const RootRedirect = () => {
   const { user, getDefaultRedirect } = useAuth();
@@ -25,7 +26,7 @@ function App() {
           <Route
             path="/dashboard"
             element={
-              <ProtectedRoute allowedRoles={['admin', 'manager', 'guard']}>
+              <ProtectedRoute allowedRoles={['owner', 'ceo', 'admin', 'guard']}>
                 <DashboardPage />
               </ProtectedRoute>
             }
@@ -34,7 +35,7 @@ function App() {
           <Route
             path="/admin"
             element={
-              <ProtectedRoute allowedRoles={['admin', 'manager']}>
+              <ProtectedRoute allowedRoles={['owner', 'ceo', 'admin', 'hr', 'manager']}>
                 <AdminPage />
               </ProtectedRoute>
             }
@@ -43,7 +44,7 @@ function App() {
           <Route
             path="/attendance"
             element={
-              <ProtectedRoute allowedRoles={['admin', 'manager']}>
+              <ProtectedRoute allowedRoles={['owner', 'ceo', 'admin', 'hr', 'manager']}>
                 <AttendancePage />
               </ProtectedRoute>
             }
@@ -52,8 +53,17 @@ function App() {
           <Route
             path="/settings"
             element={
-              <ProtectedRoute allowedRoles={['admin']}>
+              <ProtectedRoute allowedRoles={['owner', 'ceo', 'admin']}>
                 <SettingsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/audit-logs"
+            element={
+              <ProtectedRoute allowedRoles={['owner']}>
+                <AuditLogPage />
               </ProtectedRoute>
             }
           />

@@ -181,8 +181,11 @@ export const AdminPage = () => {
   const isOvernight = (start, end) => end <= start;
 
   const roleBadges = {
+    owner: <span className="bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded text-xs uppercase font-semibold">Owner</span>,
+    ceo: <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded text-xs uppercase font-semibold">CEO</span>,
     admin: <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded text-xs uppercase font-semibold">Admin</span>,
-    manager: <span className="bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded text-xs uppercase font-semibold">Manager</span>,
+    hr: <span className="bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded text-xs uppercase font-semibold">HR</span>,
+    manager: <span className="bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded text-xs uppercase font-semibold">HR / Manager</span>,
     guard: <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded text-xs uppercase font-semibold">Guard</span>,
   };
 
@@ -364,9 +367,10 @@ export const AdminPage = () => {
                     onChange={(e) => setNewRole(e.target.value)}
                     className="w-full bg-[var(--input-bg)] rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-500 text-sm text-slate-200"
                   >
-                    <option value="guard">Security Guard (Live Feed)</option>
-                    <option value="manager">Manager (Staff & Logs)</option>
-                    <option value="admin">Administrator (Full Access)</option>
+                    <option value="guard">Security Guard (Monitoring & Alerts)</option>
+                    <option value="hr">HR (Personnel & Attendance)</option>
+                    <option value="ceo">CEO (Managerial Full Access)</option>
+                    <option value="owner">System Owner (Super Admin + Audit Log)</option>
                   </select>
                 </div>
                 <div className="flex items-end">

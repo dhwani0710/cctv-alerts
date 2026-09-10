@@ -2,8 +2,11 @@ import os
 import shutil
 import cv2
 import time
+import io
+import csv
+import uuid
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException
+from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Query, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
@@ -11,10 +14,12 @@ from database import init_db, get_db
 from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat
 from datetime import datetime, timedelta
 import config
-from auth import verify_token, require_admin, require_staff
+from auth import verify_token, require_owner, require_admin, require_hr, require_guard, require_staff
 from auth_users import verify_password, create_token, hash_password
 from settings_store import load_settings, save_settings
+from audit import log_audit_event
 import storage
+from PIL import Image, ImageOps
 
 app = FastAPI(title="Jewellery Store Alert System")
 
@@ -36,6 +41,7 @@ def startup():
     init_db()
     _seed_cameras_from_config()
     os.makedirs(KNOWN_FACES_DIR, exist_ok=True)
+    os.makedirs("snapshots/acknowledgments", exist_ok=True)
     storage.sync_known_faces_from_storage(KNOWN_FACES_DIR)
     start_camera_threads()
     start_health_check_thread()
@@ -63,15 +69,129 @@ class UpdateUserRequest(BaseModel):
 def get_me(current_user: dict = Depends(verify_token)):
     return current_user
 
-# --- User Management Endpoints (Admin Only) ---
+@app.post("/login")
+def login(payload: LoginRequest):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE username = %s", (payload.username,))
+        user = cur.fetchone()
+        cur.close()
+
+    if not user or not verify_password(payload.password, user["password_hash"]):
+        return {"ok": False, "error": "Incorrect username or password"}
+
+    token = create_token(user["id"], user["username"], user["role"], user["name"])
+    
+    # Audit log login event
+    log_audit_event(
+        username=user["username"],
+        user_role=user["role"],
+        action="USER_LOGIN",
+        target_module="Auth",
+        details=f"User {user['username']} logged in with role {user['role']}",
+        user_id=user["id"]
+    )
+
+    return {
+        "ok": True,
+        "role": user["role"],
+        "name": user["name"],
+        "username": user["username"],
+        "token": token
+    }
+
+# --- System Audit Log (Owner Exclusive) ---
+
+@app.get("/audit-logs", dependencies=[Depends(require_owner)])
+def get_audit_logs(
+    role: Optional[str] = None,
+    module: Optional[str] = None,
+    date: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 200
+):
+    query = "SELECT id, user_id, username, user_role, action, target_module, details, proof_image, timestamp FROM audit_logs WHERE 1=1"
+    params = []
+    if role:
+        query += " AND LOWER(user_role) = %s"
+        params.append(role.lower())
+    if module:
+        query += " AND LOWER(target_module) = %s"
+        params.append(module.lower())
+    if date:
+        query += " AND timestamp LIKE %s"
+        params.append(f"{date}%")
+    if search:
+        query += " AND (LOWER(details) LIKE %s OR LOWER(username) LIKE %s OR LOWER(action) LIKE %s)"
+        s = f"%{search.lower()}%"
+        params.extend([s, s, s])
+
+    query += " ORDER BY timestamp DESC LIMIT %s"
+    params.append(limit)
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, tuple(params))
+        rows = cur.fetchall()
+        cur.close()
+
+    return [dict(r) for r in rows]
+
+# --- User Management (Owner & CEO) ---
+
+@app.get("/users", dependencies=[Depends(require_admin)])
+def list_users():
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, role, name, created_at FROM users ORDER BY id")
+        rows = cur.fetchall()
+        cur.close()
+        return [dict(r) for r in rows]
+
+@app.post("/users", dependencies=[Depends(require_admin)])
+def create_user(payload: CreateUserRequest, current_user: dict = Depends(require_admin)):
+    username = payload.username.strip()
+    role = payload.role.strip().lower()
+    valid_roles = ["owner", "ceo", "admin", "hr", "manager", "guard"]
+    if role not in valid_roles:
+        raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(valid_roles)}")
+    if not username or not payload.password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+        if cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=400, detail=f"Username '{username}' already exists")
+
+        cur.execute(
+            "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
+            (username, hash_password(payload.password), role, username)
+        )
+        conn.commit()
+        cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="USER_CREATED",
+        target_module="Users",
+        details=f"Created user account '{username}' with role '{role}'",
+        user_id=current_user.get("user_id")
+    )
+
+    return {"message": "User created"}
+
 @app.put("/users/{user_id}", dependencies=[Depends(require_admin)])
-def update_user(user_id: int, req: UpdateUserRequest):
+def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depends(require_admin)):
     updates = []
     params = []
+    valid_roles = ["owner", "ceo", "admin", "hr", "manager", "guard"]
     if req.role:
         role = req.role.strip().lower()
-        if role not in ["admin", "manager", "guard"]:
-            raise HTTPException(status_code=400, detail="Role must be admin, manager, or guard")
+        if role not in valid_roles:
+            raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(valid_roles)}")
         updates.append("role = %s")
         params.append(role)
     if req.password:
@@ -91,15 +211,53 @@ def update_user(user_id: int, req: UpdateUserRequest):
 
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="USER_UPDATED",
+        target_module="Users",
+        details=f"Updated user ID {user_id} (username: {updated['username']}, role: {updated['role']})",
+        user_id=current_user.get("user_id")
+    )
+
     return dict(updated)
 
-# --- Employee Management (Admin & Manager) ---
+@app.delete("/users/{user_id}", dependencies=[Depends(require_admin)])
+def delete_user(user_id: int, current_user: dict = Depends(require_admin)):
+    if str(user_id) == str(current_user.get("user_id")):
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, role FROM users WHERE id = %s", (user_id,))
+        u = cur.fetchone()
+        if not u:
+            cur.close()
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        conn.commit()
+        cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="USER_DELETED",
+        target_module="Users",
+        details=f"Deleted user account '{u['username']}' (role: {u['role']})",
+        user_id=current_user.get("user_id")
+    )
+
+    return {"message": "User deleted successfully"}
+
+# --- Employee Management (Owner, CEO & HR) ---
+
 MAX_PHOTO_DIMENSION = 1024
 
 def _save_resized_photo(upload_file, destination_path):
     with open(destination_path, "wb") as buffer:
         shutil.copyfileobj(upload_file.file, buffer)
-
     img = Image.open(destination_path)
     img = ImageOps.exif_transpose(img)
     img = img.convert("RGB")
@@ -112,50 +270,14 @@ def _clear_face_cache():
         if f.startswith("representations_") or f.endswith(".pkl"):
             os.remove(os.path.join(KNOWN_FACES_DIR, f))
 
-MAX_PHOTO_DIMENSION = 1024
-
-def _save_resized_photo(upload_file, destination_path):
-    from PIL import Image, ImageOps
-    with open(destination_path, "wb") as buffer:
-        shutil.copyfileobj(upload_file.file, buffer)
-    img = Image.open(destination_path)
-    img = ImageOps.exif_transpose(img)
-    img = img.convert("RGB")
-    if max(img.size) > MAX_PHOTO_DIMENSION:
-        img.thumbnail((MAX_PHOTO_DIMENSION, MAX_PHOTO_DIMENSION))
-    img.save(destination_path, "JPEG")
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-@app.post("/login")
-def login(payload: LoginRequest):
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM users WHERE username = %s", (payload.username,))
-        user = cur.fetchone()
-        cur.close()
-
-    if not user or not verify_password(payload.password, user["password_hash"]):
-        return {"ok": False, "error": "Incorrect username or password"}
-
-    token = create_token(user["id"], user["username"], user["role"], user["name"])
-    return {
-    "ok": True,
-    "role": user["role"],
-    "name": user["name"],
-    "username": user["username"],
-    "token": token
-}
-
-@app.post("/employees", dependencies=[Depends(require_staff)])
+@app.post("/employees", dependencies=[Depends(require_hr)])
 async def add_employee(
     name: str = Form(...),
     shift_start: str = Form(...),
     shift_end: str = Form(...),
     designation: str = Form("Staff"),
-    photos: List[UploadFile] = File(...)
+    photos: List[UploadFile] = File(...),
+    current_user: dict = Depends(require_hr)
 ):
     if shift_start == shift_end:
         return {"error": "Shift start and end time cannot be the same."}
@@ -181,7 +303,7 @@ async def add_employee(
             try:
                 storage.upload_file(photo_path, f"known_faces/{folder_name}/{filename}")
             except Exception as e:
-                print(f"[main] Photo cloud upload failed, continuing with local copy only: {e}")
+                print(f"[main] Photo cloud upload failed: {e}")
             cur.execute(
                 "INSERT INTO employee_photos (employee_id, filename) VALUES (%s, %s)",
                 (employee_id, filename)
@@ -192,25 +314,35 @@ async def add_employee(
 
     _clear_face_cache()
 
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="EMPLOYEE_ADDED",
+        target_module="Employees",
+        details=f"Added employee '{name}' ({designation}), shift: {shift_start}-{shift_end} with {len(photos)} photo(s)",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": f"Employee {name} added successfully with {len(photos)} photo(s)"}
 
-@app.get("/employees", dependencies=[Depends(require_staff)])
+@app.get("/employees", dependencies=[Depends(require_hr)])
 def list_employees():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM employees")
+        cur.execute("SELECT * FROM employees ORDER BY id ASC")
         rows = cur.fetchall()
         cur.close()
         return [dict(row) for row in rows]
 
-@app.put("/employees/{employee_id}", dependencies=[Depends(require_staff)])
+@app.put("/employees/{employee_id}", dependencies=[Depends(require_hr)])
 async def update_employee(
     employee_id: int,
     name: str = Form(...),
     shift_start: str = Form(...),
     shift_end: str = Form(...),
     designation: str = Form("Staff"),
-    photo: Optional[UploadFile] = File(None)
+    photo: Optional[UploadFile] = File(None),
+    current_user: dict = Depends(require_hr)
 ):
     if shift_start == shift_end:
         return {"error": "Shift start and end time cannot be the same."}
@@ -223,7 +355,7 @@ async def update_employee(
             cur.close()
             return {"message": "Employee not found"}
 
-        if photo is not None:
+        if photo is not None and photo.filename:
             folder_name = name.replace(" ", "_")
             employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
             os.makedirs(employee_folder, exist_ok=True)
@@ -232,7 +364,7 @@ async def update_employee(
             try:
                 storage.upload_file(photo_path, f"known_faces/{folder_name}/photo_1.jpg")
             except Exception as e:
-                print(f"[main] Photo cloud upload failed, continuing with local copy only: {e}")
+                print(f"[main] Photo cloud upload failed: {e}")
             _clear_face_cache()
 
         cur.execute(
@@ -242,10 +374,19 @@ async def update_employee(
         conn.commit()
         cur.close()
 
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="EMPLOYEE_UPDATED",
+        target_module="Employees",
+        details=f"Updated employee ID {employee_id} ('{name}', {designation}, shift: {shift_start}-{shift_end})",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": f"Employee {name} updated successfully"}
 
-@app.delete("/employees/{employee_id}", dependencies=[Depends(require_staff)])
-def delete_employee(employee_id: int):
+@app.delete("/employees/{employee_id}", dependencies=[Depends(require_hr)])
+def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT * FROM employees WHERE id = %s", (employee_id,))
@@ -266,20 +407,47 @@ def delete_employee(employee_id: int):
         conn.commit()
         cur.close()
 
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="EMPLOYEE_DELETED",
+        target_module="Employees",
+        details=f"Deleted employee '{emp['name']}' (ID: {employee_id})",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": "Employee deleted"}
+
+# --- Settings Management (Owner & CEO) ---
 
 @app.get("/settings", dependencies=[Depends(require_admin)])
 def get_settings():
     return load_settings()
 
 @app.post("/settings", dependencies=[Depends(require_admin)])
-def update_settings(store_open_time: str = Form(...), store_close_time: str = Form(...)):
+def update_settings(
+    store_open_time: str = Form(...),
+    store_close_time: str = Form(...),
+    current_user: dict = Depends(require_admin)
+):
     save_settings({"store_open_time": store_open_time, "store_close_time": store_close_time})
+    
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="SETTINGS_UPDATED",
+        target_module="Settings",
+        details=f"Updated store open hours: {store_open_time} - {store_close_time}",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": "Settings updated"}
 
-@app.get("/records", dependencies=[Depends(verify_token)])
+# --- Records & Ledgers (Owner & CEO) ---
+
+@app.get("/records", dependencies=[Depends(require_admin)])
 def get_records(camera: str = None, status: str = None, date: str = None, limit: int = 100):
-    query = "SELECT person_name, alert_type, priority, message, timestamp, snapshot_filename FROM alerts WHERE 1=1"
+    query = "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, status, acknowledged_by, acknowledged_at, ack_proof_image, ack_notes FROM alerts WHERE 1=1"
     params = []
 
     if status:
@@ -287,6 +455,9 @@ def get_records(camera: str = None, status: str = None, date: str = None, limit:
         if status in status_map:
             query += " AND priority = %s"
             params.append(status_map[status])
+        elif status in ("high", "medium", "low"):
+            query += " AND priority = %s"
+            params.append(status)
 
     if date:
         query += " AND timestamp LIKE %s"
@@ -303,7 +474,9 @@ def get_records(camera: str = None, status: str = None, date: str = None, limit:
 
     return [dict(r) for r in rows]
 
-@app.get("/attendance", dependencies=[Depends(verify_token)])
+# --- Attendance Management (Owner, CEO & HR) ---
+
+@app.get("/attendance", dependencies=[Depends(require_hr)])
 def get_attendance(date: str = None):
     target_date = date or datetime.now().date().isoformat()
     with get_db() as conn:
@@ -318,7 +491,90 @@ def get_attendance(date: str = None):
         cur.close()
     return {"date": target_date, "records": [dict(r) for r in rows]}
 
-@app.get("/cameras", dependencies=[Depends(verify_token)])
+# --- Guard Alert Protocol & Status (Owner, CEO & Guard) ---
+
+@app.post("/alerts/{alert_id}/acknowledge")
+async def acknowledge_alert(
+    alert_id: int,
+    notes: str = Form(...),
+    proof: Optional[UploadFile] = File(None),
+    current_user: dict = Depends(verify_token)
+):
+    user_role = current_user.get("role", "").lower()
+    if user_role not in ("owner", "ceo", "admin", "guard"):
+        raise HTTPException(status_code=403, detail="Only Security Guards or Admins can acknowledge alerts")
+
+    # Guard Protocol Enforcement: proof image & text details are strictly required for Guards
+    if user_role == "guard":
+        if not notes or not notes.strip():
+            raise HTTPException(status_code=400, detail="Guard protocol requires text explanation/inspection notes")
+        if not proof or not proof.filename:
+            raise HTTPException(status_code=400, detail="Guard protocol strictly requires a mandatory proof image upload")
+
+    proof_url = None
+    if proof and proof.filename:
+        os.makedirs("snapshots/acknowledgments", exist_ok=True)
+        safe_fn = f"ack_{alert_id}_{uuid.uuid4().hex[:8]}.jpg"
+        local_path = os.path.join("snapshots/acknowledgments", safe_fn)
+        with open(local_path, "wb") as buf:
+            shutil.copyfileobj(proof.file, buf)
+
+        try:
+            cloud_url = storage.upload_file(local_path, f"acknowledgments/{safe_fn}")
+            proof_url = cloud_url or f"/snapshots/acknowledgments/{safe_fn}"
+        except Exception:
+            proof_url = f"/snapshots/acknowledgments/{safe_fn}"
+
+    now_iso = datetime.now().isoformat()
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE alerts 
+            SET status = 'acknowledged', acknowledged_by = %s, acknowledged_at = %s, ack_proof_image = %s, ack_notes = %s 
+            WHERE id = %s
+            """,
+            (current_user.get("username"), now_iso, proof_url, notes.strip(), alert_id)
+        )
+        conn.commit()
+        cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="ALERT_ACKNOWLEDGED",
+        target_module="Alerts",
+        details=f"Acknowledged alert #{alert_id}. Notes: {notes.strip()}",
+        proof_image=proof_url,
+        user_id=current_user.get("user_id")
+    )
+
+    return {"ok": True, "message": f"Alert #{alert_id} acknowledged successfully"}
+
+@app.get("/status", dependencies=[Depends(require_guard)])
+def get_status():
+    now = datetime.now()
+    cutoff = now - timedelta(seconds=config.CURRENTLY_DETECTED_TIMEOUT_SEC)
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT person_name, camera_id, last_seen FROM currently_detected WHERE last_seen >= %s",
+            (cutoff.isoformat(),)
+        )
+        detected_rows = cur.fetchall()
+        cur.execute(
+            "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, status, acknowledged_by, acknowledged_at, ack_proof_image, ack_notes FROM alerts ORDER BY timestamp DESC LIMIT 20"
+        )
+        alert_rows = cur.fetchall()
+        cur.close()
+
+    detected = [{"name": r["person_name"], "camera": r["camera_id"], "last_seen": r["last_seen"]} for r in detected_rows]
+    alerts = [dict(r) for r in alert_rows]
+    return {"currently_detected": detected, "recent_alerts": alerts}
+
+# --- Camera Streaming & Management ---
+
+@app.get("/cameras", dependencies=[Depends(require_guard)])
 def list_cameras():
     now = datetime.now()
     with get_db() as conn:
@@ -341,7 +597,7 @@ class CameraRequest(BaseModel):
     enabled: bool = True
 
 @app.post("/cameras", dependencies=[Depends(require_admin)])
-def add_camera(payload: CameraRequest):
+def add_camera(payload: CameraRequest, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -350,10 +606,20 @@ def add_camera(payload: CameraRequest):
         )
         conn.commit()
         cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="CAMERA_ADDED",
+        target_module="Cameras",
+        details=f"Added camera '{payload.name}' ({payload.id}) at location '{payload.location}'",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": "Camera added — restart backend to apply"}
 
 @app.put("/cameras/{camera_id}", dependencies=[Depends(require_admin)])
-def update_camera(camera_id: str, payload: CameraRequest):
+def update_camera(camera_id: str, payload: CameraRequest, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -362,15 +628,35 @@ def update_camera(camera_id: str, payload: CameraRequest):
         )
         conn.commit()
         cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="CAMERA_UPDATED",
+        target_module="Cameras",
+        details=f"Updated camera '{payload.name}' ({camera_id})",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": "Camera updated — restart backend to apply"}
 
 @app.delete("/cameras/{camera_id}", dependencies=[Depends(require_admin)])
-def delete_camera(camera_id: str):
+def delete_camera(camera_id: str, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM cameras WHERE id = %s", (camera_id,))
         conn.commit()
         cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="CAMERA_DELETED",
+        target_module="Cameras",
+        details=f"Deleted camera {camera_id}",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": "Camera deleted — restart backend to apply"}
 
 def _seed_cameras_from_config():
@@ -387,29 +673,14 @@ def _seed_cameras_from_config():
             conn.commit()
         cur.close()
 
-@app.get("/status", dependencies=[Depends(verify_token)])
-def get_status():
-    now = datetime.now()
-    cutoff = now - timedelta(seconds=config.CURRENTLY_DETECTED_TIMEOUT_SEC)
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT person_name, camera_id, last_seen FROM currently_detected WHERE last_seen >= %s",
-            (cutoff.isoformat(),)
-        )
-        detected_rows = cur.fetchall()
-        cur.execute(
-            "SELECT person_name, alert_type, priority, message, timestamp, snapshot_filename FROM alerts ORDER BY timestamp DESC LIMIT 15"
-        )
-        alert_rows = cur.fetchall()
-        cur.close()
-
-    detected = [{"name": r["person_name"], "camera": r["camera_id"], "last_seen": r["last_seen"]} for r in detected_rows]
-    alerts = [dict(r) for r in alert_rows]
-    return {"currently_detected": detected, "recent_alerts": alerts}
-
 def _mjpeg_generator(camera_id):
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, 70]
+    offline_frame = cv2.imread("snapshots/offline.jpg") if os.path.exists("snapshots/offline.jpg") else None
+    offline_bytes = b""
+    if offline_frame is not None:
+        _, buffer = cv2.imencode(".jpg", offline_frame, encode_params)
+        offline_bytes = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+
     while True:
         frame = get_current_frame(camera_id)
         if frame is not None:
@@ -420,7 +691,7 @@ def _mjpeg_generator(camera_id):
             yield offline_bytes
             time.sleep(1.0)
 
-@app.get("/snapshots/{filename}", dependencies=[Depends(verify_token)])
+@app.get("/snapshots/{filename:path}")
 def get_snapshot(filename: str):
     filepath = os.path.join("snapshots", filename)
     if not os.path.exists(filepath):
@@ -430,60 +701,3 @@ def get_snapshot(filename: str):
 @app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_token)])
 def video_feed(camera_id: str):
     return StreamingResponse(_mjpeg_generator(camera_id), media_type="multipart/x-mixed-replace; boundary=frame")
-
-class CreateUserRequest(BaseModel):
-    username: str
-    password: str
-    role: str
-
-@app.post("/users", dependencies=[Depends(require_admin)])
-def create_user(payload: CreateUserRequest):
-    username = payload.username.strip()
-    role = payload.role.strip().lower()
-    if role not in ["admin", "manager", "guard"]:
-        raise HTTPException(status_code=400, detail="Role must be admin, manager, or guard")
-    if not username or not payload.password:
-        raise HTTPException(status_code=400, detail="Username and password are required")
-
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-        if cur.fetchone():
-            cur.close()
-            raise HTTPException(status_code=400, detail=f"Username '{username}' already exists")
-
-        cur.execute(
-            "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
-            (username, hash_password(payload.password), role, username)
-        )
-        conn.commit()
-        cur.close()
-
-    return {"message": "User created"}
-
-@app.get("/users", dependencies=[Depends(require_admin)])
-def list_users():
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, username, role, name, created_at FROM users ORDER BY id")
-        rows = cur.fetchall()
-        cur.close()
-        return [dict(r) for r in rows]
-
-@app.delete("/users/{user_id}", dependencies=[Depends(require_admin)])
-def delete_user(user_id: int, current_user: dict = Depends(verify_token)):
-    if str(user_id) == str(current_user.get("user_id")):
-        raise HTTPException(status_code=400, detail="You cannot delete your own account")
-
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
-        if not cur.fetchone():
-            cur.close()
-            raise HTTPException(status_code=404, detail="User not found")
-
-        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
-        conn.commit()
-        cur.close()
-
-    return {"message": "User deleted successfully"}

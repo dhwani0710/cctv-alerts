@@ -25,20 +25,35 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (username, password) => {
-    const res = await fetch('/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
-    });
+    let res;
+    try {
+      res = await fetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+    } catch (netErr) {
+      throw new Error('Could not connect to backend server. Please check if backend is running on port 8000.');
+    }
 
-    const data = await res.json();
+    let data = {};
+    const text = await res.text();
+    try {
+      data = JSON.parse(text);
+    } catch (parseErr) {
+      if (!res.ok) {
+        throw new Error(`Server returned error (${res.status}): ${text.slice(0, 100)}`);
+      }
+      throw new Error('Invalid response format from server');
+    }
+
     if (!res.ok || !data.ok) {
-      throw new Error(data.error || data.detail || 'Authentication failed');
+      throw new Error(data.error || data.detail || 'Authentication failed: Incorrect credentials');
     }
 
     const authData = {
       token: data.token,
-      role: data.role.toLowerCase(),
+      role: (data.role || '').toLowerCase(),
       username: data.username
     };
 
@@ -61,7 +76,8 @@ export const AuthProvider = ({ children }) => {
   const getDefaultRedirect = (role) => {
     const r = (role || '').toLowerCase();
     if (r === 'guard') return '/dashboard';
-    return '/admin';
+    if (r === 'hr') return '/attendance';
+    return '/dashboard';
   };
 
   const apiFetch = async (url, options = {}) => {
