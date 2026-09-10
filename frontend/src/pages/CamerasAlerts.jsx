@@ -10,6 +10,7 @@ const API_BASE = 'http://localhost:8000';
 
 export default function CamerasAlerts() {
   const { session, apiFetch } = useAuth();
+  const isAdmin = session.role === 'ceo' || session.role === 'owner' || session.role === 'hr';
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const { cameras, refreshCameras } = useStatus();
   const [selected, setSelected] = useState(null);
@@ -17,6 +18,7 @@ export default function CamerasAlerts() {
   const [incidents, setIncidents] = useState([]);
   const [dismissTarget, setDismissTarget] = useState(null);
   const [snapshotView, setSnapshotView] = useState(null);
+  const [detected, setDetected] = useState({});
 
     const loadIncidents = useCallback(async () => {
     const res = await apiFetch('/incidents?status=new');
@@ -36,6 +38,31 @@ export default function CamerasAlerts() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadStatus() {
+      const res = await apiFetch('/status');
+      if (res.ok && !cancelled) {
+        const data = await res.json();
+        const incoming = (data.currently_detected || []).filter(
+          (d) => d.name && d.name.toLowerCase() !== 'unknown'
+        );
+        setDetected((prev) => {
+          const next = { ...prev };
+          incoming.forEach((d) => {
+            next[`${d.name}|${d.camera}`] = d;
+          });
+          return next;
+        });
+      }
+    }
+    loadStatus();
+    const id = setInterval(loadStatus, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [apiFetch]);
+
+  const detectedList = Object.values(detected);
 
   async function acknowledge(id) {
     await apiFetch(`/incidents/${id}`, {
@@ -101,23 +128,35 @@ export default function CamerasAlerts() {
           </div>
         </div>
 
-        <div className="panel" style={{ display: 'flex', flexDirection: 'column', height: PANEL_HEIGHT }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: PANEL_HEIGHT, gap: 20 }}>
+          <div className="panel" style={{ display: 'flex', flexDirection: 'column', flex: '0 0 auto' }}>
+            <div className="panel-head" style={{ flexShrink: 0 }}>
+              <h2>Currently detected</h2>
+              <span className="eyebrow">{detectedList.length} on camera now</span>
+            </div>
+            <div style={{ overflowY: 'auto', maxHeight: 114, paddingRight: 4 }}>
+              {detectedList.map((d, i) => (
+                <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid var(--border, #2a2a2a)' }}>
+                  {d.name}
+                </div>
+              ))}
+              {detectedList.length === 0 && (
+                <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No one currently detected.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="panel" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <div className="panel-head" style={{ flexShrink: 0 }}>
             <h2>Alerts</h2>
             <span className="eyebrow">{incidents.length} active</span>
           </div>
           <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
             {incidents.map((a) => (
-              <div className="alert-item" key={a.id}>
+              <div className="alert-item" key={a.id} onClick={() => a.snapshot_filename && setSnapshotView(a)} style={{ cursor: a.snapshot_filename ? 'pointer' : 'default' }}>
                 <div className={`alert-sev ${a.priority === 'low' ? 'low' : ''}`} />
                 <div className="alert-body" style={{ minWidth: 0 }}>
-                  <div
-                    className="t"
-                    style={{ overflowWrap: 'break-word', cursor: a.snapshot_filename ? 'pointer' : 'default' }}
-                    onClick={() => a.snapshot_filename && setSnapshotView(a)}
-                  >
-                    {a.person_name} — {a.alert_type}
-                  </div>
+                  <div className="t" style={{ overflowWrap: 'break-word' }}>{a.person_name} — {a.alert_type}</div>
                   <div className="d" style={{ overflowWrap: 'break-word' }}>{a.alert_count} occurrence(s)</div>
                   {isAdmin && (
                     <div className="alert-actions">
@@ -130,6 +169,7 @@ export default function CamerasAlerts() {
               </div>
             ))}
             {incidents.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No active alerts.</p>}
+          </div>
           </div>
         </div>
       </div>
