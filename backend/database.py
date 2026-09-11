@@ -31,6 +31,8 @@ def init_db():
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
 
+    cursor.execute("SELECT pg_advisory_lock(918273645)")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS employees (
             id SERIAL PRIMARY KEY,
@@ -215,6 +217,8 @@ def init_db():
             )
         # Existing accounts are left untouched — don't clobber a real admin's
         # changed password/role on every restart.
+
+    cursor.execute("SELECT pg_advisory_unlock(918273645)")
 
     conn.commit()
     cursor.close()
