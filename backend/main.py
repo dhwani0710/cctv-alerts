@@ -409,7 +409,7 @@ class AttendanceOverrideRequest(BaseModel):
     last_seen_at: Optional[str] = None
     status: Optional[str] = "present"
     reason: Optional[str] = None
-    zone_id: Optional[str] = "Manual Entry"
+    zone_name: Optional[str] = "Manual Entry"
 
 def _calculate_hours(first_seen_str, last_seen_str):
     if not first_seen_str or not last_seen_str:
@@ -435,7 +435,7 @@ def _normalize_time(date_str: str, time_val: Optional[str], default_time: str) -
         return f"{date_str}T{parts[0].zfill(2)}:{parts[1].zfill(2)}:{parts[2].zfill(2)}"
     return f"{date_str}T{default_time}"
 
-def _build_attendance_query(start_date=None, end_date=None, date=None, employee_id=None, zone_id=None, status=None, search=None):
+def _build_attendance_query(start_date=None, end_date=None, date=None, employee_id=None, zone_name=None, status=None, search=None):
     where_clauses = []
     params = []
 
@@ -456,9 +456,9 @@ def _build_attendance_query(start_date=None, end_date=None, date=None, employee_
         where_clauses.append("a.employee_id = %s")
         params.append(int(employee_id))
 
-    if zone_id and zone_id.strip():
-        where_clauses.append("(a.zone_id = %s OR a.last_camera_id = %s OR c.location = %s)")
-        params.extend([zone_id.strip(), zone_id.strip(), zone_id.strip()])
+    if zone_name and zone_name.strip():
+        where_clauses.append("a.zone_name = %s")
+        params.append(zone_name.strip())
 
     if status and status.strip() and status.lower() != "all":
         where_clauses.append("LOWER(COALESCE(a.status, 'present')) = LOWER(%s)")
@@ -477,20 +477,19 @@ def get_attendance(
     end_date: Optional[str] = None,
     date: Optional[str] = None,
     employee_id: Optional[int] = None,
-    zone_id: Optional[str] = None,
+    zone_name: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
     page: int = 1,
     limit: int = 20
 ):
-    where_sql, params = _build_attendance_query(start_date, end_date, date, employee_id, zone_id, status, search)
+    where_sql, params = _build_attendance_query(start_date, end_date, date, employee_id, zone_name, status, search)
 
     with get_db() as conn:
         cur = conn.cursor()
         count_query = (
             "SELECT COUNT(*) as total FROM attendance a "
-            "JOIN employees e ON e.id = a.employee_id "
-            "LEFT JOIN cameras c ON c.id = a.last_camera_id"
+            "JOIN employees e ON e.id = a.employee_id"
             + where_sql
         )
         cur.execute(count_query, tuple(params))
@@ -500,13 +499,12 @@ def get_attendance(
         offset = max(0, (page - 1) * limit)
         data_query = (
             "SELECT a.id, a.employee_id, e.name, e.designation, e.shift_start, e.shift_end, "
-            "a.attendance_date, a.first_seen, a.last_seen, a.last_camera_id, "
-            "COALESCE(a.zone_id, c.location, a.last_camera_id, 'Front Door') as zone_id, "
+            "a.attendance_date, a.first_seen, a.last_seen, "
+            "COALESCE(a.zone_name, 'Front Door') as zone_name, "
             "COALESCE(a.status, 'present') as status, a.override_reason, "
             "COALESCE(a.is_override, FALSE) as is_override "
             "FROM attendance a "
-            "JOIN employees e ON e.id = a.employee_id "
-            "LEFT JOIN cameras c ON c.id = a.last_camera_id"
+            "JOIN employees e ON e.id = a.employee_id"
             + where_sql
             + " ORDER BY a.attendance_date DESC, a.first_seen ASC LIMIT %s OFFSET %s"
         )
@@ -544,24 +542,23 @@ def export_attendance(
     end_date: Optional[str] = None,
     date: Optional[str] = None,
     employee_id: Optional[int] = None,
-    zone_id: Optional[str] = None,
+    zone_name: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
     format: Optional[str] = "csv"
 ):
-    where_sql, params = _build_attendance_query(start_date, end_date, date, employee_id, zone_id, status, search)
+    where_sql, params = _build_attendance_query(start_date, end_date, date, employee_id, zone_name, status, search)
 
     with get_db() as conn:
         cur = conn.cursor()
         data_query = (
             "SELECT a.id, a.employee_id, e.name, e.designation, "
             "a.attendance_date, a.first_seen, a.last_seen, "
-            "COALESCE(a.zone_id, c.location, a.last_camera_id, 'Front Door') as zone_id, "
+            "COALESCE(a.zone_name, 'Front Door') as zone_name, "
             "COALESCE(a.status, 'present') as status, a.override_reason, "
             "COALESCE(a.is_override, FALSE) as is_override "
             "FROM attendance a "
-            "JOIN employees e ON e.id = a.employee_id "
-            "LEFT JOIN cameras c ON c.id = a.last_camera_id"
+            "JOIN employees e ON e.id = a.employee_id"
             + where_sql
             + " ORDER BY a.attendance_date DESC, a.first_seen ASC"
         )
@@ -609,7 +606,7 @@ def export_attendance(
             first_time or "—",
             last_time or "—",
             f"{hours:.2f}",
-            rec.get("zone_id") or "Front Door",
+            rec.get("zone_name") or "Front Door",
             (rec.get("status") or "present").capitalize(),
             method,
             rec.get("override_reason") or ""
@@ -642,29 +639,29 @@ def override_attendance(req: AttendanceOverrideRequest):
         last_seen = _normalize_time(req.date, req.last_seen_at, "18:00:00")
         status = (req.status or "present").lower()
         reason = req.reason or "Manual reconciliation"
-        zone = req.zone_id or "Manual Entry"
+        zone = req.zone_name or "Manual Entry"
 
         cur.execute("SELECT id FROM attendance WHERE employee_id = %s AND attendance_date = %s", (req.employee_id, req.date))
         existing = cur.fetchone()
 
         if existing:
             cur.execute(
-                "UPDATE attendance SET first_seen = %s, last_seen = %s, zone_id = %s, status = %s, "
+                "UPDATE attendance SET first_seen = %s, last_seen = %s, zone_name = %s, status = %s, "
                 "override_reason = %s, is_override = FALSE WHERE employee_id = %s AND attendance_date = %s",
                 (first_seen, last_seen, zone, status, reason, req.employee_id, req.date)
             )
         else:
             cur.execute(
-                "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, last_camera_id, zone_id, status, override_reason, is_override) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, FALSE)",
-                (req.employee_id, req.date, first_seen, last_seen, "manual", zone, status, reason)
+                "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, zone_name, status, override_reason, is_override) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE)",
+                (req.employee_id, req.date, first_seen, last_seen, zone, status, reason)
             )
 
         conn.commit()
 
         cur.execute(
             "SELECT a.id, a.employee_id, e.name, a.attendance_date, a.first_seen, a.last_seen, "
-            "a.zone_id, a.status, a.override_reason, a.is_override "
+            "a.zone_name, a.status, a.override_reason, a.is_override "
             "FROM attendance a JOIN employees e ON e.id = a.employee_id "
             "WHERE a.employee_id = %s AND a.attendance_date = %s",
             (req.employee_id, req.date)

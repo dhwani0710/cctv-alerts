@@ -72,10 +72,13 @@ def init_db():
         )
     """)
     cursor.execute("""
-        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS last_camera_id TEXT
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS zone_name TEXT
     """)
     cursor.execute("""
-        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS zone_id TEXT
+        ALTER TABLE attendance DROP COLUMN IF EXISTS last_camera_id
+    """)
+    cursor.execute("""
+        ALTER TABLE attendance DROP COLUMN IF EXISTS zone_id
     """)
     cursor.execute("""
         ALTER TABLE attendance ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'present'
@@ -126,6 +129,7 @@ def init_db():
             name TEXT NOT NULL
         )
     """)
+    cursor.execute("ALTER TABLE cameras ADD COLUMN IF NOT EXISTS location TEXT")
     cursor.execute("ALTER TABLE cameras ADD COLUMN IF NOT EXISTS zone_id TEXT REFERENCES zones(id)")
 
     cursor.execute("""
