@@ -50,13 +50,14 @@ def update_currently_detected(name, camera_id, now):
 
 def update_attendance(employee_id, now, camera_id):
     today = now.date().isoformat()
+    zone_name = _get_camera_zone_name(camera_id)
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, last_camera_id) "
+            "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, zone_name) "
             "VALUES (%s, %s, %s, %s, %s) "
-            "ON CONFLICT(employee_id, attendance_date) DO UPDATE SET last_seen = EXCLUDED.last_seen, last_camera_id = EXCLUDED.last_camera_id",
-            (employee_id, today, now.isoformat(), now.isoformat(), camera_id)
+            "ON CONFLICT(employee_id, attendance_date) DO UPDATE SET last_seen = EXCLUDED.last_seen, zone_name = EXCLUDED.zone_name",
+            (employee_id, today, now.isoformat(), now.isoformat(), zone_name)
         )
         conn.commit()
         cur.close()
@@ -90,10 +91,10 @@ def _is_frame_tampered(frame):
 def _load_cameras_from_db():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name, rtsp_url, location, zone_id, enabled FROM cameras WHERE enabled = TRUE")
+        cur.execute("SELECT id, name, rtsp_url, location, zone_id, zone_name, enabled FROM cameras WHERE enabled = TRUE")
         rows = cur.fetchall()
         cur.close()
-    return [{"id": r["id"], "name": r["name"], "source": r["rtsp_url"], "location": r["location"] or r["id"], "zone_id": r["zone_id"]} for r in rows]
+    return [{"id": r["id"], "name": r["name"], "source": r["rtsp_url"], "location": r["location"] or r["id"], "zone_id": r["zone_id"], "zone_name": r["zone_name"]} for r in rows]
 
 def _get_camera_location(camera_id):
     cameras = _load_cameras_from_db()
@@ -108,6 +109,14 @@ def _get_camera_zone(camera_id):
         if cam["id"] == camera_id:
             return cam.get("zone_id")
     return None
+
+def _get_camera_zone_name(camera_id):
+    cameras = _load_cameras_from_db()
+    for cam in cameras:
+        if cam["id"] == camera_id:
+            if cam.get("zone_name"):
+                return cam["zone_name"]
+    return _get_camera_location(camera_id)
 
 def _process_frame(frame, camera_id, camera_name):
     now = datetime.now()

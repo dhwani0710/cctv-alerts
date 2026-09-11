@@ -139,7 +139,7 @@ export default function Records() {
                   <td className="mono">{new Date(r.timestamp).toLocaleDateString()}</td>
                   <td className="mono">{new Date(r.timestamp).toLocaleTimeString()}</td>
                   <td>{r.camera_id}</td>
-                  <td>{r.zone_id || '-'}</td>
+                  <td>{r.zone_name || '-'}</td>
                   <td>{r.person_name.replace('@front', '')}</td>
                   <td>{r.person_name === 'Unknown@front' ? 'Detect outside the store' : r.message.replace(/^\[.*?\]\s*/, '').replace(/^\S+\s*present\s*/i, '')}</td>
                   <td className="mono">{r.occurrences}</td>
