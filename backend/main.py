@@ -469,11 +469,11 @@ def update_app_setting(payload: AppSettingRequest):
 
 @app.get("/records", dependencies=[Depends(verify_token)])
 def get_records(camera: str = None, status: str = None, date: str = None, limit: int = 100):
-    query = "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id FROM alerts WHERE 1=1"
+    query = "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_name FROM alerts WHERE 1=1"
     params = []
 
     if camera:
-        query += " AND (camera_id = %s OR camera_id LIKE %s)"
+        query += " AND (camera_name = %s OR camera_name LIKE %s)"
         params.extend([camera, f"%{camera}%"])
 
     if status:
@@ -507,11 +507,11 @@ def delete_record(alert_id: int):
 
 @app.get("/records/export", dependencies=[Depends(require_staff)])
 def export_records(camera: str = None, status: str = None, date: str = None):
-    query = "SELECT person_name, alert_type, priority, message, timestamp, camera_id FROM alerts WHERE 1=1"
+    query = "SELECT person_name, alert_type, priority, message, timestamp, camera_name FROM alerts WHERE 1=1"
     params = []
 
     if camera:
-        query += " AND (camera_id = %s OR camera_id LIKE %s)"
+        query += " AND (camera_name = %s OR camera_name LIKE %s)"
         params.extend([camera, f"%{camera}%"])
 
     if status:
@@ -539,7 +539,7 @@ def export_records(camera: str = None, status: str = None, date: str = None):
         rec = dict(r)
         writer.writerow([
             rec.get("timestamp"),
-            rec.get("camera_id") or "Front Door",
+            rec.get("camera_name") or "Front Door",
             rec.get("person_name") or "Unknown",
             rec.get("alert_type") or "detection",
             rec.get("message") or "",
@@ -611,7 +611,7 @@ def _build_attendance_query(start_date=None, end_date=None, date=None, employee_
         params.append(int(employee_id))
 
     if zone_id and zone_id.strip():
-        where_clauses.append("(a.zone_id = %s OR a.last_camera_id = %s OR c.location = %s)")
+        where_clauses.append("(a.zone_name = %s OR a.last_camera_id = %s OR c.location = %s)")
         params.extend([zone_id.strip(), zone_id.strip(), zone_id.strip()])
 
     if status and status.strip() and status.lower() != "all":
@@ -655,7 +655,7 @@ def get_attendance(
         data_query = (
             "SELECT a.id, a.employee_id, e.name, e.designation, e.shift_start, e.shift_end, "
             "a.attendance_date, a.first_seen, a.last_seen, a.last_camera_id, "
-            "COALESCE(a.zone_id, c.location, a.last_camera_id, 'Front Door') as zone_id, "
+            "COALESCE(a.zone_name, c.location, a.last_camera_id, 'Front Door') as zone_name, "
             "COALESCE(a.status, 'present') as status, a.override_reason, "
             "COALESCE(a.is_override, FALSE) as is_override "
             "FROM attendance a "
@@ -710,7 +710,7 @@ def export_attendance(
         data_query = (
             "SELECT a.id, a.employee_id, e.name, e.designation, "
             "a.attendance_date, a.first_seen, a.last_seen, "
-            "COALESCE(a.zone_id, c.location, a.last_camera_id, 'Front Door') as zone_id, "
+            "COALESCE(a.zone_name, c.location, a.last_camera_id, 'Front Door') as zone_name, "
             "COALESCE(a.status, 'present') as status, a.override_reason, "
             "COALESCE(a.is_override, FALSE) as is_override "
             "FROM attendance a "
@@ -763,7 +763,7 @@ def export_attendance(
             first_time or "—",
             last_time or "—",
             f"{hours:.2f}",
-            rec.get("zone_id") or "Front Door",
+            rec.get("zone_name") or "Front Door",
             (rec.get("status") or "present").capitalize(),
             method,
             rec.get("override_reason") or ""
@@ -803,13 +803,13 @@ def override_attendance(req: AttendanceOverrideRequest):
 
         if existing:
             cur.execute(
-                "UPDATE attendance SET first_seen = %s, last_seen = %s, zone_id = %s, status = %s, "
+                "UPDATE attendance SET first_seen = %s, last_seen = %s, zone_name = %s, status = %s, "
                 "override_reason = %s, is_override = FALSE WHERE employee_id = %s AND attendance_date = %s",
                 (first_seen, last_seen, zone, status, reason, req.employee_id, req.date)
             )
         else:
             cur.execute(
-                "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, last_camera_id, zone_id, status, override_reason, is_override) "
+                "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, last_camera_id, zone_name, status, override_reason, is_override) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, FALSE)",
                 (req.employee_id, req.date, first_seen, last_seen, "manual", zone, status, reason)
             )
@@ -818,7 +818,7 @@ def override_attendance(req: AttendanceOverrideRequest):
 
         cur.execute(
             "SELECT a.id, a.employee_id, e.name, a.attendance_date, a.first_seen, a.last_seen, "
-            "a.zone_id, a.status, a.override_reason, a.is_override "
+            "a.zone_name, a.status, a.override_reason, a.is_override "
             "FROM attendance a JOIN employees e ON e.id = a.employee_id "
             "WHERE a.employee_id = %s AND a.attendance_date = %s",
             (req.employee_id, req.date)
@@ -946,7 +946,7 @@ def get_status():
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT person_name, camera_id, last_seen FROM currently_detected WHERE last_seen >= %s",
+            "SELECT person_name, camera_name, last_seen FROM currently_detected WHERE last_seen >= %s",
             (cutoff.isoformat(),)
         )
         detected_rows = cur.fetchall()
@@ -956,7 +956,7 @@ def get_status():
         alert_rows = cur.fetchall()
         cur.close()
 
-    detected = [{"name": r["person_name"], "camera": r["camera_id"], "last_seen": r["last_seen"]} for r in detected_rows]
+    detected = [{"name": r["person_name"], "camera": r["camera_name"], "last_seen": r["last_seen"]} for r in detected_rows]
     alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
 

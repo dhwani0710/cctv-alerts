@@ -37,13 +37,13 @@ def set_unknown_streak(camera_id, value):
         conn.commit()
         cur.close()
 
-def update_currently_detected(name, camera_id, now):
+def update_currently_detected(name, camera_name, now):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO currently_detected (person_name, camera_id, last_seen) VALUES (%s, %s, %s) "
-            "ON CONFLICT(person_name, camera_id) DO UPDATE SET last_seen = EXCLUDED.last_seen",
-            (name, camera_id, now.isoformat())
+            "INSERT INTO currently_detected (person_name, camera_name, last_seen) VALUES (%s, %s, %s) "
+            "ON CONFLICT(person_name, camera_name) DO UPDATE SET last_seen = EXCLUDED.last_seen",
+            (name, camera_name, now.isoformat())
         )
         conn.commit()
         cur.close()
@@ -90,10 +90,10 @@ def _is_frame_tampered(frame):
 def _load_cameras_from_db():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name, rtsp_url, location, zone_id, enabled FROM cameras WHERE enabled = TRUE")
+        cur.execute("SELECT id, name, rtsp_url, location, zone_name, enabled FROM cameras WHERE enabled = TRUE")
         rows = cur.fetchall()
         cur.close()
-    return [{"id": r["id"], "name": r["name"], "source": r["rtsp_url"], "location": r["location"] or r["id"], "zone_id": r["zone_id"]} for r in rows]
+    return [{"id": r["id"], "name": r["name"], "source": r["rtsp_url"], "location": r["location"] or r["id"], "zone_name": r["zone_name"]} for r in rows]
 
 def _get_camera_location(camera_id):
     cameras = _load_cameras_from_db()
@@ -106,15 +106,15 @@ def _get_camera_zone(camera_id):
     cameras = _load_cameras_from_db()
     for cam in cameras:
         if cam["id"] == camera_id:
-            return cam.get("zone_id")
+            return cam.get("zone_name")
     return None
 
 def _process_frame(frame, camera_id, camera_name):
     now = datetime.now()
-    zone_id = _get_camera_zone(camera_id)
+    zone_name = _get_camera_zone(camera_id)
     if _is_frame_tampered(frame):
         msg = f"[{camera_name}] Camera view blocked or tampered with"
-        log_alert(f"camera_{camera_id}", "camera_tamper", "high", msg, frame=frame, camera_id=camera_id, zone_id=zone_id)
+        log_alert(f"camera_{camera_id}", "camera_tamper", "high", msg, frame=frame, camera_name=camera_name, zone_name=zone_name)
         return
 
     names = recognize_faces(frame)
@@ -138,7 +138,7 @@ def _process_frame(frame, camera_id, camera_name):
             continue
 
         try:
-            update_currently_detected(name, camera_id, now)
+            update_currently_detected(name, camera_name, now)
 
             with get_db() as conn:
                 cur = conn.cursor()
@@ -155,14 +155,14 @@ def _process_frame(frame, camera_id, camera_name):
                     current = get_current_frame(camera_id)
                     snapshot_frame = current if current is not None else frame
                     msg = f"[{camera_name}] {name} present {format_duration(minutes_early)} before shift start"
-                    log_alert(name, "early_arrival", priority, msg, frame=snapshot_frame, camera_id=camera_id, zone_id=zone_id)
+                    log_alert(name, "early_arrival", priority, msg, frame=snapshot_frame, camera_name=camera_name, zone_name=zone_name)
                 elif now > shift_end_dt:
                     minutes_past = (now - shift_end_dt).total_seconds() / 60
                     priority = get_alert_priority(minutes_past)
                     current = get_current_frame(camera_id)
                     snapshot_frame = current if current is not None else frame
                     msg = f"[{camera_name}] {name} still in store {format_duration(minutes_past)} after shift end"
-                    log_alert(name, "overstay", priority, msg, frame=snapshot_frame, camera_id=camera_id, zone_id=zone_id)
+                    log_alert(name, "overstay", priority, msg, frame=snapshot_frame, camera_name=camera_name, zone_name=zone_name)
         except Exception as e:
             print(f"[camera_worker] Error processing detected person '{name}': {e}")
 
@@ -175,7 +175,7 @@ def _process_frame(frame, camera_id, camera_name):
             current = get_current_frame(camera_id)
             snapshot_frame = current if current is not None else frame
             msg = f"[{camera_name}] Unknown person detected outside store hours"
-            log_alert(location_key, "stranger", "high", msg, frame=snapshot_frame, camera_id=camera_id, zone_id=zone_id)
+            log_alert(location_key, "stranger", "high", msg, frame=snapshot_frame, camera_name=camera_name, zone_name=zone_name)
     else:
         set_unknown_streak(camera_id, 0)
 
@@ -277,9 +277,9 @@ def _health_check_loop():
 
             if seconds_since > config.CAMERA_OFFLINE_THRESHOLD_SEC:
                 if camera_id not in already_alerted:
-                    zone_id = _get_camera_zone(camera_id)
+                    zone_name = _get_camera_zone(camera_id)
                     msg = f"[{camera_name}] Camera offline or feed lost — no frames for {int(seconds_since)}s"
-                    log_alert(f"camera_{camera_id}", "camera_offline", "high", msg, camera_id=camera_id, zone_id=zone_id)
+                    log_alert(f"camera_{camera_id}", "camera_offline", "high", msg, camera_name=camera_name, zone_name=zone_name)
                     already_alerted.add(camera_id)
             else:
                 already_alerted.discard(camera_id)
