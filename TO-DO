@@ -1,0 +1,36 @@
+Good, merge is complete with no conflict markers. Let's inspect the app entry, routing, and duplicate pages.Confirmed: admin/manager roles get redirected back to `/login` on successful login — a login loop. Let's check ProtectedRoute and main.py auth endpoint quickly, plus check the settings/camera CRUD and other backend flows.Good enough context. Let me quickly check `camera_worker.py` for reconnect logic and `AddCameraModal`/`CamerasAlerts` frontend integration, plus a scan for obvious error-handling gaps.## 🔴 MUST FIX
+
+* [ ] **Dead frontend pages from the ft3 merge are never wired in.** `DashboardPage.jsx`, `AdminPage.jsx`, `AttendancePage.jsx`, `AuditLogPage.jsx`, `Sidebar.jsx` (~76KB) exist in `frontend/src/pages`/`components` but aren't imported anywhere — `App.jsx` still routes only to the old `AdminDashboard/EmployeeDashboard/Attendance/AdminUsers` pages. This means your colleague's CSV export UI and Audit Log UI are **not reachable in the running app**, even though the backend supports them.
+* [ ] **Admin/manager roles get locked out after login.** `auth.py`'s `require_admin`/`require_hr` and `main.py`'s `create_user` accept roles `admin` and `manager`, but `AuthContext.dashboardFor()` and `App.jsx` only handle `ceo/owner/guard/hr`. A user with role `admin` or `manager` logs in successfully, then `dashboardFor()` returns `/login`, stranding them in a redirect-to-login loop with a valid session and no way to reach any page.
+* [ ] **Path traversal risk in employee photo upload.** `add_employee` builds `folder_name = name.replace(" ", "_")` and does `os.path.join(KNOWN_FACES_DIR, folder_name)` with zero sanitization of the `name` field — an employee name like `../../something` can write outside `known_faces/`.
+* [ ] **No file-type validation on photo uploads.** `_save_resized_photo` writes the raw upload straight to disk with a `.jpg` extension, then calls `Image.open()` — a non-image upload throws an unhandled exception (500 with no clean error), and nothing checks MIME type or size before writing.
+* [ ] **Hardcoded demo credentials auto-seeded into the DB on every fresh init** (`owner/ceo123`, `ceo/ceo123`, `hr/hr1234`, `guard/guard123` in `database.py`), with no forced password change. Fine for local dev, a real risk if this DB is ever reachable outside localhost.
+* [ ] **README default-login docs are wrong.** README says default login is `admin / ceo123`; actual seeded default (from `.env` fallback) is `admin / admin123`. Anyone following the README to demo/evaluate will fail to log in on the first try.
+
+## 🟠 SHOULD FIX
+
+* [ ] **API base URL hardcoded to `http://localhost:8000` in 3 separate files** (`AuthContext.jsx`, `CamerasAlerts.jsx`, `Settings.jsx`) — no `.env`/config value. Any deploy off localhost requires manual edits in multiple places and it's easy to miss one.
+* [ ] **`numpy` and `Pillow` are imported directly in `main.py` but missing from `requirements.txt`** — currently working only because `deepface`/`opencv-python` happen to pull them in transitively. Pin them explicitly.
+* [ ] **`backend/settings.json` is committed to git** despite being in `.gitignore` (it was tracked before the ignore rule was added) — this is runtime state, will cause merge noise and stale settings on fresh clones.
+* [ ] **Dangling/contradictory role constants:** `auth_users.py` defines `VALID_ROLES = {"ceo","owner","guard","hr"}` and `ADMIN_ROLES`, both unused and out of sync with `auth.py`'s actual `VALID_ROLES` (which includes `admin`, `manager`) and with the inline role lists duplicated in `create_user`/`update_user`. Consolidate into one source of truth.
+* [ ] **Audit log feature is backend-only and role-inconsistent.** `/audit-logs` requires literal role `owner` (`require_owner`), while everywhere else `ceo` is treated as equal to `owner`. Also unreachable from the UI (see dead-page issue above).
+* [ ] **CSV export endpoints (`/attendance/export`, `/records/export`) exist but the wired-in `Attendance.jsx` page has no export button** — the only export UI lives in the unused `AttendancePage.jsx`.
+* [ ] **README role table (ceo/owner/guard/hr only) doesn't mention `admin`/`manager`**, which the backend fully supports for account creation — decide: strip those roles from backend validation, or finish wiring + document them.
+* [ ] Leftover merge-artifact comment shipped in `auth.py` (`# backend/auth.py — replace entirely with ft3's version`) — cosmetic but signals an unfinished cleanup pass; check other merged files for similar leftovers.
+
+## 🟡 OPTIONAL
+
+* [ ] Delete the orphaned pages/components instead of leaving 76KB of dead code in the repo (once you decide whether to wire them in or drop them).
+* [ ] Add a loading/error state around the photo-upload flow so a rejected non-image upload shows a real message instead of a raw 500.
+* [ ] Move the 5 hardcoded demo accounts behind a `SEED_DEMO_USERS` env flag so they don't get created in non-dev environments.
+
+## 🚀 NEXT STEPS
+
+1. **Decide the frontend fork** — old pages (`AdminDashboard`/`Attendance`/`AdminUsers`) or ft3 pages (`DashboardPage`/`AttendancePage`/`AdminPage`/`AuditLogPage`). Don't keep both; pick one and delete the other's dead files.
+2. **Fix the role model end-to-end** — pick the final role set (recommend: keep `admin`/`manager` since backend already supports them), update `dashboardFor()` + `App.jsx` routes to cover every role, and delete the stale `VALID_ROLES`/`ADMIN_ROLES` in `auth_users.py`.
+3. **Wire the CSV export and audit log UI into the chosen page set** so those already-built backend features are actually reachable.
+4. **Patch the upload security gaps** — sanitize `name` before using it as a folder path, validate uploaded file type/size before writing/opening.
+5. **Fix `requirements.txt`** (add `numpy`, `Pillow`) and **externalize the API base URL** into a single env-driven config used by all 3 frontend files.
+6. **Untrack `backend/settings.json`**, update the README's default-login line and role table to match reality.
+7. **Sweep for merge leftovers** (stray comments, dead constants) across the files touched in the `feature/ft3` merge before final submission.
+8. Only after 1–7: harden the demo-seed accounts (env flag) — lowest priority, doesn't block a working demo.
