@@ -202,6 +202,8 @@ def init_db():
     """)
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS incident_id INTEGER REFERENCES incidents(id)")
     cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS last_notified TEXT")
+    cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS camera_id TEXT")
+    cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS zone_id TEXT")
 
     # Seed default accounts so every role in the RBAC set has a working login
     # out of the box. The primary admin account honors the env vars if set;
