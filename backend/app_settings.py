@@ -6,13 +6,6 @@ DEFAULTS = {
     # Notification settings
     "notify_motion": "true",
     "notify_person": "true",
-    "notify_email": "false",
-
-    # Alert / detection settings
-    "sensitivity": "medium",
-    "after_hours_start": "21:00",
-    "after_hours_end": "08:00",
-    "door_held_seconds": "30",
 
     # Existing system settings
     "min_matching_photos": "2",
@@ -24,29 +17,25 @@ DEFAULTS = {
     "escalation_medium_to_high_sec": "3600",
 }
 
+import time
+_settings_cache = {"data": None, "ts": 0}
+_SETTINGS_CACHE_TTL = 5  # seconds
 
 def get_setting(key):
-    """
-    Get a single setting from PostgreSQL.
+    now = time.time()
+    if _settings_cache["data"] is None or now - _settings_cache["ts"] >= _SETTINGS_CACHE_TTL:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT key, value FROM app_settings")
+            rows = cur.fetchall()
+            cur.close()
+        _settings_cache["data"] = {r["key"]: r["value"] for r in rows}
+        _settings_cache["ts"] = now
 
-    If the setting has not been saved yet, return its default value.
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-
-        cur.execute(
-            "SELECT value FROM app_settings WHERE key = %s",
-            (key,)
-        )
-
-        row = cur.fetchone()
-        cur.close()
-
-    if row:
-        return row["value"]
+    if key in _settings_cache["data"]:
+        return _settings_cache["data"][key]
 
     return DEFAULTS.get(key)
-
 
 def get_setting_float(key):
     """
@@ -97,6 +86,7 @@ def set_setting(key, value):
         )
 
         conn.commit()
+        _settings_cache["data"] = None
 
         # Read it straight back within the same connection to confirm the
         # write actually landed, and log it. If this print ever shows a

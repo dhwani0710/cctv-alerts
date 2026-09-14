@@ -9,6 +9,18 @@ import config
 KNOWN_FACES_DIR = "known_faces"
 VALID_PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
+import time
+_face_cache = {"has_photos": False, "photo_counts": {}, "ts": 0}
+_FACE_CACHE_TTL = 15  # seconds
+
+def _get_known_faces_info():
+    now = time.time()
+    if now - _face_cache["ts"] < _FACE_CACHE_TTL:
+        return _face_cache["has_photos"], _face_cache["photo_counts"]
+    has_photos, photo_counts = _get_known_faces_info()
+    _face_cache.update(has_photos=has_photos, photo_counts=photo_counts, ts=now)
+    return has_photos, photo_counts
+
 def recognize_faces(frame):
     """Takes a webcam frame, returns a list of names — one per detected face.
     Unmatched faces show as 'Unknown'. Empty list means no faces detected at all."""
@@ -67,11 +79,14 @@ def recognize_faces(frame):
                 folder_name = os.path.basename(os.path.dirname(identity_path))
                 matches_by_employee.setdefault(folder_name, []).append(row[distance_col])
 
-            from app_settings import get_setting_int
+            from app_settings import get_setting_int, get_setting_float
             min_matching = get_setting_int("min_matching_photos") or 2
+            max_distance = get_setting_float("match_distance_threshold")
 
             accepted_name = "Unknown"
             for folder_name, distances in matches_by_employee.items():
+                if max_distance is not None:
+                    distances = [d for d in distances if d <= max_distance]
                 required = min(min_matching, photo_counts.get(folder_name, 1))
                 print(f"[DEBUG] {folder_name}: {len(distances)} photo(s) matched (need {required}), distances: {distances}")
                 if len(distances) >= required:
