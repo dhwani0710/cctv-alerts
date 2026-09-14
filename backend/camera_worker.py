@@ -54,13 +54,14 @@ def update_currently_detected(name, camera_id, now):
 
 def update_attendance(employee_id, now, camera_id):
     today = now.date().isoformat()
+    zone_name = _get_camera_zone_name(camera_id)
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, last_camera_id) "
+            "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, zone_name) "
             "VALUES (%s, %s, %s, %s, %s) "
-            "ON CONFLICT(employee_id, attendance_date) DO UPDATE SET last_seen = EXCLUDED.last_seen, last_camera_id = EXCLUDED.last_camera_id",
-            (employee_id, today, now.isoformat(), now.isoformat(), camera_id)
+            "ON CONFLICT(employee_id, attendance_date) DO UPDATE SET last_seen = EXCLUDED.last_seen, zone_name = EXCLUDED.zone_name",
+            (employee_id, today, now.isoformat(), now.isoformat(), zone_name)
         )
         conn.commit()
         cur.close()
@@ -112,6 +113,14 @@ def _get_camera_zone(camera_id):
         if cam["id"] == camera_id:
             return cam.get("zone_name")
     return None
+
+def _get_camera_zone_name(camera_id):
+    cameras = _load_cameras_from_db()
+    for cam in cameras:
+        if cam["id"] == camera_id:
+            if cam.get("zone_name"):
+                return cam["zone_name"]
+    return _get_camera_location(camera_id)
 
 def _process_frame(frame, camera_id, camera_name):
     now = datetime.now()
