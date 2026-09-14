@@ -141,7 +141,15 @@ def init_db():
             name TEXT NOT NULL
         )
     """)
-    cursor.execute("ALTER TABLE cameras ADD COLUMN IF NOT EXISTS zone_id TEXT REFERENCES zones(id)")
+    cursor.execute("ALTER TABLE cameras ADD COLUMN IF NOT EXISTS zone_name TEXT")
+    cursor.execute("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'cameras' AND column_name = 'location'
+    """)
+    if cursor.fetchone():
+        cursor.execute("UPDATE cameras SET zone_name = location WHERE zone_name IS NULL")
+        cursor.execute("ALTER TABLE cameras DROP COLUMN location")
+    cursor.execute("ALTER TABLE cameras DROP COLUMN IF EXISTS zone_id")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS incidents (

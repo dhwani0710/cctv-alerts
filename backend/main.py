@@ -856,22 +856,21 @@ def list_cameras():
     now = datetime.now()
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name, rtsp_url, location, enabled, zone_id FROM cameras")
+        cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras")
         rows = cur.fetchall()
         cur.close()
     result = []
     for cam in rows:
         heartbeat = get_camera_heartbeat(cam["id"])
         is_live = heartbeat is not None and (now - heartbeat).total_seconds() <= config.CAMERA_OFFLINE_THRESHOLD_SEC
-        result.append({"id": cam["id"], "name": cam["name"], "location": cam["location"], "zone_id": cam["zone_id"], "enabled": cam["enabled"], "live": is_live})
+        result.append({"id": cam["id"], "name": cam["name"], "zone_name": cam["zone_name"], "enabled": cam["enabled"], "live": is_live})
     return result
 
 class CameraRequest(BaseModel):
     id: str
     name: str
     rtsp_url: str
-    location: str = None
-    zone_id: str = None
+    zone_name: str = None
     enabled: bool = True
 
 @app.post("/cameras", dependencies=[Depends(require_admin)])
@@ -879,8 +878,8 @@ def add_camera(payload: CameraRequest):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO cameras (id, name, rtsp_url, location, enabled, zone_id) VALUES (%s, %s, %s, %s, %s, %s)",
-            (payload.id, payload.name, payload.rtsp_url, payload.location or payload.id, payload.enabled, payload.zone_id)
+            "INSERT INTO cameras (id, name, rtsp_url, zone_name, enabled) VALUES (%s, %s, %s, %s, %s)",
+            (payload.id, payload.name, payload.rtsp_url, payload.zone_name or payload.id, payload.enabled)
         )
         conn.commit()
         cur.close()
@@ -891,8 +890,8 @@ def update_camera(camera_id: str, payload: CameraRequest):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE cameras SET name=%s, rtsp_url=%s, location=%s, enabled=%s, zone_id=%s WHERE id=%s",
-            (payload.name, payload.rtsp_url, payload.location or camera_id, payload.enabled, payload.zone_id, camera_id)
+            "UPDATE cameras SET name=%s, rtsp_url=%s, zone_name=%s, enabled=%s WHERE id=%s",
+            (payload.name, payload.rtsp_url, payload.zone_name or camera_id, payload.enabled, camera_id)
         )
         conn.commit()
         cur.close()
@@ -915,8 +914,8 @@ def _seed_cameras_from_config():
         if count == 0:
             for cam in config.CAMERAS:
                 cur.execute(
-                    "INSERT INTO cameras (id, name, rtsp_url, location, enabled) VALUES (%s, %s, %s, %s, %s)",
-                    (cam["id"], cam["name"], cam["source"], cam.get("location", cam["id"]), True)
+                    "INSERT INTO cameras (id, name, rtsp_url, zone_name, enabled) VALUES (%s, %s, %s, %s, %s)",
+                    (cam["id"], cam["name"], cam["source"], cam.get("zone_name", cam.get("location", cam["id"])), True)
                 )
             conn.commit()
         cur.close()
