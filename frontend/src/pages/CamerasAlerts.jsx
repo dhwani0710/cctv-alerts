@@ -114,7 +114,7 @@ export default function CamerasAlerts() {
                   <div className="cam-meta">
                     <div>
                       <div className="name">{c.name}</div>
-                      <div className="zone">{c.location}</div>
+                      <div className="zone">{c.zone_name}</div>
                     </div>
                   </div>
                 </div>
@@ -189,7 +189,7 @@ export default function CamerasAlerts() {
             <div className="cam-lightbox-head">
               <div>
                 <div className="name">{selected.name}</div>
-                <div className="zone">{selected.location}</div>
+                <div className="zone">{selected.zone_name}</div>
               </div>
               <button className="cam-lightbox-close" onClick={() => setSelected(null)} aria-label="Close">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">

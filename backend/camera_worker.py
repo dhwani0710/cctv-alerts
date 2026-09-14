@@ -90,23 +90,23 @@ def _is_frame_tampered(frame):
 def _load_cameras_from_db():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name, rtsp_url, location, zone_id, enabled FROM cameras WHERE enabled = TRUE")
+        cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras WHERE enabled = TRUE")
         rows = cur.fetchall()
         cur.close()
-    return [{"id": r["id"], "name": r["name"], "source": r["rtsp_url"], "location": r["location"] or r["id"], "zone_id": r["zone_id"]} for r in rows]
+    return [{"id": r["id"], "name": r["name"], "source": r["rtsp_url"], "zone_name": r["zone_name"] or r["id"]} for r in rows]
 
 def _get_camera_location(camera_id):
     cameras = _load_cameras_from_db()
     for cam in cameras:
         if cam["id"] == camera_id:
-            return cam.get("location", camera_id)
+            return cam.get("zone_name", camera_id)
     return camera_id
 
 def _get_camera_zone(camera_id):
     cameras = _load_cameras_from_db()
     for cam in cameras:
         if cam["id"] == camera_id:
-            return cam.get("zone_id")
+            return cam.get("zone_name")
     return None
 
 def _process_frame(frame, camera_id, camera_name):
