@@ -54,8 +54,8 @@ def init_db():
         )
     """)
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS snapshot_filename TEXT")
-    cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS camera_id TEXT")
-    cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS zone_id TEXT")
+    cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS camera_name TEXT")
+    cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS zone_name TEXT")
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS permanent BOOLEAN NOT NULL DEFAULT FALSE")
 
     # Guard acknowledgment protocol columns (from feature/ft3)
@@ -113,7 +113,7 @@ def init_db():
         )
     """)
     cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS last_camera_id TEXT")
-    cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS zone_id TEXT")
+    cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS zone_name TEXT")
     cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'present'")
     cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS override_reason TEXT")
     cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS is_override BOOLEAN DEFAULT FALSE")
@@ -121,9 +121,9 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS currently_detected (
             person_name TEXT NOT NULL,
-            camera_id TEXT NOT NULL,
+            camera_name TEXT NOT NULL,
             last_seen TEXT NOT NULL,
-            PRIMARY KEY (person_name, camera_id)
+            PRIMARY KEY (person_name, camera_name)
         )
     """)
     # Clear stale "currently in view" rows left over from before a restart
@@ -192,8 +192,8 @@ def init_db():
             person_name TEXT NOT NULL,
             alert_type TEXT NOT NULL,
             priority TEXT NOT NULL,
-            camera_id TEXT,
-            zone_id TEXT,
+            camera_name TEXT,
+            zone_name TEXT,
             first_seen TEXT NOT NULL,
             last_seen TEXT NOT NULL,
             alert_count INTEGER NOT NULL DEFAULT 1,
