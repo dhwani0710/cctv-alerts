@@ -9,6 +9,8 @@ import uuid
 import storage
 
 SNAPSHOTS_DIR = "snapshots"
+PERSON_ALERT_TYPES = {"stranger", "early_arrival", "overstay"}
+MOTION_ALERT_TYPES = {"camera_tamper", "camera_offline"}
 
 def get_alert_priority(minutes_past):
     from app_settings import get_setting_float
@@ -136,6 +138,17 @@ PRIORITY_EMOJI = {"low": "🟡", "medium": "🟠", "high": "🔴"}
 REPEAT_ALERT_THRESHOLD = 5
 REPEAT_ALERT_INTERVAL_SEC = 5 * 60
 
+CAMERA_ALERT_TYPES = {"camera_tamper", "camera_offline"}
+PERSON_ALERT_TYPES = {"stranger", "early_arrival", "overstay"}
+
+def _notifications_enabled_for(alert_type):
+    from app_settings import get_setting
+    if alert_type in CAMERA_ALERT_TYPES:
+        return get_setting("notify_motion") == "true"
+    if alert_type in PERSON_ALERT_TYPES:
+        return get_setting("notify_person") == "true"
+    return True
+
 def log_alert(person_name, alert_type, priority, message, frame=None, camera_name=None, zone_name=None):
     local_path, filename = (save_snapshot(frame) if frame is not None else (None, None))
     final_url = f"/snapshots/{filename}" if filename else None
@@ -155,19 +168,32 @@ def log_alert(person_name, alert_type, priority, message, frame=None, camera_nam
     if local_path and filename:
         threading.Thread(target=_upload_snapshot_async, args=(alert_id, local_path, filename), daemon=True).start()
 
+    from app_settings import get_setting
+    notify_key = (
+        "notify_person" if alert_type in PERSON_ALERT_TYPES
+        else "notify_motion" if alert_type in MOTION_ALERT_TYPES
+        else None
+    )
+    if notify_key and get_setting(notify_key) == "false":
+        return  # Telegram muted for this category — still logged to DB above
+
     emoji = PRIORITY_EMOJI.get(priority, "")
     caption = f"{emoji} [{priority.upper()}] {message}"
     if not is_new:
         caption += f" (incident #{incident_id}, occurrence {alert_count})"
 
+    notifications_enabled = _notifications_enabled_for(alert_type)
+
     if is_new:
+        if not notifications_enabled:
+            return
         if local_path:
             send_telegram_photo(local_path, caption)
         else:
             send_telegram_alert(caption)
         return
 
-    if alert_count > REPEAT_ALERT_THRESHOLD:
+    if notifications_enabled and alert_count > REPEAT_ALERT_THRESHOLD:
         now = datetime.now()
         should_notify = True
         if last_notified:

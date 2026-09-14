@@ -88,6 +88,30 @@ class UpdateUserRequest(BaseModel):
 def get_me(current_user: dict = Depends(verify_token)):
     return current_user
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+@app.post("/auth/change-password")
+def change_own_password(payload: ChangePasswordRequest, current_user: dict = Depends(verify_token)):
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT password_hash FROM users WHERE id = %s", (current_user["user_id"],))
+        row = cur.fetchone()
+        if not row or not verify_password(payload.current_password, row["password_hash"]):
+            cur.close()
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        cur.execute("UPDATE users SET password_hash = %s WHERE id = %s",
+                     (hash_password(payload.new_password), current_user["user_id"]))
+        conn.commit()
+        cur.close()
+    log_audit_event(username=current_user.get("username"), user_role=current_user.get("role"),
+                     action="PASSWORD_CHANGED", target_module="Users",
+                     details="User changed their own password", user_id=current_user.get("user_id"))
+    return {"message": "Password updated"}
+
 @app.post("/auth/login")
 def login(payload: LoginRequest):
     with get_db() as conn:
@@ -448,11 +472,6 @@ class AppSettingRequest(BaseModel):
 ALLOWED_SETTING_KEYS = {
     "notify_motion",
     "notify_person",
-    "notify_email",
-    "sensitivity",
-    "after_hours_start",
-    "after_hours_end",
-    "door_held_seconds",
     "min_matching_photos",
     "match_distance_threshold",
     "overstay_low_threshold_min",
@@ -480,30 +499,10 @@ def update_app_setting(payload: AppSettingRequest):
     if key not in ALLOWED_SETTING_KEYS:
         raise HTTPException(status_code=400, detail=f"Unknown setting key: {key}")
 
-    if key in {"notify_motion", "notify_person", "notify_email"}:
+    if key in {"notify_motion", "notify_person"}:
         value = value.lower()
         if value not in {"true", "false"}:
             raise HTTPException(status_code=400, detail=f"{key} must be true or false")
-
-    elif key == "sensitivity":
-        value = value.lower()
-        if value not in {"low", "medium", "high"}:
-            raise HTTPException(status_code=400, detail="sensitivity must be low, medium, or high")
-
-    elif key in {"after_hours_start", "after_hours_end"}:
-        try:
-            datetime.strptime(value, "%H:%M")
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"{key} must use HH:MM format")
-
-    elif key == "door_held_seconds":
-        try:
-            seconds = int(value)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="door_held_seconds must be a number")
-        if seconds < 5 or seconds > 300:
-            raise HTTPException(status_code=400, detail="door_held_seconds must be between 5 and 300 seconds")
-        value = str(seconds)
 
     elif key in {
         "min_matching_photos",
@@ -633,6 +632,26 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
         "total_pages": math.ceil(total / limit) if limit > 0 else 1
     }
 
+@app.delete("/records", dependencies=[Depends(require_admin)])
+def clear_all_records(current_user: dict = Depends(require_admin)):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM alerts")
+        cur.execute("DELETE FROM incidents")
+        conn.commit()
+        cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="RECORDS_CLEARED",
+        target_module="Records",
+        details="Cleared all alert and incident records",
+        user_id=current_user.get("user_id")
+    )
+
+    return {"message": "All records cleared"}
+
 @app.delete("/records/{alert_id}", dependencies=[Depends(require_staff)])
 def delete_record(alert_id: int, current_user: dict = Depends(require_staff)):
     with get_db() as conn:
@@ -657,6 +676,22 @@ def delete_record(alert_id: int, current_user: dict = Depends(require_staff)):
     )
 
     return {"message": "Record deleted"}
+
+@app.delete("/records", dependencies=[Depends(require_admin)])
+def clear_all_records(current_user: dict = Depends(require_admin)):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM alerts")
+        alerts_deleted = cur.rowcount
+        cur.execute("DELETE FROM incidents")
+        incidents_deleted = cur.rowcount
+        conn.commit()
+        cur.close()
+    log_audit_event(username=current_user.get("username"), user_role=current_user.get("role"),
+                     action="RECORDS_CLEARED", target_module="Records",
+                     details=f"Cleared all records ({alerts_deleted} alerts, {incidents_deleted} incidents)",
+                     user_id=current_user.get("user_id"))
+    return {"message": "All records cleared", "alerts_deleted": alerts_deleted, "incidents_deleted": incidents_deleted}
 
 @app.get("/records/export", dependencies=[Depends(require_staff)])
 def export_records(camera: str = None, status: str = None, date: str = None):
@@ -947,7 +982,7 @@ def override_attendance(req: AttendanceOverrideRequest):
         if existing:
             cur.execute(
                 "UPDATE attendance SET first_seen = %s, last_seen = %s, zone_name = %s, status = %s, "
-                "override_reason = %s, is_override = FALSE WHERE employee_id = %s AND attendance_date = %s",
+                "override_reason = %s, is_override = TRUE WHERE employee_id = %s AND attendance_date = %s",
                 (first_seen, last_seen, zone, status, reason, req.employee_id, req.date)
             )
         else:

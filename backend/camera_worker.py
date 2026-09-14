@@ -92,13 +92,22 @@ def _is_frame_tampered(frame):
     detail = stddev[0][0]
     return brightness < config.TAMPER_BRIGHTNESS_THRESHOLD or detail < config.TAMPER_VARIANCE_THRESHOLD
 
+_camera_cache = {"data": None, "ts": 0}
+_CAMERA_CACHE_TTL = 5  # seconds
+
 def _load_cameras_from_db():
+    now = time.time()
+    if _camera_cache["data"] is not None and now - _camera_cache["ts"] < _CAMERA_CACHE_TTL:
+        return _camera_cache["data"]
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras WHERE enabled = TRUE")
         rows = cur.fetchall()
         cur.close()
-    return [{"id": r["id"], "name": r["name"], "source": r["rtsp_url"], "zone_name": r["zone_name"] or r["id"]} for r in rows]
+    cameras = [{"id": r["id"], "name": r["name"], "source": r["rtsp_url"], "zone_name": r["zone_name"] or r["id"]} for r in rows]
+    _camera_cache["data"] = cameras
+    _camera_cache["ts"] = now
+    return cameras
 
 def _get_camera_location(camera_id):
     cameras = _load_cameras_from_db()

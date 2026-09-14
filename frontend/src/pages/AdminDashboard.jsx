@@ -22,7 +22,7 @@ export default function AdminDashboard() {
       apiFetch('/records?limit=10'),
     ]);
     if (empRes.ok) setEmployeeCount((await empRes.json()).length);
-    if (recRes.ok) setRecords(await recRes.json());
+    if (recRes.ok) setRecords((await recRes.json()).records || []);
   }, [apiFetch]);
 
   useEffect(() => {
