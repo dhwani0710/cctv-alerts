@@ -585,7 +585,7 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
     params = []
 
     if camera:
-        base_query += " AND (i.camera_id = %s OR i.camera_id LIKE %s)"
+        base_query += " AND (i.camera_name = %s OR i.camera_name LIKE %s)"
         params.extend([camera, f"%{camera}%"])
 
     if status:
@@ -602,7 +602,7 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
 
     count_query = "SELECT COUNT(*) AS count " + base_query
     data_query = """
-        SELECT i.id, i.person_name, i.alert_type, i.priority, i.camera_id, i.zone_id,
+        SELECT i.id, i.person_name, i.alert_type, i.priority, i.camera_name, i.zone_name,
                i.first_seen, i.last_seen, i.alert_count, i.status,
                a.message, a.snapshot_filename
     """ + base_query + " ORDER BY i.last_seen DESC LIMIT %s OFFSET %s"
@@ -660,11 +660,11 @@ def delete_record(alert_id: int, current_user: dict = Depends(require_staff)):
 
 @app.get("/records/export", dependencies=[Depends(require_staff)])
 def export_records(camera: str = None, status: str = None, date: str = None):
-    query = "SELECT person_name, alert_type, priority, message, timestamp, camera_id FROM alerts WHERE 1=1"
+    query = "SELECT person_name, alert_type, priority, message, timestamp, camera_name FROM alerts WHERE 1=1"
     params = []
 
     if camera:
-        query += " AND (camera_id = %s OR camera_id LIKE %s)"
+        query += " AND (camera_name = %s OR camera_name LIKE %s)"
         params.extend([camera, f"%{camera}%"])
 
     if status:
@@ -692,7 +692,7 @@ def export_records(camera: str = None, status: str = None, date: str = None):
         rec = dict(r)
         writer.writerow([
             rec.get("timestamp"),
-            rec.get("camera_id") or "Front Door",
+            rec.get("camera_name") or "Front Door",
             rec.get("person_name") or "Unknown",
             rec.get("alert_type") or "detection",
             rec.get("message") or "",
@@ -860,6 +860,7 @@ def export_attendance(
         cur = conn.cursor()
         data_query = (
             "SELECT a.id, a.employee_id, e.name, e.designation, "
+            "a.attendance_date, a.first_seen, a.last_seen, "
             "a.attendance_date, a.first_seen, a.last_seen, "
             "COALESCE(a.zone_name, 'Front Door') as zone_name, "
             "COALESCE(a.status, 'present') as status, a.override_reason, "
@@ -1101,7 +1102,7 @@ def add_camera(payload: CameraRequest, current_user: dict = Depends(require_admi
             "id": payload.id,
             "name": payload.name,
             "source": payload.rtsp_url,
-            "location": payload.zone_name or payload.id,
+            "zone_name": payload.zone_name or payload.id,
         })
 
     log_audit_event(
@@ -1132,7 +1133,7 @@ def update_camera(camera_id: str, payload: CameraRequest, current_user: dict = D
             "id": camera_id,
             "name": payload.name,
             "source": payload.rtsp_url,
-            "location": payload.zone_name or camera_id,
+            "zone_name": payload.zone_name or camera_id,
         })
 
     log_audit_event(

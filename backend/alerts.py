@@ -77,7 +77,7 @@ def is_within_store_hours(now: datetime):
     alert_time = datetime.fromisoformat(row["timestamp"])
     return alert_time >= cutoff
 
-def get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id, window_seconds=None):
+def get_or_create_incident(person_name, alert_type, priority, camera_name, zone_name, window_seconds=None):
     from app_settings import get_setting_int
     if window_seconds is None:
         window_seconds = get_setting_int("alert_dedupe_window_sec") or 60
@@ -87,8 +87,8 @@ def get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id
         cur = conn.cursor()
         cur.execute(
             "SELECT id, alert_count, last_notified FROM incidents WHERE person_name = %s AND alert_type = %s "
-            "AND camera_id = %s AND last_seen >= %s ORDER BY last_seen DESC LIMIT 1",
-            (person_name, alert_type, camera_id, cutoff.isoformat())
+            "AND camera_name = %s AND last_seen >= %s ORDER BY last_seen DESC LIMIT 1",
+            (person_name, alert_type, camera_name, cutoff.isoformat())
         )
         row = cur.fetchone()
 
@@ -102,9 +102,9 @@ def get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id
             return row["id"], row["alert_count"] + 1, False, row["last_notified"]
         else:
             cur.execute(
-                "INSERT INTO incidents (person_name, alert_type, priority, camera_id, zone_id, first_seen, last_seen, alert_count, last_notified) "
+                "INSERT INTO incidents (person_name, alert_type, priority, camera_name, zone_name, first_seen, last_seen, alert_count, last_notified) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s) RETURNING id",
-                (person_name, alert_type, priority, camera_id, zone_id, now.isoformat(), now.isoformat(), now.isoformat())
+                (person_name, alert_type, priority, camera_name, zone_name, now.isoformat(), now.isoformat(), now.isoformat())
             )
             incident_id = cur.fetchone()["id"]
             conn.commit()
@@ -136,17 +136,17 @@ PRIORITY_EMOJI = {"low": "🟡", "medium": "🟠", "high": "🔴"}
 REPEAT_ALERT_THRESHOLD = 5
 REPEAT_ALERT_INTERVAL_SEC = 5 * 60
 
-def log_alert(person_name, alert_type, priority, message, frame=None, camera_id=None, zone_id=None):
+def log_alert(person_name, alert_type, priority, message, frame=None, camera_name=None, zone_name=None):
     local_path, filename = (save_snapshot(frame) if frame is not None else (None, None))
     final_url = f"/snapshots/{filename}" if filename else None
 
-    incident_id, alert_count, is_new, last_notified = get_or_create_incident(person_name, alert_type, priority, camera_id, zone_id)
+    incident_id, alert_count, is_new, last_notified = get_or_create_incident(person_name, alert_type, priority, camera_name, zone_name)
 
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_id, zone_id, incident_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (person_name, alert_type, priority, message, datetime.now().isoformat(), final_url, camera_id, zone_id, incident_id)
+            "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_name, zone_name, incident_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (person_name, alert_type, priority, message, datetime.now().isoformat(), final_url, camera_name, zone_name, incident_id)
         )
         alert_id = cur.fetchone()["id"]
         conn.commit()
