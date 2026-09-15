@@ -1133,12 +1133,12 @@ def add_camera(payload: CameraRequest, current_user: dict = Depends(require_admi
         cur.close()
 
     if payload.enabled:
-        start_single_camera({
+        threading.Thread(target=start_single_camera, args=({
             "id": payload.id,
             "name": payload.name,
             "source": payload.rtsp_url,
             "zone_name": payload.zone_name or payload.id,
-        })
+        },), daemon=True).start()
 
     log_audit_event(
         username=current_user.get("username"),
@@ -1162,14 +1162,16 @@ def update_camera(camera_id: str, payload: CameraRequest, current_user: dict = D
         conn.commit()
         cur.close()
 
-    stop_single_camera(camera_id)
-    if payload.enabled:
-        start_single_camera({
-            "id": camera_id,
-            "name": payload.name,
-            "source": payload.rtsp_url,
-            "zone_name": payload.zone_name or camera_id,
-        })
+    def _reconnect():
+        stop_single_camera(camera_id)
+        if payload.enabled:
+            start_single_camera({
+                "id": camera_id,
+                "name": payload.name,
+                "source": payload.rtsp_url,
+                "zone_name": payload.zone_name or camera_id,
+            })
+    threading.Thread(target=_reconnect, daemon=True).start()
 
     log_audit_event(
         username=current_user.get("username"),
@@ -1184,7 +1186,7 @@ def update_camera(camera_id: str, payload: CameraRequest, current_user: dict = D
 
 @app.delete("/cameras/{camera_id}", dependencies=[Depends(require_admin)])
 def delete_camera(camera_id: str, current_user: dict = Depends(require_admin)):
-    stop_single_camera(camera_id)
+    threading.Thread(target=stop_single_camera, args=(camera_id,), daemon=True).start()
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM cameras WHERE id = %s", (camera_id,))
