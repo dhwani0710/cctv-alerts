@@ -20,6 +20,21 @@ export default function Attendance() {
   }, [apiFetch, date]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleExport() {
+    const res = await apiFetch(`/attendance/export?date=${date}`);
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `attendance-${date}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    }
+  }
     const filteredRecords = records.filter((r) =>
     r.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -34,9 +49,12 @@ export default function Attendance() {
 
   return (
     <Shell active="attendance" title="Attendance">
-      <div className="page-head">
-        <h1>Attendance</h1>
-        <p>Staff attendance based on camera first-seen / last-seen detection.</p>
+      <div className="page-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1>Attendance</h1>
+          <p>Staff attendance based on camera first-seen / last-seen detection.</p>
+        </div>
+        <button className="btn btn-brass" onClick={handleExport}>Export CSV</button>
       </div>
 
       <div className="filter-bar" style={{ gap: 12, display: 'flex', alignItems: 'center', position: 'relative' }}>
