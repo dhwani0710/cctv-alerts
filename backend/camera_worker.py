@@ -85,6 +85,18 @@ def get_camera_heartbeat(camera_id):
         cur.close()
         return datetime.fromisoformat(row["value"]) if row else None
 
+def get_all_camera_heartbeats():
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT key, value FROM system_state WHERE key LIKE 'heartbeat_%'")
+        rows = cur.fetchall()
+        cur.close()
+    result = {}
+    for r in rows:
+        cam_id = r["key"][len("heartbeat_"):]
+        result[cam_id] = datetime.fromisoformat(r["value"])
+    return result
+
 def _is_frame_tampered(frame):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     mean, stddev = cv2.meanStdDev(gray)

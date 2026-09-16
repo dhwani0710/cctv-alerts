@@ -33,6 +33,11 @@ def init_db():
 
     cursor.execute("SELECT pg_advisory_lock(918273645)")
 
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts (timestamp DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_last_seen ON incidents (last_seen DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents (status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_currently_detected_last_seen ON currently_detected (last_seen)")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS employees (
             id SERIAL PRIMARY KEY,
