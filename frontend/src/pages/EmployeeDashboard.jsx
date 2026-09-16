@@ -2,16 +2,42 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-import { useStatus } from '../context/StatusContext.jsx';
 
 export default function EmployeeDashboard() {
   const { apiFetch } = useAuth();
-  const { status, cameras } = useStatus();
-  const [cameraCount, setCameraCount] = useState({ live: 0, total: 0 });
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const today = new Date().toISOString().split('T')[0];
+
+  const loadAttendance = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`/attendance?date=${today}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRecords(data.records || []);
+      }
+    } catch (err) {
+      console.error('Failed to load attendance:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [apiFetch, today]);
 
   useEffect(() => {
-    setCameraCount({ live: cameras.filter((c) => c.live).length, total: cameras.length });
-  }, [cameras]);
+    loadAttendance();
+    const interval = setInterval(loadAttendance, 30000); // refresh every 30s
+    return () => clearInterval(interval);
+  }, [loadAttendance]);
+
+  const formatTime = (iso) => {
+    try {
+      return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return iso;
+    }
+  };
 
   return (
     <Shell active="dashboard" dark title="Overview">
@@ -19,52 +45,20 @@ export default function EmployeeDashboard() {
       {/* PAGE HEADER */}
       <div className="page-head">
         <span className="eyebrow">Staff</span>
-
         <h1>Welcome back</h1>
-
-        <p>
-          Your shift overview and the store's current status.
-        </p>
+        <p>Today's employee attendance overview.</p>
       </div>
-
 
       {/* STAT CARDS */}
       <div className="stat-grid">
-
         <div className="stat-card good">
-          <span className="eyebrow">Cameras live</span>
-
-          <div className="value">
-            {cameraCount.live} / {cameraCount.total}
-          </div>
+          <span className="eyebrow">Employees present</span>
+          <div className="value">{records.length}</div>
+          <div className="delta">As of {formatTime(new Date().toISOString())}</div>
         </div>
-
-
-        <div className="stat-card warn">
-          <span className="eyebrow">Active alerts</span>
-
-          <div className="value">
-            {status.recent_alerts.length}
-          </div>
-
-          <div className="delta">
-            Visible on Cameras & Alerts
-          </div>
-        </div>
-
-
-        <div className="stat-card">
-          <span className="eyebrow">Currently detected</span>
-
-          <div className="value">
-            {status.currently_detected.length}
-          </div>
-        </div>
-
       </div>
 
-
-      {/* RECENT ALERTS + ACTIVITY LOG */}
+      {/* CURRENTLY PRESENT + ATTENDANCE LOG */}
       <div
         className="alerts-activity-grid"
         style={{
@@ -75,91 +69,45 @@ export default function EmployeeDashboard() {
         }}
       >
 
-        {/* RECENT ALERTS */}
+        {/* CURRENTLY PRESENT */}
         <div className="panel">
 
           <div className="panel-head">
-            <h2>Recent alerts</h2>
-
-            <Link
-              className="link-btn"
-              to="/cameras-alerts"
-            >
+            <h2>Currently present</h2>
+            <Link className="link-btn" to="/attendance">
               View all →
             </Link>
           </div>
 
-
-          {status.recent_alerts.slice(0, 5).map((a, i) => (
-
+          {records.slice(0, 5).map((r, i) => (
             <div className="log-row" key={i}>
-
-              <div
-                className={`log-dot ${
-                  a.priority === 'high'
-                    ? 'alert'
-                    : 'info'
-                }`}
-              />
-
-              <div className="log-time">
-                {new Date(a.timestamp).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </div>
-
-              <div className="log-text">
-                {a.message}
-              </div>
-
-              <div className="log-tag">
-                {a.priority}
-              </div>
-
+              <div className="log-dot info" />
+              <div className="log-time">{formatTime(r.last_seen)}</div>
+              <div className="log-text">{r.name}</div>
+              <div className="log-tag">Present</div>
             </div>
-
           ))}
 
-
-          {status.recent_alerts.length === 0 && (
-            <p
-              style={{
-                color: 'var(--text-muted)',
-                fontSize: 13.5,
-              }}
-            >
-              No alerts.
+          {records.length === 0 && !loading && (
+            <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>
+              No one checked in yet today.
             </p>
           )}
 
         </div>
 
-
-        {/* ACTIVITY LOG */}
+        {/* ATTENDANCE LOG */}
         <div className="panel">
 
           <div className="panel-head">
-
-            <h2>Activity log</h2>
-
-            <Link
-              className="link-btn"
-              to="/records"
-            >
+            <h2>Attendance log</h2>
+            <Link className="link-btn" to="/attendance">
               Full records →
             </Link>
-
           </div>
 
-
-          <p
-            style={{
-              color: 'var(--text-muted)',
-              fontSize: 13.5,
-            }}
-          >
-            See Records for full history.
+          <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>
+            See Attendance for full first-seen / last-seen history.
           </p>
 
         </div>
@@ -168,4 +116,5 @@ export default function EmployeeDashboard() {
 
     </Shell>
   );
+
 }

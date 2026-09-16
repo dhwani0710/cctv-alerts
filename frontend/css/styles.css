@@ -2109,3 +2109,156 @@ table.records tr:last-child td {
     grid-template-columns: 1fr !important;
   }
 }
+/* =========================================================
+   SETTINGS ACTION BUTTONS
+   Fix spacing and alignment between Reset and Save buttons
+   ========================================================= */
+
+.vscode-form-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  width: 100%;
+  margin-top: 28px;
+}
+
+/* Reset to default button */
+.vscode-form-actions .vscode-outline-btn {
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid #d4a85c;
+  border-radius: 4px;
+  background: transparent;
+  color: #d4a85c;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Reset button hover */
+.vscode-form-actions .vscode-outline-btn:hover {
+  background: #d4a85c;
+  color: #111418;
+}
+
+/* Save button */
+.vscode-form-actions .vscode-primary-btn {
+  min-height: 36px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 4px;
+  background: #d4a85c;
+  color: #111418;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Save button hover */
+.vscode-form-actions .vscode-primary-btn:hover {
+  background: #e2b96b;
+}
+
+/* Confirmation text */
+.vscode-form-actions .vscode-confirm-text {
+  color: #c5cad1;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Danger button inside confirmation */
+.vscode-form-actions .vscode-danger-btn {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #a13d3d;
+  border-radius: 4px;
+  background: transparent;
+  color: #e87979;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.vscode-form-actions .vscode-danger-btn:hover {
+  background: #352124;
+  border-color: #c14b4b;
+}
+
+/* Confirmation group */
+.vscode-form-actions .vscode-confirm-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Mobile responsive */
+@media (max-width: 600px) {
+  .vscode-form-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .vscode-form-actions button {
+    width: 100%;
+  }
+
+  .vscode-form-actions .vscode-confirm-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .vscode-form-actions .vscode-confirm-text {
+    margin-bottom: 4px;
+  }
+}
+
+/* SETTINGS BUTTON SPACING FIX */
+
+.vscode-form-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  width: 100%;
+  margin-top: 28px;
+}
+
+.vscode-form-actions button {
+  margin: 0;
+}
+
+.vscode-confirm-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.vscode-confirm-text {
+  color: #c5cad1;
+  font-size: 13px;
+}
+
+@media (max-width: 600px) {
+  .vscode-form-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .vscode-form-actions button {
+    width: 100%;
+  }
+
+  .vscode-confirm-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+}
