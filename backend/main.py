@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from database import init_db, get_db
-from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, start_escalation_thread, start_single_camera, stop_single_camera, restart_single_camera
+from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, restart_single_camera
 from datetime import datetime, timedelta
 import config
 from auth import verify_token, require_owner, require_admin, require_hr, require_guard, require_staff
@@ -437,17 +437,19 @@ def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
             cur.close()
             return {"message": "Employee not found"}
 
+        cur.execute("DELETE FROM employees WHERE id = %s", (employee_id,))
+        conn.commit()
+        cur.close()
+
+    try:
         folder_name = emp["name"].replace(" ", "_")
         employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
         if os.path.exists(employee_folder):
             shutil.rmtree(employee_folder)
-
-        #storage.delete_prefix(f"known_faces/{folder_name}")
+        storage.delete_prefix(f"known_faces/{folder_name}")
         _clear_face_cache()
-
-        cur.execute("DELETE FROM employees WHERE id = %s", (employee_id,))
-        conn.commit()
-        cur.close()
+    except Exception as e:
+        print(f"[delete_employee] Face folder cleanup failed for '{emp['name']}': {e}")
 
     log_audit_event(
         username=current_user.get("username"),
@@ -459,7 +461,6 @@ def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
     )
 
     return {"message": "Employee deleted"}
-
 # ============================================================
 # APPLICATION SETTINGS (granular thresholds/notifications — Owner/CEO)
 # ============================================================
@@ -1107,9 +1108,10 @@ def list_cameras():
         cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras")
         rows = cur.fetchall()
         cur.close()
+    heartbeats = get_all_camera_heartbeats()
     result = []
     for cam in rows:
-        heartbeat = get_camera_heartbeat(cam["id"])
+        heartbeat = heartbeats.get(cam["id"])
         is_live = heartbeat is not None and (now - heartbeat).total_seconds() <= config.CAMERA_OFFLINE_THRESHOLD_SEC
         result.append({"id": cam["id"], "name": cam["name"], "zone_name": cam["zone_name"], "enabled": cam["enabled"], "live": is_live})
     return result
