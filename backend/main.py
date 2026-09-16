@@ -564,6 +564,76 @@ def update_settings(
 
     return {"message": "Settings updated"}
 
+# --- Guard Alert Protocol (Owner, CEO & Guard) ---
+
+@app.post("/alerts/{alert_id}/acknowledge")
+async def acknowledge_alert(
+    alert_id: int,
+    notes: str = Form(...),
+    proof: Optional[UploadFile] = File(None),
+    current_user: dict = Depends(verify_token)
+):
+    user_role = current_user.get("role", "").lower()
+    if user_role not in ("owner", "ceo", "admin", "guard"):
+        raise HTTPException(status_code=403, detail="Only Security Guards or Admins can acknowledge alerts")
+
+    # Guard Protocol Enforcement: proof image & text details are strictly required for Guards
+    if user_role == "guard":
+        if not notes or not notes.strip():
+            raise HTTPException(status_code=400, detail="Guard protocol requires text explanation/inspection notes")
+        if not proof or not proof.filename:
+            raise HTTPException(status_code=400, detail="Guard protocol strictly requires a mandatory proof image upload")
+
+    proof_url = None
+    if proof and proof.filename:
+        os.makedirs("snapshots/acknowledgments", exist_ok=True)
+        safe_fn = f"ack_{alert_id}_{uuid.uuid4().hex[:8]}.jpg"
+        local_path = os.path.join("snapshots/acknowledgments", safe_fn)
+        with open(local_path, "wb") as buf:
+            shutil.copyfileobj(proof.file, buf)
+
+        try:
+            cloud_url = storage.upload_file(local_path, f"acknowledgments/{safe_fn}")
+            proof_url = cloud_url or f"/snapshots/acknowledgments/{safe_fn}"
+        except Exception:
+            proof_url = f"/snapshots/acknowledgments/{safe_fn}"
+
+    now_iso = datetime.now().isoformat()
+    with get_db() as conn:
+        cur = conn.cursor()
+        
+        cur.execute(
+            """
+            UPDATE incidents
+            SET status = 'acknowledged'
+            WHERE id = %s
+            """,
+            (alert_id,)
+        )
+        
+        cur.execute(
+            """
+            UPDATE alerts 
+            SET status = 'acknowledged', acknowledged_by = %s, acknowledged_at = %s, ack_proof_image = %s, ack_notes = %s 
+            WHERE incident_id = %s OR id = %s
+            """,
+            (current_user.get("username"), now_iso, proof_url, notes.strip(), alert_id, alert_id)
+        )
+        conn.commit()
+        cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="ALERT_ACKNOWLEDGED",
+        target_module="Alerts",
+        details=f"Acknowledged alert/incident #{alert_id}. Notes: {notes.strip()}",
+        proof_image=proof_url,
+        user_id=current_user.get("user_id")
+    )
+
+    return {"ok": True, "message": f"Alert #{alert_id} acknowledged successfully"}
+
 # --- Records & Ledgers (Owner & CEO) ---
 
 @app.get("/records", dependencies=[Depends(verify_token)])
@@ -1018,63 +1088,6 @@ def override_attendance(req: AttendanceOverrideRequest):
 
 # --- Guard Alert Protocol & Status (Owner, CEO & Guard) ---
 
-@app.post("/alerts/{alert_id}/acknowledge")
-async def acknowledge_alert(
-    alert_id: int,
-    notes: str = Form(...),
-    proof: Optional[UploadFile] = File(None),
-    current_user: dict = Depends(verify_token)
-):
-    user_role = current_user.get("role", "").lower()
-    if user_role not in ("owner", "ceo", "admin", "guard"):
-        raise HTTPException(status_code=403, detail="Only Security Guards or Admins can acknowledge alerts")
-
-    # Guard Protocol Enforcement: proof image & text details are strictly required for Guards
-    if user_role == "guard":
-        if not notes or not notes.strip():
-            raise HTTPException(status_code=400, detail="Guard protocol requires text explanation/inspection notes")
-        if not proof or not proof.filename:
-            raise HTTPException(status_code=400, detail="Guard protocol strictly requires a mandatory proof image upload")
-
-    proof_url = None
-    if proof and proof.filename:
-        os.makedirs("snapshots/acknowledgments", exist_ok=True)
-        safe_fn = f"ack_{alert_id}_{uuid.uuid4().hex[:8]}.jpg"
-        local_path = os.path.join("snapshots/acknowledgments", safe_fn)
-        with open(local_path, "wb") as buf:
-            shutil.copyfileobj(proof.file, buf)
-
-        try:
-            cloud_url = storage.upload_file(local_path, f"acknowledgments/{safe_fn}")
-            proof_url = cloud_url or f"/snapshots/acknowledgments/{safe_fn}"
-        except Exception:
-            proof_url = f"/snapshots/acknowledgments/{safe_fn}"
-
-    now_iso = datetime.now().isoformat()
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            UPDATE alerts
-            SET status = 'acknowledged', acknowledged_by = %s, acknowledged_at = %s, ack_proof_image = %s, ack_notes = %s
-            WHERE id = %s
-            """,
-            (current_user.get("username"), now_iso, proof_url, notes.strip(), alert_id)
-        )
-        conn.commit()
-        cur.close()
-
-    log_audit_event(
-        username=current_user.get("username"),
-        user_role=current_user.get("role"),
-        action="ALERT_ACKNOWLEDGED",
-        target_module="Alerts",
-        details=f"Acknowledged alert #{alert_id}. Notes: {notes.strip()}",
-        proof_image=proof_url,
-        user_id=current_user.get("user_id")
-    )
-
-    return {"ok": True, "message": f"Alert #{alert_id} acknowledged successfully"}
 
 @app.get("/status", dependencies=[Depends(require_guard)])
 def get_status():

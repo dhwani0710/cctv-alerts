@@ -12,6 +12,7 @@ import AdminEmployees from './pages/AdminEmployees.jsx';
 import Attendance from './pages/Attendance.jsx';
 import AdminUsers from './pages/AdminUsers.jsx';
 import Settings from './pages/Settings.jsx';
+import { AuditLogPage } from './pages/AuditLogPage.jsx';
 
 export default function App() {
   return (
@@ -36,7 +37,7 @@ export default function App() {
 
           <Route
             path="/admin-employees"
-            element={<ProtectedRoute allowedRoles={['ceo', 'owner']}><AdminEmployees /></ProtectedRoute>}
+            element={<ProtectedRoute allowedRoles={['ceo', 'owner', 'hr']}><AdminEmployees /></ProtectedRoute>}
           />
           <Route
             path="/admin-users"
@@ -58,7 +59,12 @@ export default function App() {
           />
 
           <Route
-            path="/settings" element={<ProtectedRoute allowedRoles={['ceo', 'owner', 'guard', 'hr']}><Settings /></ProtectedRoute>}
+            path="/settings" element={<ProtectedRoute allowedRoles={['ceo', 'owner']}><Settings /></ProtectedRoute>}
+          />
+
+          <Route
+            path="/audit-logs"
+            element={<ProtectedRoute allowedRoles={['owner']}><AuditLogPage /></ProtectedRoute>}
           />
 
           <Route path="*" element={<Navigate to="/login" replace />} />
@@ -66,4 +72,4 @@ export default function App() {
       </StatusProvider>
     </AuthProvider>
   );
-}
+}
