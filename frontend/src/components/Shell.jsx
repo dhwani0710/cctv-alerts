@@ -34,6 +34,14 @@ const NAV_ICONS = {
       <rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" />
     </svg>
   ),
+  'audit-logs': (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4" />
+      <polyline points="14 2 14 8 20 8" />
+      <path d="M2 15h10" />
+      <path d="m9 18 3-3-3-3" />
+    </svg>
+  ),
     attendance: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
       <rect x="4" y="4" width="16" height="16" rx="2" />
@@ -425,6 +433,7 @@ export default function Shell({ active, dark = false, title, children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const isOwner = session.role === 'owner';
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const isGuard = session.role === 'guard';
   const isHr = session.role === 'hr';
@@ -441,6 +450,7 @@ export default function Shell({ active, dark = false, title, children }) {
     ...((isAdmin || isGuard) ? [{ key: 'records', label: 'Records', to: '/records' }] : []),
     ...(isAdmin ? [{ key: 'employees', label: 'Employees', to: '/admin-employees' }] : []),
     ...(isAdmin ? [{ key: 'users', label: 'Users', to: '/admin-users' }] : []),
+    ...(isOwner ? [{ key: 'audit-logs', label: 'System Audit', to: '/audit-logs' }] : []),
   ];
 
   return (
