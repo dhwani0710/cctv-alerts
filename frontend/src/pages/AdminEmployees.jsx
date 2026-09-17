@@ -65,23 +65,31 @@ export default function AdminEmployees() {
     [staff, search, roleFilter, shiftFilter]
   );
 
+  const [submitting, setSubmitting] = useState(false);
+
   async function handleSubmit(e) {
     e.preventDefault();
-    const formData = new FormData();
-    formData.append('name', name);
-    formData.append('designation', role);
-    formData.append('shift_start', start);
-    formData.append('shift_end', end);
-    for (let i = 0; i < photos.length; i++) formData.append('photos', photos[i]);
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('name', name);
+      formData.append('designation', role);
+      formData.append('shift_start', start);
+      formData.append('shift_end', end);
+      for (let i = 0; i < photos.length; i++) formData.append('photos', photos[i]);
 
-    const res = await apiFetch('/employees', { method: 'POST', body: formData });
-    const data = await res.json();
-    if (res.ok && !data.error) {
-      setName(''); setRole(''); setStart(''); setEnd(''); setPhotos([]);
-      setShowAdd(false);
-      loadStaff();
-    } else {
-      alert(data.error || 'Failed to add employee');
+      const res = await apiFetch('/employees', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (res.ok && !data.error) {
+        setName(''); setRole(''); setStart(''); setEnd(''); setPhotos([]);
+        setShowAdd(false);
+        loadStaff();
+      } else {
+        alert(data.error || 'Failed to add employee');
+      }
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -157,7 +165,9 @@ export default function AdminEmployees() {
             <div className="field"><label>Shift end</label><input type="time" value={end} onChange={(e) => setEnd(e.target.value)} required /></div>
             <div className="field" style={{ gridColumn: '1/-1' }}><label>Photo (for face match)</label><input type="file" accept="image/*" multiple required onChange={(e) => setPhotos(e.target.files)} /></div>
             <div style={{ gridColumn: '1/-1', display: 'flex', gap: 10 }}>
-              <button type="submit" className="btn btn-brass">Save employee</button>
+              <button type="submit" className="btn btn-brass" disabled={submitting}>
+                {submitting ? 'Saving…' : 'Save employee'}
+              </button>
               <button type="button" className="btn btn-outline" onClick={() => setShowAdd(false)}>Cancel</button>
             </div>
           </form>
