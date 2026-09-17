@@ -67,7 +67,7 @@ export const AuditLogPage = () => {
           </p>
         </div>
 
-        <div className="no-print" style={{ display: 'flex', gap: 8 }}>
+        <div className="no-print" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button
             type="button"
             onClick={() => window.print()}
@@ -82,7 +82,8 @@ export const AuditLogPage = () => {
             type="button"
             onClick={loadAuditLogs}
             disabled={loading}
-            className="btn btn-brass"
+            className="btn btn-outline"
+            title="Refresh audit trail"
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
             <span>🔄</span>
@@ -91,9 +92,9 @@ export const AuditLogPage = () => {
         </div>
       </div>
 
-      <div className="filter-bar no-print">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>
+      <div className="filter-bar no-print" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4 }}>
             Role:
           </span>
           {['', 'ceo', 'hr', 'guard', 'owner'].map((r) => (
@@ -102,6 +103,7 @@ export const AuditLogPage = () => {
               type="button"
               onClick={() => setSelectedRole(r)}
               className={`btn btn-sm ${selectedRole === r ? 'btn-brass' : 'btn-outline'}`}
+              style={{ height: 34, padding: '0 10px', display: 'inline-flex', alignItems: 'center' }}
             >
               {r === '' ? 'All Roles' : r.toUpperCase()}
             </button>
@@ -111,6 +113,7 @@ export const AuditLogPage = () => {
         <select
           value={selectedModule}
           onChange={(e) => setSelectedModule(e.target.value)}
+          style={{ height: 34, padding: '0 10px' }}
         >
           <option value="">All Modules</option>
           <option value="Alerts">🚨 Alerts & Protocols</option>
@@ -125,6 +128,7 @@ export const AuditLogPage = () => {
           type="date"
           value={selectedDate}
           onChange={(e) => setSelectedDate(e.target.value)}
+          style={{ height: 34, padding: '0 10px' }}
         />
 
         <input
@@ -132,7 +136,7 @@ export const AuditLogPage = () => {
           placeholder="Search user, action, details..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ minWidth: 220 }}
+          style={{ minWidth: 220, height: 34, padding: '0 10px' }}
         />
 
         {(selectedRole || selectedModule || selectedDate || searchTerm) && (
@@ -140,19 +144,36 @@ export const AuditLogPage = () => {
             type="button"
             className="btn btn-danger btn-sm"
             onClick={handleClearFilters}
+            style={{ height: 34, padding: '0 10px', display: 'inline-flex', alignItems: 'center' }}
           >
             Clear
           </button>
         )}
       </div>
 
-      <div className="results-count mono" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span>{logs.length} {logs.length === 1 ? 'audit record' : 'audit records'}</span>
-        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Status: Append-Only Immutable Ledger</span>
+      {/* Clear metadata bar with no negative margins or overlapping */}
+      <div
+        className="mono no-print"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          margin: '12px 0 14px',
+          fontSize: '12px',
+          color: 'var(--text-muted)',
+          lineHeight: '1.4',
+        }}
+      >
+        <span>
+          <strong style={{ color: 'var(--text)' }}>{logs.length}</strong> {logs.length === 1 ? 'audit record' : 'audit records'}
+        </span>
+        <span style={{ fontSize: '11px', letterSpacing: '0.04em' }}>
+          Status: <span style={{ color: 'var(--brass-dim)' }}>Append-Only Immutable Ledger</span>
+        </span>
       </div>
 
       <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-        <div className="table-wrap">
+        <div className="table-wrap audit-table-container">
           <table className="records" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--surface)' }}>
