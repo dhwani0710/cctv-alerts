@@ -1084,7 +1084,7 @@ def get_status():
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT person_name, camera_id, last_seen FROM currently_detected WHERE last_seen >= %s",
+            "SELECT person_name, camera_name, last_seen FROM currently_detected WHERE last_seen >= %s",
             (cutoff.isoformat(),)
         )
         detected_rows = cur.fetchall()
@@ -1094,7 +1094,7 @@ def get_status():
         alert_rows = cur.fetchall()
         cur.close()
 
-    detected = [{"name": r["person_name"], "camera": r["camera_id"], "last_seen": r["last_seen"]} for r in detected_rows]
+    detected = [{"name": r["person_name"], "camera": r["camera_name"], "last_seen": r["last_seen"]} for r in detected_rows]
     alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
 
