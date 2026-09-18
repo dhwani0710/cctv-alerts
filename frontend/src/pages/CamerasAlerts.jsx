@@ -4,6 +4,7 @@ import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import AddCameraModal from '../components/AddCameraModal.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useStatus } from '../context/StatusContext.jsx';
+import { GuardAckModal } from '../components/GuardAckModal';
 
 const PANEL_HEIGHT = 620;
 const API_BASE = 'http://localhost:8000';
@@ -11,11 +12,13 @@ const API_BASE = 'http://localhost:8000';
 export default function CamerasAlerts() {
   const { session, apiFetch } = useAuth();
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
+  const canAckAlerts = ['owner', 'ceo', 'admin', 'guard'].includes(session.role);
   const { cameras, refreshCameras } = useStatus();
   const [selected, setSelected] = useState(null);
   const [showAddCamera, setShowAddCamera] = useState(false);
   const [incidents, setIncidents] = useState([]);
   const [dismissTarget, setDismissTarget] = useState(null);
+  const [ackModalAlert, setAckModalAlert] = useState(null);
   const [snapshotView, setSnapshotView] = useState(null);
   const [detected, setDetected] = useState({});
 
@@ -62,15 +65,6 @@ export default function CamerasAlerts() {
   }, [apiFetch]);
 
   const detectedList = Object.values(detected);
-
-  async function acknowledge(id) {
-    await apiFetch(`/incidents/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'acknowledged' }),
-    });
-    loadIncidents();
-  }
 
   async function confirmDismiss() {
     await apiFetch(`/incidents/${dismissTarget.id}`, {
@@ -157,12 +151,14 @@ export default function CamerasAlerts() {
                 <div className="alert-body" style={{ minWidth: 0 }}>
                   <div className="t" style={{ overflowWrap: 'break-word' }}>{a.person_name} — {a.alert_type}</div>
                   <div className="d" style={{ overflowWrap: 'break-word' }}>{a.alert_count} occurrence(s)</div>
-                  {isAdmin && (
-                    <div className="alert-actions">
-                      <button className="btn btn-outline btn-sm" onClick={() => acknowledge(a.id)}>Acknowledge</button>
+                  <div className="alert-actions">
+                    {canAckAlerts && (
+                      <button className="btn btn-outline btn-sm" onClick={() => setAckModalAlert(a)}>Acknowledge</button>
+                    )}
+                    {isAdmin && (
                       <button className="btn btn-danger btn-sm" onClick={() => setDismissTarget(a)}>Dismiss</button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
                 <div className="alert-time mono">{new Date(a.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
               </div>
@@ -239,6 +235,14 @@ export default function CamerasAlerts() {
         <AddCameraModal
           onClose={() => setShowAddCamera(false)}
           onAdded={refreshCameras}
+        />
+      )}
+      
+      {ackModalAlert && (
+        <GuardAckModal
+          alert={ackModalAlert}
+          onClose={() => setAckModalAlert(null)}
+          onSuccess={loadIncidents}
         />
       )}
     </Shell>

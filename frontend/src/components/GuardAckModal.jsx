@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
-  const { user, apiFetch } = useAuth();
+  const { session: user, apiFetch } = useAuth();
   const [notes, setNotes] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [proofPreview, setProofPreview] = useState(null);
@@ -83,68 +83,59 @@ export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="cam-lightbox-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="panel" style={{ maxWidth: 500, width: '100%', padding: '0', animation: 'fadeIn 0.2s ease-out' }}>
         
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-[var(--border-color)] flex items-center justify-between bg-slate-900/40">
-          <div className="flex items-center gap-2.5">
-            <span className="w-3 h-3 rounded-full bg-amber-500 animate-pulse"></span>
-            <h3 className="font-semibold text-base text-slate-100">
-              {isGuard ? 'Guard Alert Protocol Acknowledgment' : 'Acknowledge Security Alert'}
-            </h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-[var(--text-muted)] hover:text-slate-200 text-lg leading-none p-1 rounded hover:bg-[var(--bg-panel-3)] transition"
-          >
-            ✕
-          </button>
+        <div className="panel-head" style={{ padding: '16px 20px', flexShrink: 0 }}>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '16px' }}>
+            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: 'var(--brand)' }}></span>
+            {isGuard ? 'Guard Alert Protocol Acknowledgment' : 'Acknowledge Security Alert'}
+          </h2>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
           
-          {/* Alert Summary Box */}
-          <div className="bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg p-3.5 space-y-1 text-xs">
-            <div className="flex justify-between items-center">
-              <span className="font-mono text-[var(--text-muted)] uppercase tracking-wider">Event ID #{alert.id}</span>
-              <span className="uppercase px-2 py-0.5 rounded font-bold text-[10px] bg-red-500/10 text-red-400 border border-red-500/20">
+          <div style={{ background: 'var(--bg-page)', border: '1px solid var(--border)', borderRadius: '6px', padding: '12px', fontSize: '13px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Event ID #{alert.id}</span>
+              <span style={{ background: 'rgba(255, 77, 77, 0.1)', color: '#ff4d4d', border: '1px solid rgba(255, 77, 77, 0.2)', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase' }}>
                 {alert.priority || 'High'} Priority
               </span>
             </div>
-            <div className="text-sm font-medium text-slate-100 mt-1">{alert.message}</div>
-            <div className="text-[11px] text-[var(--text-muted)]">
-              {alert.person_name && <span>Target: <b>{alert.person_name}</b> • </span>}
+            <div style={{ fontSize: '14px', fontWeight: '500', color: '#fff', marginBottom: 4 }}>{alert.message}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+              {alert.person_name && <span>Target: <b>{alert.person_name}</b> &bull; </span>}
               <span>Detected: {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
             </div>
           </div>
 
           {error && (
-            <div className="p-3 rounded-lg text-xs border border-red-500/40 bg-red-500/10 text-red-400">
+            <div style={{ background: 'rgba(255, 77, 77, 0.1)', border: '1px solid rgba(255, 77, 77, 0.3)', color: '#ff4d4d', padding: '10px', borderRadius: '6px', fontSize: '13px' }}>
               {error}
             </div>
           )}
 
           {isGuard && (
-            <div className="p-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs flex items-center gap-2">
-              <span>🛡️</span>
-              <span><strong>Guard Protocol Enforced:</strong> You must attach a verified photo proof and incident findings before dismissing.</span>
+            <div style={{ background: 'rgba(255, 183, 0, 0.1)', border: '1px solid rgba(255, 183, 0, 0.3)', color: '#ffb700', padding: '12px', borderRadius: '6px', fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+              <span style={{ fontSize: '16px' }}>🛡️</span>
+              <div>
+                <strong>Guard Protocol Enforced:</strong> You must attach a verified photo proof and incident findings before dismissing.
+              </div>
             </div>
           )}
 
-          {/* Proof Photo Upload */}
           <div>
-            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2">
-              Proof of Inspection / Verification Photo {isGuard && <span className="text-amber-400">*</span>}
+            <label style={{ display: 'block', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 'bold' }}>
+              Proof of Inspection / Verification Photo {isGuard && <span style={{ color: '#ffb700' }}>*</span>}
             </label>
             
             {proofPreview ? (
-              <div className="relative rounded-lg overflow-hidden border border-[var(--border-color)] bg-black max-h-48 flex items-center justify-center">
-                <img src={proofPreview} alt="Proof Preview" className="max-h-48 w-full object-contain" />
+              <div style={{ position: 'relative', background: '#000', border: '1px solid var(--border)', borderRadius: '6px', height: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                <img src={proofPreview} alt="Proof Preview" style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
                 <button
                   type="button"
                   onClick={handleRemovePhoto}
-                  className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs shadow-lg transition"
+                  style={{ position: 'absolute', top: '8px', right: '8px', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255, 0, 0, 0.8)', color: '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}
                   title="Remove image"
                 >
                   ✕
@@ -153,13 +144,13 @@ export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
             ) : (
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-[var(--border-color)] hover:border-amber-500/60 rounded-lg p-5 text-center cursor-pointer transition bg-[var(--bg-page)]/50 hover:bg-[var(--bg-panel-3)]"
+                style={{ border: '1px dashed var(--border)', borderRadius: '6px', padding: '32px 16px', textAlign: 'center', cursor: 'pointer', background: 'var(--bg-page)', transition: 'border-color 0.2s' }}
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--brand)'}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border)'}
               >
-                <div className="text-2xl mb-1">📷</div>
-                <div className="text-xs font-medium text-slate-200">
-                  Click to upload proof photo from camera or gallery
-                </div>
-                <div className="text-[11px] text-[var(--text-muted)] mt-1">PNG, JPG or JPEG up to 10MB</div>
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>📷</div>
+                <div style={{ fontSize: '13px', fontWeight: '500', color: '#fff' }}>Click to upload proof photo from camera or gallery</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>PNG, JPG or JPEG up to 10MB</div>
               </div>
             )}
 
@@ -169,14 +160,13 @@ export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
               accept="image/*"
               capture="environment"
               onChange={handleFileChange}
-              className="hidden"
+              style={{ display: 'none' }}
             />
           </div>
 
-          {/* Action Notes / Description */}
           <div>
-            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2">
-              Action Taken / Inspection Findings <span className="text-amber-400">*</span>
+            <label style={{ display: 'block', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 'bold' }}>
+              Action Taken / Inspection Findings <span style={{ color: '#ffb700' }}>*</span>
             </label>
             <textarea
               required
@@ -184,33 +174,26 @@ export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="E.g., Inspected front display counter. Verified employee credentials / all secure."
-              className="w-full bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg p-3 text-xs text-slate-100 outline-none focus:border-amber-500 transition resize-none placeholder:text-slate-500"
+              className="field"
+              style={{ width: '100%', minHeight: '80px', resize: 'vertical' }}
             />
           </div>
 
-          {/* Footer Buttons */}
-          <div className="pt-2 flex justify-end gap-2.5">
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="px-4 py-2 rounded-lg border border-[var(--border-color)] text-xs text-[var(--text-muted)] hover:text-slate-200 hover:bg-[var(--bg-panel-3)] transition"
+              className="btn btn-outline"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold text-xs transition shadow flex items-center gap-1.5 disabled:opacity-50"
+              className="btn btn-brass"
             >
-              {loading ? (
-                <>
-                  <span className="w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
-                  <span>Verifying...</span>
-                </>
-              ) : (
-                <span>Submit & Acknowledge</span>
-              )}
+              {loading ? 'Verifying...' : 'Submit & Acknowledge'}
             </button>
           </div>
 

@@ -1201,8 +1201,10 @@ button {
   display: flex;
   gap: 10px;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
   flex-wrap: wrap;
+  position: relative;
+  z-index: 20;
 }
 
 .filter-bar select,
@@ -2183,3 +2185,179 @@ table.records tr:last-child td {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ---------- System Audit Log & Print Styles ---------- */
+.audit-pill {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.audit-pill.owner {
+  background: rgba(176, 141, 87, 0.18);
+  border-color: var(--brass);
+  color: var(--brass-dim);
+}
+
+.audit-pill.ceo,
+.audit-pill.admin {
+  background: rgba(176, 141, 87, 0.14);
+  border-color: var(--border-strong);
+  color: var(--brass-dim);
+}
+
+.audit-pill.hr,
+.audit-pill.manager {
+  background: rgba(87, 121, 95, 0.14);
+  border-color: var(--sage);
+  color: var(--sage);
+}
+
+.audit-pill.guard {
+  background: rgba(62, 207, 126, 0.14);
+  border-color: rgba(62, 207, 126, 0.35);
+  color: #279455;
+}
+
+/* Dedicated vertical scrollbar for System Audit Log table container */
+.audit-table-container {
+  max-height: calc(100vh - 310px);
+  overflow-y: auto;
+  overflow-x: auto;
+  position: relative;
+  scrollbar-gutter: stable;
+}
+
+.audit-table-container::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.audit-table-container::-webkit-scrollbar-track {
+  background: var(--bg-soft);
+  border-radius: 4px;
+}
+
+.audit-table-container::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+
+.audit-table-container::-webkit-scrollbar-thumb:hover {
+  background: var(--brass);
+}
+
+/* Sticky header when scrolling table container vertically */
+.audit-table-container table.records thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+@media print {
+  /* Hide interactive chrome and navigation */
+  .rail,
+  .topbar,
+  .filter-bar,
+  .no-print,
+  .cam-lightbox-backdrop,
+  .toast,
+  .theme-toggle,
+  .logout-btn {
+    display: none !important;
+  }
+
+  body,
+  .shell {
+    background: #ffffff !important;
+    color: #111111 !important;
+    min-height: auto !important;
+    display: block !important;
+  }
+
+  .main {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  .content {
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  .page-head {
+    margin-bottom: 18px !important;
+    border-bottom: 2px solid #333333 !important;
+    padding-bottom: 10px !important;
+  }
+
+  .page-head h1 {
+    font-size: 20pt !important;
+    color: #000000 !important;
+  }
+
+  .page-head p {
+    color: #444444 !important;
+    font-size: 9pt !important;
+  }
+
+  .panel {
+    border: 1px solid #cccccc !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  table.records {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 8.5pt !important;
+  }
+
+  table.records th {
+    background: #f0f0f0 !important;
+    color: #000000 !important;
+    border-bottom: 2px solid #333333 !important;
+    padding: 6px 8px !important;
+  }
+
+  table.records td {
+    color: #111111 !important;
+    border-bottom: 1px solid #dddddd !important;
+    padding: 6px 8px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .audit-pill {
+    border: 1px solid #888888 !important;
+    color: #000000 !important;
+    background: none !important;
+  }
+
+  .audit-table-container {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .audit-table-container table.records thead th {
+    position: static !important;
+    box-shadow: none !important;
+  }
+
+  /* Prevent SVGs from expanding arbitrarily in print */
+  svg {
+    max-width: 24px !important;
+    max-height: 24px !important;
+  }
+}
