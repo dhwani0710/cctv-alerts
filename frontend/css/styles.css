@@ -2262,6 +2262,48 @@ table.records tr:last-child td {
   box-shadow: inset 0 -1px 0 var(--border);
 }
 
+/* ---------- pt2: settings action row (Reset/Save layout) ---------- */
+.vscode-form-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  width: 100%;
+  margin-top: 28px;
+}
+
+.vscode-form-actions button {
+  margin: 0;
+}
+
+.vscode-confirm-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.vscode-confirm-text {
+  color: #c5cad1;
+  font-size: 13px;
+}
+
+@media (max-width: 600px) {
+  .vscode-form-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .vscode-form-actions button {
+    width: 100%;
+  }
+  .vscode-confirm-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+}
+
 @media print {
   /* Hide interactive chrome and navigation */
   .rail,
@@ -2360,4 +2402,4 @@ table.records tr:last-child td {
     max-width: 24px !important;
     max-height: 24px !important;
   }
-}
+}
