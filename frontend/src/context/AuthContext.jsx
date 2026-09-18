@@ -39,7 +39,6 @@ export function AuthProvider({ children }) {
       const next = {
         username: data.username,
         role: data.role,
-        name: data.name,
         token: data.token,
         loggedInAt: Date.now(),
       };
