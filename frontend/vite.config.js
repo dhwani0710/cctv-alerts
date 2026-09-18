@@ -18,6 +18,8 @@ export default defineConfig({
       '/video_feed': { target: 'http://localhost:8000', changeOrigin: true },
       '/users': { target: 'http://localhost:8000', changeOrigin: true },
       '/records': { target: 'http://localhost:8000', changeOrigin: true },
+      '/audit-logs': { target: 'http://localhost:8000', changeOrigin: true },
+      '/alerts': { target: 'http://localhost:8000', changeOrigin: true },
     }
   }
 })

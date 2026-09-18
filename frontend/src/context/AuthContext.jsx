@@ -67,7 +67,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, login, logout, apiFetch }}>
+    <AuthContext.Provider value={{ session, user: session, login, logout, apiFetch }}>
       {children}
     </AuthContext.Provider>
   );
