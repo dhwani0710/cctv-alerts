@@ -12,6 +12,8 @@ const MODULE_ICONS = {
   Auth: '🔑',
 };
 
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+
 export const AuditLogPage = () => {
   const { session, apiFetch } = useAuth();
   const [logs, setLogs] = useState([]);
@@ -202,7 +204,7 @@ export const AuditLogPage = () => {
                   const proofUrl = log.proof_image
                     ? (log.proof_image.startsWith('http')
                         ? log.proof_image
-                        : `http://localhost:8000${log.proof_image}?token=${encodeURIComponent(token)}`)
+                        : `${API_BASE}${log.proof_image}?token=${encodeURIComponent(token)}`)
                     : null;
                   const roleLower = (log.user_role || '').toLowerCase();
 

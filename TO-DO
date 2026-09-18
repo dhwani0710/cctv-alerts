@@ -1,5 +1,33 @@
-Good, merge is complete with no conflict markers. Let's inspect the app entry, routing, and duplicate pages.Confirmed: admin/manager roles get redirected back to `/login` on successful login — a login loop. Let's check ProtectedRoute and main.py auth endpoint quickly, plus check the settings/camera CRUD and other backend flows.Good enough context. Let me quickly check `camera_worker.py` for reconnect logic and `AddCameraModal`/`CamerasAlerts` frontend integration, plus a scan for obvious error-handling gaps.## 🔴 MUST FIX
+🔴 MUST FIX
+ Page refresh logs everyone out. AuthContext.jsx's login() no longer stores a name field (backend's /auth/login and create_token() stopped returning/embedding name), but loadSession() still requires parsed.name to treat a stored session as valid. On any refresh, a perfectly valid token gets discarded and the user is bounced to /login. Either drop the .name check in loadSession() or stop relying on it.
+ DELETE /records is defined twice in main.py (two clear_all_records functions, same route). The first (dead) definition wins and returns only {"message": "All records cleared"} — no alerts_deleted/incidents_deleted. Settings.jsx's "Clear all records" reads those fields, so it now shows "Cleared undefined alert(s) and undefined incident(s)." in the UI. Delete the first definition.
+ Admin/manager roles still lock users out. Backend (auth.py, create_user) still accepts roles admin/manager, but dashboardFor()/App.jsx still only handle ceo/owner/guard/hr. Unchanged since last audit.
+ Employee photo upload still has no path sanitization or file-type validation (add_employee in main.py) — unchanged from last audit, still a path-traversal and unhandled-500 risk.
 
+🟠 SHOULD FIX
+ Still-dead frontend pages: DashboardPage.jsx, AdminPage.jsx, AttendancePage.jsx, Sidebar.jsx remain unimported anywhere (AuditLogPage got wired in, these didn't). Delete them or finish wiring them — they're stale weight in the repo either way.
+ API base URL hardcoded to http://localhost:8000 in 4 files now (AuthContext.jsx, CamerasAlerts.jsx, Settings.jsx, and the newly added AuditLogPage.jsx). Still not env-driven.
+ numpy and Pillow still missing from requirements.txt despite being directly imported in main.py.
+ backend/settings.json is still tracked in git despite being in .gitignore.
+ README default-login is still wrong (admin / ceo123 documented vs actual seeded admin / admin123).
+ Leftover debug print() statements in app_settings.py (set_setting, get_all_settings) and recognition.py ([DEBUG] lines) — noisy console spam in what's meant to be a finished build; strip before demo.
+ recognition.py does from app_settings import get_setting_int, get_setting_float inside the per-face loop — works, but re-imports on every detected face; move to top of file.
+
+🟡 OPTIONAL
+ Audit-log route still uses require_owner only (excludes ceo, which is treated as owner-equivalent everywhere else) — decide if that's intentional.
+ Consolidate the still-unused/contradictory VALID_ROLES/ADMIN_ROLES constants in auth_users.py (noted last audit, still present, still unused).
+
+🚀 NEXT STEPS
+Fix the session-refresh logout bug (loadSession() / name field) — this breaks every session on refresh, will surface immediately in any demo.
+Remove the duplicate DELETE /records route in main.py — one-line fix, currently corrupts a message the reviewer will literally see on screen.
+Resolve the admin/manager role gap — either strip those roles from backend validation or finish wiring frontend routes/dashboardFor for them.
+Patch upload security (name sanitization + file-type/size validation on employee photos).
+Decide the fate of the remaining dead pages (DashboardPage, AdminPage, AttendancePage, Sidebar) — delete or wire in, don't leave them dangling.
+Cleanup pass: externalize API_BASE, fix requirements.txt, untrack settings.json, strip debug prints, fix README default-login line.
+
+----------------------------------------------------------------------------------------------------------------------------------------------
+
+## 🔴 MUST FIX
 * [ ] **Dead frontend pages from the ft3 merge are never wired in.** `DashboardPage.jsx`, `AdminPage.jsx`, `AttendancePage.jsx`, `AuditLogPage.jsx`, `Sidebar.jsx` (~76KB) exist in `frontend/src/pages`/`components` but aren't imported anywhere — `App.jsx` still routes only to the old `AdminDashboard/EmployeeDashboard/Attendance/AdminUsers` pages. This means your colleague's CSV export UI and Audit Log UI are **not reachable in the running app**, even though the backend supports them.
 * [ ] **Admin/manager roles get locked out after login.** `auth.py`'s `require_admin`/`require_hr` and `main.py`'s `create_user` accept roles `admin` and `manager`, but `AuthContext.dashboardFor()` and `App.jsx` only handle `ceo/owner/guard/hr`. A user with role `admin` or `manager` logs in successfully, then `dashboardFor()` returns `/login`, stranding them in a redirect-to-login loop with a valid session and no way to reach any page.
 * [ ] **Path traversal risk in employee photo upload.** `add_employee` builds `folder_name = name.replace(" ", "_")` and does `os.path.join(KNOWN_FACES_DIR, folder_name)` with zero sanitization of the `name` field — an employee name like `../../something` can write outside `known_faces/`.
@@ -8,7 +36,6 @@ Good, merge is complete with no conflict markers. Let's inspect the app entry, r
 * [ ] **README default-login docs are wrong.** README says default login is `admin / ceo123`; actual seeded default (from `.env` fallback) is `admin / admin123`. Anyone following the README to demo/evaluate will fail to log in on the first try.
 
 ## 🟠 SHOULD FIX
-
 * [ ] **API base URL hardcoded to `http://localhost:8000` in 3 separate files** (`AuthContext.jsx`, `CamerasAlerts.jsx`, `Settings.jsx`) — no `.env`/config value. Any deploy off localhost requires manual edits in multiple places and it's easy to miss one.
 * [ ] **`numpy` and `Pillow` are imported directly in `main.py` but missing from `requirements.txt`** — currently working only because `deepface`/`opencv-python` happen to pull them in transitively. Pin them explicitly.
 * [ ] **`backend/settings.json` is committed to git** despite being in `.gitignore` (it was tracked before the ignore rule was added) — this is runtime state, will cause merge noise and stale settings on fresh clones.
@@ -19,13 +46,11 @@ Good, merge is complete with no conflict markers. Let's inspect the app entry, r
 * [ ] Leftover merge-artifact comment shipped in `auth.py` (`# backend/auth.py — replace entirely with ft3's version`) — cosmetic but signals an unfinished cleanup pass; check other merged files for similar leftovers.
 
 ## 🟡 OPTIONAL
-
 * [ ] Delete the orphaned pages/components instead of leaving 76KB of dead code in the repo (once you decide whether to wire them in or drop them).
 * [ ] Add a loading/error state around the photo-upload flow so a rejected non-image upload shows a real message instead of a raw 500.
 * [ ] Move the 5 hardcoded demo accounts behind a `SEED_DEMO_USERS` env flag so they don't get created in non-dev environments.
 
 ## 🚀 NEXT STEPS
-
 1. **Decide the frontend fork** — old pages (`AdminDashboard`/`Attendance`/`AdminUsers`) or ft3 pages (`DashboardPage`/`AttendancePage`/`AdminPage`/`AuditLogPage`). Don't keep both; pick one and delete the other's dead files.
 2. **Fix the role model end-to-end** — pick the final role set (recommend: keep `admin`/`manager` since backend already supports them), update `dashboardFor()` + `App.jsx` routes to cover every role, and delete the stale `VALID_ROLES`/`ADMIN_ROLES` in `auth_users.py`.
 3. **Wire the CSV export and audit log UI into the chosen page set** so those already-built backend features are actually reachable.

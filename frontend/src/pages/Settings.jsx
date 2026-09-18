@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 export default function Settings() {
   const { session } = useAuth();

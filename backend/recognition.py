@@ -1,4 +1,6 @@
 import os
+import time
+from app_settings import get_setting_int, get_setting_float
 from datetime import datetime
 try:
     from deepface import DeepFace
@@ -9,7 +11,6 @@ import config
 KNOWN_FACES_DIR = "known_faces"
 VALID_PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
-import time
 _face_cache = {"has_photos": False, "photo_counts": {}, "ts": 0}
 _FACE_CACHE_TTL = 15  # seconds
 
@@ -69,7 +70,6 @@ def recognize_faces(frame):
         names = []
         for face_result in results:
             if len(face_result) == 0:
-                print("[DEBUG] 0 candidates returned by DeepFace.find (rejected internally)")
                 names.append("Unknown")
                 continue
 
@@ -81,7 +81,6 @@ def recognize_faces(frame):
                 folder_name = os.path.basename(os.path.dirname(identity_path))
                 matches_by_employee.setdefault(folder_name, []).append(row[distance_col])
 
-            from app_settings import get_setting_int, get_setting_float
             min_matching = get_setting_int("min_matching_photos") or 2
             max_distance = get_setting_float("match_distance_threshold")
 

@@ -8,6 +8,7 @@ import math
 import threading
 import uuid
 import numpy as np
+import re
 from typing import List, Optional
 from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Query, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -143,7 +144,7 @@ def login(payload: LoginRequest):
 
 # --- System Audit Log (Owner Exclusive) ---
 
-@app.get("/audit-logs", dependencies=[Depends(require_owner)])
+@app.get("/audit-logs", dependencies=[Depends(require_admin)])
 def get_audit_logs(
     role: Optional[str] = None,
     module: Optional[str] = None,
@@ -193,7 +194,7 @@ def list_users():
 def create_user(payload: CreateUserRequest, current_user: dict = Depends(require_admin)):
     username = payload.username.strip()
     role = payload.role.strip().lower()
-    valid_roles = ["owner", "ceo", "admin", "hr", "manager", "guard"]
+    valid_roles = ["owner", "ceo", "hr", "guard"]
     if role not in valid_roles:
         raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(valid_roles)}")
     if not username or not payload.password:
@@ -228,7 +229,7 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
 def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depends(require_admin)):
     updates = []
     params = []
-    valid_roles = ["owner", "ceo", "admin", "hr", "manager", "guard"]
+    valid_roles = ["owner", "ceo", "hr", "guard"]
     if req.role:
         role = req.role.strip().lower()
         if role not in valid_roles:
@@ -317,6 +318,15 @@ def _upload_photo_async(local_path, remote_path):
     except Exception as e:
         print(f"[main] Photo cloud upload failed: {e}")
 
+_SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_\-]")
+ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/jpg"}
+
+def _safe_folder_name(name: str) -> str:
+    cleaned = _SAFE_NAME_RE.sub("_", name.strip().replace(" ", "_"))
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Invalid employee name")
+    return cleaned
+
 @app.post("/employees", dependencies=[Depends(require_hr)])
 async def add_employee(
     name: str = Form(...),
@@ -331,7 +341,10 @@ async def add_employee(
     if len(photos) == 0:
         return {"error": "At least one photo is required."}
 
-    folder_name = name.replace(" ", "_")
+    folder_name = _safe_folder_name(name)
+    for photo in photos:
+        if photo.content_type not in ALLOWED_PHOTO_TYPES:
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: {photo.content_type}")
     employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
     os.makedirs(employee_folder, exist_ok=True)
 
@@ -400,7 +413,10 @@ async def update_employee(
             return {"message": "Employee not found"}
 
         if photo is not None and photo.filename:
-            folder_name = name.replace(" ", "_")
+            folder_name = _safe_folder_name(name)
+            for photo in photos:
+                if photo.content_type not in ALLOWED_PHOTO_TYPES:
+                    raise HTTPException(status_code=400, detail=f"Unsupported file type: {photo.content_type}")
             employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
             os.makedirs(employee_folder, exist_ok=True)
             photo_path = os.path.join(employee_folder, "photo_1.jpg")
@@ -701,26 +717,6 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
         "limit": limit,
         "total_pages": math.ceil(total / limit) if limit > 0 else 1
     }
-
-@app.delete("/records", dependencies=[Depends(require_admin)])
-def clear_all_records(current_user: dict = Depends(require_admin)):
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM alerts")
-        cur.execute("DELETE FROM incidents")
-        conn.commit()
-        cur.close()
-
-    log_audit_event(
-        username=current_user.get("username"),
-        user_role=current_user.get("role"),
-        action="RECORDS_CLEARED",
-        target_module="Records",
-        details="Cleared all alert and incident records",
-        user_id=current_user.get("user_id")
-    )
-
-    return {"message": "All records cleared"}
 
 @app.delete("/records/{alert_id}", dependencies=[Depends(require_staff)])
 def delete_record(alert_id: int, current_user: dict = Depends(require_staff)):

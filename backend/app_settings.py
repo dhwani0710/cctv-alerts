@@ -64,14 +64,6 @@ def get_setting_int(key):
 
 
 def set_setting(key, value):
-    """
-    Save or update a setting in PostgreSQL.
-
-    If the key already exists, its value is updated.
-    If it does not exist, a new row is created.
-    """
-    print(f"[app_settings] set_setting called: key={key!r} value={value!r}")
-
     with get_db() as conn:
         cur = conn.cursor()
 
@@ -94,7 +86,6 @@ def set_setting(key, value):
         # not persisting (check DATABASE_URL / DB permissions).
         cur.execute("SELECT value FROM app_settings WHERE key = %s", (key,))
         confirm = cur.fetchone()
-        print(f"[app_settings] confirmed in DB after commit: key={key!r} value={confirm['value'] if confirm else None!r}")
 
         cur.close()
 
