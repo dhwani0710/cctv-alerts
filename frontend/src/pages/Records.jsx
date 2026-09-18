@@ -35,6 +35,25 @@ export default function Records() {
     loadRecords();
   }
 
+  async function handleExport() {
+    const params = new URLSearchParams();
+    if (camera) params.append('camera', camera);
+    if (status) params.append('status', status);
+    if (date) params.append('date', date);
+    const res = await apiFetch(`/records/export?${params}`);
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'records.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    }
+  }
+
   const loadCameras = useCallback(async () => {
     const res = await apiFetch('/cameras');
     if (res.ok) setCameras(await res.json());
@@ -100,7 +119,7 @@ export default function Records() {
               Delete selected ({selectedIds.length})
             </button>
           )}
-          {isAdmin && <button className="btn btn-brass">Export CSV</button>}
+          {isAdmin && <button className="btn btn-brass" onClick={handleExport}>Export CSV</button>}
         </div>
       </div>
       <div className="panel">
@@ -138,7 +157,7 @@ export default function Records() {
                   </td>
                   <td className="mono">{new Date(r.timestamp).toLocaleDateString()}</td>
                   <td className="mono">{new Date(r.timestamp).toLocaleTimeString()}</td>
-                  <td>{r.camera_id}</td>
+                  <td>{r.camera_name}</td>
                   <td>{r.zone_name || '-'}</td>
                   <td>{r.person_name.replace('@front', '')}</td>
                   <td>{r.person_name === 'Unknown@front' ? 'Detect outside the store' : r.message.replace(/^\[.*?\]\s*/, '').replace(/^\S+\s*present\s*/i, '')}</td>
