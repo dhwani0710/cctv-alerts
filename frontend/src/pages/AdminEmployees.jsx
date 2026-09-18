@@ -103,8 +103,14 @@ export default function AdminEmployees() {
     );
   }, [staff, search, roleFilter, shiftFilter]);
 
+  const [submitting, setSubmitting] = useState(false);
+
   async function handleSubmit(event) {
     event.preventDefault();
+
+    if (submitting) return;
+
+    setSubmitting(true);
 
     const formData = new FormData();
 
@@ -140,6 +146,8 @@ export default function AdminEmployees() {
     } catch (error) {
       console.error('Error adding employee:', error);
       alert('Failed to add employee');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -361,8 +369,9 @@ export default function AdminEmployees() {
               <button
                 type="submit"
                 className="btn btn-brass"
+                disabled={submitting}
               >
-                Save employee
+                {submitting ? 'Saving…' : 'Save employee'}
               </button>
 
               <button
