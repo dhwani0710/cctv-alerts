@@ -21,6 +21,7 @@ export default function CamerasAlerts() {
   const [ackModalAlert, setAckModalAlert] = useState(null);
   const [snapshotView, setSnapshotView] = useState(null);
   const [detected, setDetected] = useState({});
+  const [deleteCamTarget, setDeleteCamTarget] = useState(null);
 
     const loadIncidents = useCallback(async () => {
     const res = await apiFetch('/incidents?status=new');
@@ -76,6 +77,12 @@ export default function CamerasAlerts() {
     loadIncidents();
   }
 
+  async function confirmDeleteCam() {
+    await apiFetch(`/cameras/${deleteCamTarget.id}`, { method: 'DELETE' });
+    setDeleteCamTarget(null);
+    refreshCameras();
+  }
+
   return (
     <Shell active="cameras" dark title="Cameras & Alerts">
       <div className="page-head">
@@ -114,6 +121,14 @@ export default function CamerasAlerts() {
                       <div className="name">{c.name}</div>
                       <div className="zone">{c.zone_name}</div>
                     </div>
+                    {isAdmin && (
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={(e) => { e.stopPropagation(); setDeleteCamTarget(c); }}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -146,10 +161,16 @@ export default function CamerasAlerts() {
           </div>
           <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
             {incidents.map((a) => (
-              <div className="alert-item" key={a.id} onClick={() => a.snapshot_filename && setSnapshotView(a)} style={{ cursor: a.snapshot_filename ? 'pointer' : 'default' }}>
+              <div className="alert-item" key={a.id}>
                 <div className={`alert-sev ${a.priority === 'low' ? 'low' : ''}`} />
                 <div className="alert-body" style={{ minWidth: 0 }}>
-                  <div className="t" style={{ overflowWrap: 'break-word' }}>{a.person_name} — {a.alert_type}</div>
+                  <div
+                    className="t"
+                    style={{ overflowWrap: 'break-word', cursor: a.snapshot_filename ? 'pointer' : 'default' }}
+                    onClick={() => a.snapshot_filename && setSnapshotView(a)}
+                  >
+                    {a.person_name} — {a.alert_type}
+                  </div>
                   <div className="d" style={{ overflowWrap: 'break-word' }}>{a.alert_count} occurrence(s)</div>
                   <div className="alert-actions">
                     {canAckAlerts && (
@@ -209,6 +230,15 @@ export default function CamerasAlerts() {
         danger
         onConfirm={confirmDismiss}
         onCancel={() => setDismissTarget(null)}
+      />
+      <ConfirmDialog
+        open={!!deleteCamTarget}
+        title="Delete camera"
+        message={deleteCamTarget ? `Delete "${deleteCamTarget.name}"? This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        danger
+        onConfirm={confirmDeleteCam}
+        onCancel={() => setDeleteCamTarget(null)}
       />
       {snapshotView && (
         <div className="cam-lightbox-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setSnapshotView(null); }}>
