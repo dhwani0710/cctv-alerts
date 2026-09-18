@@ -167,7 +167,7 @@ export default function AdminUsers() {
       <div className="staff-grid">
         {filteredUsers.map((u) => (
           <div className="staff-card" key={u.id}>
-            <div className="avatar">{initials(u.name || u.username)}</div>
+            <div className="avatar">{initials(u.username)}</div>
             <div className="name">{u.username}</div>
             <div className="role">{u.role}</div>
             <div className="row"><span>Created</span><span>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</span></div>

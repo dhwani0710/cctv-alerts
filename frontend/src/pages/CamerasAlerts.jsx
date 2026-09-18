@@ -21,6 +21,7 @@ export default function CamerasAlerts() {
   const [ackModalAlert, setAckModalAlert] = useState(null);
   const [snapshotView, setSnapshotView] = useState(null);
   const [detected, setDetected] = useState({});
+  const [deleteCamTarget, setDeleteCamTarget] = useState(null);
 
     const loadIncidents = useCallback(async () => {
     const res = await apiFetch('/incidents?status=new');
@@ -76,6 +77,12 @@ export default function CamerasAlerts() {
     loadIncidents();
   }
 
+  async function confirmDeleteCam() {
+    await apiFetch(`/cameras/${deleteCamTarget.id}`, { method: 'DELETE' });
+    setDeleteCamTarget(null);
+    refreshCameras();
+  }
+
   return (
     <Shell active="cameras" dark title="Cameras & Alerts">
       <div className="page-head">
@@ -114,6 +121,14 @@ export default function CamerasAlerts() {
                       <div className="name">{c.name}</div>
                       <div className="zone">{c.zone_name}</div>
                     </div>
+                    {isAdmin && (
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={(e) => { e.stopPropagation(); setDeleteCamTarget(c); }}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -215,6 +230,15 @@ export default function CamerasAlerts() {
         danger
         onConfirm={confirmDismiss}
         onCancel={() => setDismissTarget(null)}
+      />
+      <ConfirmDialog
+        open={!!deleteCamTarget}
+        title="Delete camera"
+        message={deleteCamTarget ? `Delete "${deleteCamTarget.name}"? This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        danger
+        onConfirm={confirmDeleteCam}
+        onCancel={() => setDeleteCamTarget(null)}
       />
       {snapshotView && (
         <div className="cam-lightbox-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setSnapshotView(null); }}>

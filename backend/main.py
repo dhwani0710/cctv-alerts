@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from database import init_db, get_db
-from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, start_escalation_thread, start_single_camera, stop_single_camera, restart_single_camera
+from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, restart_single_camera
 from datetime import datetime, timedelta
 import config
 from auth import verify_token, require_owner, require_admin, require_hr, require_guard, require_staff
@@ -123,7 +123,7 @@ def login(payload: LoginRequest):
     if not user or not verify_password(payload.password, user["password_hash"]):
         return {"ok": False, "error": "Incorrect username or password"}
 
-    token = create_token(user["id"], user["username"], user["role"], user["name"])
+    token = create_token(user["id"], user["username"], user["role"])
 
     log_audit_event(
         username=user["username"],
@@ -137,7 +137,6 @@ def login(payload: LoginRequest):
     return {
         "ok": True,
         "role": user["role"],
-        "name": user["name"],
         "username": user["username"],
         "token": token
     }
@@ -185,7 +184,7 @@ def get_audit_logs(
 def list_users():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, username, role, name, created_at FROM users ORDER BY id")
+        cur.execute("SELECT id, username, role, created_at FROM users ORDER BY id")
         rows = cur.fetchall()
         cur.close()
         return [dict(r) for r in rows]
@@ -208,8 +207,8 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
             raise HTTPException(status_code=400, detail=f"Username '{username}' already exists")
 
         cur.execute(
-            "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
-            (username, hash_password(payload.password), role, username)
+            "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
+            (username, hash_password(payload.password), role)
         )
         conn.commit()
         cur.close()
@@ -437,17 +436,19 @@ def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
             cur.close()
             return {"message": "Employee not found"}
 
+        cur.execute("DELETE FROM employees WHERE id = %s", (employee_id,))
+        conn.commit()
+        cur.close()
+
+    try:
         folder_name = emp["name"].replace(" ", "_")
         employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
         if os.path.exists(employee_folder):
             shutil.rmtree(employee_folder)
-
-        #storage.delete_prefix(f"known_faces/{folder_name}")
+        storage.delete_prefix(f"known_faces/{folder_name}")
         _clear_face_cache()
-
-        cur.execute("DELETE FROM employees WHERE id = %s", (employee_id,))
-        conn.commit()
-        cur.close()
+    except Exception as e:
+        print(f"[delete_employee] Face folder cleanup failed for '{emp['name']}': {e}")
 
     log_audit_event(
         username=current_user.get("username"),
@@ -459,7 +460,6 @@ def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
     )
 
     return {"message": "Employee deleted"}
-
 # ============================================================
 # APPLICATION SETTINGS (granular thresholds/notifications — Owner/CEO)
 # ============================================================
@@ -1096,7 +1096,7 @@ def get_status():
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT person_name, camera_id, last_seen FROM currently_detected WHERE last_seen >= %s",
+            "SELECT person_name, camera_name, last_seen FROM currently_detected WHERE last_seen >= %s",
             (cutoff.isoformat(),)
         )
         detected_rows = cur.fetchall()
@@ -1106,7 +1106,7 @@ def get_status():
         alert_rows = cur.fetchall()
         cur.close()
 
-    detected = [{"name": r["person_name"], "camera": r["camera_id"], "last_seen": r["last_seen"]} for r in detected_rows]
+    detected = [{"name": r["person_name"], "camera": r["camera_name"], "last_seen": r["last_seen"]} for r in detected_rows]
     alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
 
@@ -1120,9 +1120,10 @@ def list_cameras():
         cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras")
         rows = cur.fetchall()
         cur.close()
+    heartbeats = get_all_camera_heartbeats()
     result = []
     for cam in rows:
-        heartbeat = get_camera_heartbeat(cam["id"])
+        heartbeat = heartbeats.get(cam["id"])
         is_live = heartbeat is not None and (now - heartbeat).total_seconds() <= config.CAMERA_OFFLINE_THRESHOLD_SEC
         result.append({"id": cam["id"], "name": cam["name"], "zone_name": cam["zone_name"], "enabled": cam["enabled"], "live": is_live})
     return result
@@ -1146,12 +1147,12 @@ def add_camera(payload: CameraRequest, current_user: dict = Depends(require_admi
         cur.close()
 
     if payload.enabled:
-        start_single_camera({
+        threading.Thread(target=start_single_camera, args=({
             "id": payload.id,
             "name": payload.name,
             "source": payload.rtsp_url,
             "zone_name": payload.zone_name or payload.id,
-        })
+        },), daemon=True).start()
 
     log_audit_event(
         username=current_user.get("username"),
@@ -1175,14 +1176,16 @@ def update_camera(camera_id: str, payload: CameraRequest, current_user: dict = D
         conn.commit()
         cur.close()
 
-    stop_single_camera(camera_id)
-    if payload.enabled:
-        start_single_camera({
-            "id": camera_id,
-            "name": payload.name,
-            "source": payload.rtsp_url,
-            "zone_name": payload.zone_name or camera_id,
-        })
+    def _reconnect():
+        stop_single_camera(camera_id)
+        if payload.enabled:
+            start_single_camera({
+                "id": camera_id,
+                "name": payload.name,
+                "source": payload.rtsp_url,
+                "zone_name": payload.zone_name or camera_id,
+            })
+    threading.Thread(target=_reconnect, daemon=True).start()
 
     log_audit_event(
         username=current_user.get("username"),
@@ -1197,7 +1200,7 @@ def update_camera(camera_id: str, payload: CameraRequest, current_user: dict = D
 
 @app.delete("/cameras/{camera_id}", dependencies=[Depends(require_admin)])
 def delete_camera(camera_id: str, current_user: dict = Depends(require_admin)):
-    stop_single_camera(camera_id)
+    threading.Thread(target=stop_single_camera, args=(camera_id,), daemon=True).start()
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM cameras WHERE id = %s", (camera_id,))

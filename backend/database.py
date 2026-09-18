@@ -33,6 +33,11 @@ def init_db():
 
     cursor.execute("SELECT pg_advisory_lock(918273645)")
 
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts (timestamp DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_last_seen ON incidents (last_seen DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents (status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_currently_detected_last_seen ON currently_detected (last_seen)")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS employees (
             id SERIAL PRIMARY KEY,
@@ -96,11 +101,11 @@ def init_db():
             id SERIAL PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
-            role TEXT NOT NULL,
-            name TEXT NOT NULL
+            role TEXT NOT NULL
         )
     """)
     cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()")
+    cursor.execute("ALTER TABLE users DROP COLUMN IF EXISTS name")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
@@ -230,11 +235,11 @@ def init_db():
     # the rest are fixed demo credentials, meant to be changed after first login.
     from auth_users import hash_password
     default_users = [
-        {"username": DEFAULT_ADMIN_USERNAME, "password": DEFAULT_ADMIN_PASSWORD, "role": DEFAULT_ADMIN_ROLE, "name": "System Owner"},
-        {"username": "owner", "password": "ceo123", "role": "owner", "name": "System Owner"},
-        {"username": "ceo", "password": "ceo123", "role": "ceo", "name": "Chief Executive Officer"},
-        {"username": "hr", "password": "hr1234", "role": "hr", "name": "HR Department"},
-        {"username": "guard", "password": "guard123", "role": "guard", "name": "Security Guard"},
+        {"username": DEFAULT_ADMIN_USERNAME, "password": DEFAULT_ADMIN_PASSWORD, "role": DEFAULT_ADMIN_ROLE},
+        {"username": "owner", "password": "ceo123", "role": "owner"},
+        {"username": "ceo", "password": "ceo123", "role": "ceo"},
+        {"username": "hr", "password": "hr1234", "role": "hr"},
+        {"username": "guard", "password": "guard123", "role": "guard"},
     ]
 
     for u in default_users:
@@ -242,8 +247,8 @@ def init_db():
         existing = cursor.fetchone()
         if not existing:
             cursor.execute(
-                "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
-                (u["username"], hash_password(u["password"]), u["role"], u["name"])
+                "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
+                (u["username"], hash_password(u["password"]), u["role"])
             )
         # Existing accounts are left untouched — don't clobber a real admin's
         # changed password/role on every restart.

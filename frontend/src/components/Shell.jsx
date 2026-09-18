@@ -607,7 +607,6 @@ function SettingsWindow({ onClose, session, alerts = [] }) {
               {activeCategory === 'account' && (
                 <div className="settings-window-section">
                   <h3>Account</h3>
-
                   <div className="field">
                     <label>Name</label>
 
