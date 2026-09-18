@@ -348,7 +348,7 @@ function SettingsWindow({ onClose, session, alerts }) {
               {activeCategory === 'account' && (
                 <div className="settings-window-section">
                   <h3>Account</h3>
-                  <div className="field"><label>Name</label><input value={session.name} disabled /></div>
+                  <div className="field"><label>Username</label><input value={session.username} disabled /></div>
                   <div className="field" style={{ marginBottom: 0 }}><label>Role</label><input value={session.role} disabled /></div>
                 </div>
               )}
@@ -470,8 +470,8 @@ export default function Shell({ active, dark = false, title, children }) {
             <span className="topbar-clock mono">{clock}</span>
             <span className={`role-badge ${isAdmin ? 'admin' : ''}`}>{session.role}</span>
             <div className="user-chip">
-              <div className="avatar">{initials(session.name)}</div>
-              <span className="name">{session.name}</span>
+              <div className="avatar">{initials(session.username)}</div>
+              <span className="name">{session.username}</span>
             </div>
             <ThemeToggle />
             <button className="logout-btn" onClick={handleLogout}>Sign out</button>

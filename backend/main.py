@@ -123,7 +123,7 @@ def login(payload: LoginRequest):
     if not user or not verify_password(payload.password, user["password_hash"]):
         return {"ok": False, "error": "Incorrect username or password"}
 
-    token = create_token(user["id"], user["username"], user["role"], user["name"])
+    token = create_token(user["id"], user["username"], user["role"])
 
     log_audit_event(
         username=user["username"],
@@ -137,7 +137,6 @@ def login(payload: LoginRequest):
     return {
         "ok": True,
         "role": user["role"],
-        "name": user["name"],
         "username": user["username"],
         "token": token
     }
@@ -185,7 +184,7 @@ def get_audit_logs(
 def list_users():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, username, role, name, created_at FROM users ORDER BY id")
+        cur.execute("SELECT id, username, role, created_at FROM users ORDER BY id")
         rows = cur.fetchall()
         cur.close()
         return [dict(r) for r in rows]
@@ -208,8 +207,8 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
             raise HTTPException(status_code=400, detail=f"Username '{username}' already exists")
 
         cur.execute(
-            "INSERT INTO users (username, password_hash, role, name) VALUES (%s, %s, %s, %s)",
-            (username, hash_password(payload.password), role, username)
+            "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
+            (username, hash_password(payload.password), role)
         )
         conn.commit()
         cur.close()

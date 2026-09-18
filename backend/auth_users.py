@@ -26,12 +26,11 @@ def verify_password(password: str, password_hash: str) -> bool:
     except Exception:
         return False
 
-def create_token(user_id, username, role, name):
+def create_token(user_id, username, role):
     payload = {
         "user_id": user_id,
         "username": username,
         "role": role,
-        "name": name,
         "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
