@@ -125,6 +125,27 @@ def init_db():
             PRIMARY KEY (person_name, camera_name)
         )
     """)
+    cursor.execute("ALTER TABLE currently_detected ADD COLUMN IF NOT EXISTS camera_name TEXT")
+    cursor.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.table_constraints
+                WHERE table_name = 'currently_detected' AND constraint_type = 'PRIMARY KEY'
+            ) THEN
+                EXECUTE (
+                    SELECT 'ALTER TABLE currently_detected DROP CONSTRAINT ' || quote_ident(constraint_name)
+                    FROM information_schema.table_constraints
+                    WHERE table_name = 'currently_detected' AND constraint_type = 'PRIMARY KEY'
+                );
+            END IF;
+        END $$;
+    """)
+    cursor.execute("ALTER TABLE currently_detected ADD PRIMARY KEY (person_name, camera_name)")
+    try:
+        cursor.execute("ALTER TABLE currently_detected ALTER COLUMN camera_id DROP NOT NULL")
+    except Exception:
+        pass
     # Clear stale "currently in view" rows left over from before a restart
     try:
         cursor.execute("DELETE FROM currently_detected")

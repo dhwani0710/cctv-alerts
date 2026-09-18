@@ -96,8 +96,8 @@ def get_or_create_incident(person_name, alert_type, priority, camera_name, zone_
 
         if row:
             cur.execute(
-                "UPDATE incidents SET last_seen = %s, alert_count = alert_count + 1, priority = %s WHERE id = %s",
-                (now.isoformat(), priority, row["id"])
+                "UPDATE incidents SET last_seen = %s, alert_count = alert_count + 1, priority = %s, camera_name = %s, zone_name = %s WHERE id = %s",
+                (now.isoformat(), priority, camera_name, zone_name, row["id"])
             )
             conn.commit()
             cur.close()
