@@ -1,22 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function AddCameraModal({ onClose, onAdded }) {
   const { apiFetch } = useAuth();
   const [name, setName] = useState('');
   const [rtspUrl, setRtspUrl] = useState('');
-  const [location, setLocation] = useState('');
-  const [zoneId, setZoneId] = useState('');
-  const [zones, setZones] = useState([]);
+  const [zone, setZone] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      const res = await apiFetch('/zones');
-      if (res.ok) setZones(await res.json());
-    })();
-  }, [apiFetch]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -34,8 +25,8 @@ export default function AddCameraModal({ onClose, onAdded }) {
         id,
         name: name.trim(),
         rtsp_url: rtspUrl.trim(),
-        location: location.trim() || name.trim(),
-        zone_id: zoneId || null,
+        location: name.trim(),
+        zone_name: zone.trim() || null,
         enabled: true,
       }),
     });
@@ -59,15 +50,8 @@ export default function AddCameraModal({ onClose, onAdded }) {
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Front Door" autoFocus />
           </div>
           <div className="field">
-            <label>Location / area</label>
-            <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Entrance, Storeroom" />
-          </div>
-          <div className="field">
             <label>Zone</label>
-            <select value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
-              <option value="">No zone</option>
-              {zones.map((z) => <option key={z.id} value={z.id}>{z.name}</option>)}
-            </select>
+            <input value={zone} onChange={(e) => setZone(e.target.value)} placeholder="e.g. Entrance, Storeroom" />
           </div>
           <div className="field">
             <label>Camera stream address (RTSP URL)</label>

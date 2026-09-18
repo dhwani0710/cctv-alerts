@@ -56,6 +56,7 @@ def recognize_faces(frame):
             enforce_detection=False,
             detector_backend="mtcnn",
             distance_metric="cosine",
+            threshold=1.0,
             silent=True
         )
 
@@ -68,6 +69,7 @@ def recognize_faces(frame):
         names = []
         for face_result in results:
             if len(face_result) == 0:
+                print("[DEBUG] 0 candidates returned by DeepFace.find (rejected internally)")
                 names.append("Unknown")
                 continue
 
@@ -84,11 +86,12 @@ def recognize_faces(frame):
             max_distance = get_setting_float("match_distance_threshold")
 
             accepted_name = "Unknown"
-            for folder_name, distances in matches_by_employee.items():
+            for folder_name, raw_distances in matches_by_employee.items():
+                distances = raw_distances
                 if max_distance is not None:
-                    distances = [d for d in distances if d <= max_distance]
+                    distances = [d for d in raw_distances if d <= max_distance]
                 required = min(min_matching, photo_counts.get(folder_name, 1))
-                print(f"[DEBUG] {folder_name}: {len(distances)} photo(s) matched (need {required}), distances: {distances}")
+                print(f"[DEBUG] {folder_name}: {len(distances)} photo(s) matched (need {required}), raw distances: {raw_distances}, filtered: {distances}")
                 if len(distances) >= required:
                     accepted_name = folder_name.replace("_", " ")
                     break

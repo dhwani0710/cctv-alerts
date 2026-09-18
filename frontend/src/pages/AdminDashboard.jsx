@@ -4,6 +4,20 @@ import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useStatus } from '../context/StatusContext.jsx';
 
+const ALERT_TYPE_LABELS = {
+  stranger: 'Unrecognized face',
+  camera_offline: 'Camera offline',
+  camera_tamper: 'Possible camera tampering',
+  early_arrival: 'Early arrival',
+  overstay: 'Overstay',
+};
+
+function formatIncident(a) {
+  const label = ALERT_TYPE_LABELS[a.alert_type] || a.alert_type;
+  const who = a.person_name.startsWith('Unknown@') ? 'Unknown person' : a.person_name;
+  return `${label} — ${who}`;
+}
+
 export default function AdminDashboard() {
   const { apiFetch } = useAuth();
   const { status, cameras } = useStatus();
@@ -15,14 +29,17 @@ export default function AdminDashboard() {
   });
 
   const [records, setRecords] = useState([]);
+  const [incidents, setIncidents] = useState([]);
 
   const load = useCallback(async () => {
-    const [empRes, recRes] = await Promise.all([
+    const [empRes, recRes, incRes] = await Promise.all([
       apiFetch('/employees'),
       apiFetch('/records?limit=10'),
+      apiFetch('/incidents?status=new'),
     ]);
     if (empRes.ok) setEmployeeCount((await empRes.json()).length);
     if (recRes.ok) setRecords((await recRes.json()).records || []);
+    if (incRes.ok) setIncidents(await incRes.json());
   }, [apiFetch]);
 
   useEffect(() => {
@@ -35,7 +52,7 @@ export default function AdminDashboard() {
     setCameraCount({ live: cameras.filter((c) => c.live).length, total: cameras.length });
   }, [cameras]);
 
-  const highAlerts = status.recent_alerts.filter((a) => a.priority === 'high').length;
+  const highAlerts = incidents.filter((a) => a.priority === 'high').length;
 
   return (
     <Shell active="dashboard" dark title="Overview">
@@ -136,11 +153,11 @@ export default function AdminDashboard() {
           </div>
 
 
-          {status.recent_alerts.slice(0, 5).map((a, i) => (
+          {incidents.slice(0, 5).map((a) => (
 
             <div
               className="log-row"
-              key={i}
+              key={a.id}
             >
 
               <div
@@ -152,14 +169,14 @@ export default function AdminDashboard() {
               />
 
               <div className="log-time">
-                {new Date(a.timestamp).toLocaleTimeString([], {
+                {new Date(a.last_seen).toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
                 })}
               </div>
 
               <div className="log-text">
-                {a.message}
+                {formatIncident(a)} <span className="mono" style={{ color: 'var(--text-muted)' }}>×{a.alert_count}</span>
               </div>
 
               <div className="log-tag">
@@ -171,7 +188,7 @@ export default function AdminDashboard() {
           ))}
 
 
-          {status.recent_alerts.length === 0 && (
+          {incidents.length === 0 && (
 
             <p
               style={{
