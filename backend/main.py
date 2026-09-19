@@ -318,12 +318,22 @@ def _upload_photo_async(local_path, remote_path):
 
 _SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_\-]")
 ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/jpg"}
+MAX_PHOTO_BYTES = 8 * 1024 * 1024  # 8MB
 
 def _safe_folder_name(name: str) -> str:
     cleaned = _SAFE_NAME_RE.sub("_", name.strip().replace(" ", "_"))
     if not cleaned:
         raise HTTPException(status_code=400, detail="Invalid employee name")
     return cleaned
+
+def _validate_photo_upload(upload_file):
+    if upload_file.content_type not in ALLOWED_PHOTO_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported photo type: {upload_file.content_type}")
+    upload_file.file.seek(0, os.SEEK_END)
+    size = upload_file.file.tell()
+    upload_file.file.seek(0)
+    if size > MAX_PHOTO_BYTES:
+        raise HTTPException(status_code=400, detail="Photo too large (max 8MB)")
 
 @app.post("/employees", dependencies=[Depends(require_hr)])
 async def add_employee(
@@ -337,6 +347,8 @@ async def add_employee(
     if shift_start == shift_end:
         return {"error": "Shift start and end time cannot be the same."}
     if len(photos) == 0:
+        for photo in photos:
+            _validate_photo_upload(photo)
         return {"error": "At least one photo is required."}
 
     folder_name = _safe_folder_name(name)
@@ -410,16 +422,30 @@ async def update_employee(
             cur.close()
             return {"message": "Employee not found"}
 
+        old_folder_name = _safe_folder_name(emp["name"])
+        new_folder_name = _safe_folder_name(name)
+
+        if old_folder_name != new_folder_name:
+            old_path = os.path.join(KNOWN_FACES_DIR, old_folder_name)
+            new_path = os.path.join(KNOWN_FACES_DIR, new_folder_name)
+            if os.path.exists(old_path):
+                if os.path.exists(new_path):
+                    shutil.rmtree(old_path)
+                else:
+                    os.rename(old_path, new_path)
+                try:
+                    storage.delete_prefix(f"known_faces/{old_folder_name}")
+                except Exception as e:
+                    print(f"[update_employee] Cloud cleanup of old folder failed: {e}")
+            _clear_face_cache()
+
         if photo is not None and photo.filename:
-            folder_name = _safe_folder_name(name)
-            for photo in photos:
-                if photo.content_type not in ALLOWED_PHOTO_TYPES:
-                    raise HTTPException(status_code=400, detail=f"Unsupported file type: {photo.content_type}")
-            employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
+            _validate_photo_upload(photo)
+            employee_folder = os.path.join(KNOWN_FACES_DIR, new_folder_name)
             os.makedirs(employee_folder, exist_ok=True)
             photo_path = os.path.join(employee_folder, "photo_1.jpg")
             _save_resized_photo(photo, photo_path)
-            threading.Thread(target=_upload_photo_async, args=(photo_path, f"known_faces/{folder_name}/photo_1.jpg"), daemon=True).start()
+            threading.Thread(target=_upload_photo_async, args=(photo_path, f"known_faces/{new_folder_name}/photo_1.jpg"), daemon=True).start()
             _clear_face_cache()
 
         cur.execute(
@@ -751,10 +777,11 @@ def clear_all_records(current_user: dict = Depends(require_admin)):
         incidents_deleted = cur.rowcount
         conn.commit()
         cur.close()
-    log_audit_event(username=current_user.get("username"), user_role=current_user.get("role"),
-                     action="RECORDS_CLEARED", target_module="Records",
-                     details=f"Cleared all records ({alerts_deleted} alerts, {incidents_deleted} incidents)",
-                     user_id=current_user.get("user_id"))
+    log_audit_event(username=current_user.get("username"), 
+        user_role=current_user.get("role"), 
+        action="RECORDS_CLEARED", target_module="Records",
+        details=f"Cleared all records ({alerts_deleted} alerts, {incidents_deleted} incidents)",
+        user_id=current_user.get("user_id"))
     return {"message": "All records cleared", "alerts_deleted": alerts_deleted, "incidents_deleted": incidents_deleted}
 
 @app.get("/records/export", dependencies=[Depends(require_staff)])

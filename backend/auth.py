@@ -3,7 +3,7 @@ from typing import Optional, List
 from auth_users import decode_token
 import jwt
 
-VALID_ROLES = {"owner", "ceo", "admin", "hr", "manager", "guard"}
+VALID_ROLES = {"owner", "ceo", "hr", "guard"}
 
 def verify_token(authorization: Optional[str] = Header(None), token: Optional[str] = Query(None)):
     raw_token = None
@@ -31,24 +31,27 @@ def require_owner(authorization: Optional[str] = Header(None)):
 
 def require_admin(authorization: Optional[str] = Header(None)):
     payload = verify_token(authorization)
-    if payload.get("role") not in ("owner", "ceo", "admin"):
+    if payload.get("role") not in ("owner", "ceo"):
         raise HTTPException(status_code=403, detail="Admin access required (Owner or CEO)")
     return payload
 
 def require_hr(authorization: Optional[str] = Header(None)):
     payload = verify_token(authorization)
-    if payload.get("role") not in ("owner", "ceo", "admin", "hr", "manager"):
+    if payload.get("role") not in ("owner", "ceo", "hr"):
         raise HTTPException(status_code=403, detail="HR or Admin access required")
     return payload
 
 def require_guard(authorization: Optional[str] = Header(None)):
     payload = verify_token(authorization)
-    if payload.get("role") not in ("owner", "ceo", "admin", "guard"):
+    if payload.get("role") not in ("owner", "ceo", "guard"):
         raise HTTPException(status_code=403, detail="Security Guard or Admin access required")
     return payload
 
 def require_staff(authorization: Optional[str] = Header(None)):
-    return require_hr(authorization)
+    payload = verify_token(authorization)
+    if payload.get("role") not in ("owner", "ceo", "hr", "guard"):
+        raise HTTPException(status_code=403, detail="Staff access required")
+    return payload
 
 def require_roles(allowed_roles: List[str]):
     def role_checker(authorization: Optional[str] = Header(None)):
