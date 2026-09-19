@@ -19,7 +19,7 @@ from camera_worker import start_camera_threads, get_current_frame, start_health_
 from datetime import datetime, timedelta
 import config
 from auth import verify_token, require_owner, require_admin, require_hr, require_guard, require_staff
-from auth_users import verify_password, create_token, hash_password
+from auth_users import verify_password, create_token, hash_password, VALID_ROLES
 from app_settings import get_all_settings, set_setting
 from settings_store import load_settings, save_settings
 from audit import log_audit_event
@@ -194,8 +194,7 @@ def list_users():
 def create_user(payload: CreateUserRequest, current_user: dict = Depends(require_admin)):
     username = payload.username.strip()
     role = payload.role.strip().lower()
-    valid_roles = ["owner", "ceo", "hr", "guard"]
-    if role not in valid_roles:
+    if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(valid_roles)}")
     if not username or not payload.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
@@ -229,10 +228,9 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
 def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depends(require_admin)):
     updates = []
     params = []
-    valid_roles = ["owner", "ceo", "hr", "guard"]
     if req.role:
         role = req.role.strip().lower()
-        if role not in valid_roles:
+        if role not in VALID_ROLES:
             raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(valid_roles)}")
         updates.append("role = %s")
         params.append(role)

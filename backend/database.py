@@ -63,7 +63,6 @@ def init_db():
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS zone_name TEXT")
     cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS permanent BOOLEAN NOT NULL DEFAULT FALSE")
 
-    # Guard acknowledgment protocol columns (from feature/ft3)
     try:
         cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'")
         cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_by TEXT")

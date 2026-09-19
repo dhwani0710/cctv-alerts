@@ -1,61 +1,34 @@
 🔴 MUST FIX
- Page refresh logs everyone out. AuthContext.jsx's login() no longer stores a name field (backend's /auth/login and create_token() stopped returning/embedding name), but loadSession() still requires parsed.name to treat a stored session as valid. On any refresh, a perfectly valid token gets discarded and the user is bounced to /login. Either drop the .name check in loadSession() or stop relying on it.
- DELETE /records is defined twice in main.py (two clear_all_records functions, same route). The first (dead) definition wins and returns only {"message": "All records cleared"} — no alerts_deleted/incidents_deleted. Settings.jsx's "Clear all records" reads those fields, so it now shows "Cleared undefined alert(s) and undefined incident(s)." in the UI. Delete the first definition.
- Admin/manager roles still lock users out. Backend (auth.py, create_user) still accepts roles admin/manager, but dashboardFor()/App.jsx still only handle ceo/owner/guard/hr. Unchanged since last audit.
- Employee photo upload still has no path sanitization or file-type validation (add_employee in main.py) — unchanged from last audit, still a path-traversal and unhandled-500 risk.
+ Guard role is broken for its own core job. PUT /incidents/{id} (acknowledge/dismiss alert, used by GuardAckModal/CamerasAlerts.jsx), DELETE /records/{id}, and /records/export all use require_staff, which maps to require_hr — this excludes guard. Guard has frontend routes to Cameras/Alerts and Records but every write action on those pages 403s for a guard user.
+ AuthContext.jsx: login response/create_token() never include name, but loadSession() requires parsed.name to accept a stored session → every page refresh logs the user out.
+ backend/main.py defines DELETE /records (clear_all_records) twice — the first, dead-simple definition wins and shadows the second, so the route never returns alerts_deleted/incidents_deleted. Settings.jsx's "Clear all records" shows "Cleared undefined alert(s)...".
+ Role source-of-truth conflict: auth.py VALID_ROLES still includes admin/manager (and require_admin/require_hr accept them), while auth_users.py has a separate, correct, unused VALID_ROLES = {ceo, owner, guard, hr}. Per your confirmed 4-role model, admin/manager need to be stripped from auth.py and every inline role list in main.py (create_user/update_user).
+ Renaming an employee (PUT /employees/{id}) doesn't rename or delete the old known_faces/<old_name> folder — the old identity keeps existing and keeps getting matched by recognition under the stale name (ghost identity).
+ No validation on employee photo uploads: no content-type/size check (a non-image upload → unhandled exception → raw 500), and the employee name field is written unsanitized into a filesystem path (known_faces/<name>) — path-traversal risk.
+ README "Default Login" section is wrong: says admin / ceo123; actual seeded default is admin / admin123.
 
 🟠 SHOULD FIX
- Still-dead frontend pages: DashboardPage.jsx, AdminPage.jsx, AttendancePage.jsx, Sidebar.jsx remain unimported anywhere (AuditLogPage got wired in, these didn't). Delete them or finish wiring them — they're stale weight in the repo either way.
- API base URL hardcoded to http://localhost:8000 in 4 files now (AuthContext.jsx, CamerasAlerts.jsx, Settings.jsx, and the newly added AuditLogPage.jsx). Still not env-driven.
- numpy and Pillow still missing from requirements.txt despite being directly imported in main.py.
- backend/settings.json is still tracked in git despite being in .gitignore.
- README default-login is still wrong (admin / ceo123 documented vs actual seeded admin / admin123).
- Leftover debug print() statements in app_settings.py (set_setting, get_all_settings) and recognition.py ([DEBUG] lines) — noisy console spam in what's meant to be a finished build; strip before demo.
- recognition.py does from app_settings import get_setting_int, get_setting_float inside the per-face loop — works, but re-imports on every detected face; move to top of file.
+ backend/settings.json is committed to git despite being in .gitignore — causes merge noise / stale settings on fresh clones. git rm --cached it.
+ numpy and Pillow are imported directly in main.py but missing from requirements.txt — currently works only because deepface/opencv-python pull them in transitively. Pin explicitly.
+ API base URL hardcoded (http://localhost:8000) in AuthContext.jsx, CamerasAlerts.jsx, AuditLogPage.jsx, Settings.jsx — move to one env-driven config.
+ Dead/fake duplicate Settings UI: SettingsWindow in Shell.jsx (~300 lines) is a second, fully mocked settings panel — fake password change, sensitivity, after-hours window, door-held threshold, clear-records/reset-demo — defined but never rendered anywhere. Delete it; it's stale scope-creep duplicating the real Settings.jsx.
+ Records.jsx has no loading or error state on any of its fetches (list, delete, export, camera filter) — silent failures on network/API errors.
+ Orphaned unreachable code block in alerts.py, sitting after the return in is_within_store_hours() — dead dedupe logic with undefined variable references (person_name, priority never passed in). Harmless (unreachable) but confusing; delete it.
+ recognition.py's _get_known_faces_info() has unconditional infinite self-recursion. Currently dead/unused (recognize_faces does its own os.walk instead), but a landmine if anyone calls it later — fix or remove.
+ add_zone/delete_zone don't call log_audit_event like every other admin mutation in the file — inconsistent audit trail.
+ Leftover merge-artifact comment in auth.py: # backend/auth.py — replace entirely with ft3's version.
 
 🟡 OPTIONAL
- Audit-log route still uses require_owner only (excludes ceo, which is treated as owner-equivalent everywhere else) — decide if that's intentional.
- Consolidate the still-unused/contradictory VALID_ROLES/ADMIN_ROLES constants in auth_users.py (noted last audit, still present, still unused).
+ Add a duplicate-name guard on employee creation — two employees with the same name currently silently share/clobber the same known_faces/<name> folder.
+ recognition.py picks the first candidate folder whose distance count clears the threshold (dict-iteration order), not the closest match — fine at small scale, could misattribute with multiple similar candidates as headcount grows.
+ Trim AddCameraModal/camera form validation (currently accepts any string as rtsp_url with no format check).
 
 🚀 NEXT STEPS
-Fix the session-refresh logout bug (loadSession() / name field) — this breaks every session on refresh, will surface immediately in any demo.
-Remove the duplicate DELETE /records route in main.py — one-line fix, currently corrupts a message the reviewer will literally see on screen.
-Resolve the admin/manager role gap — either strip those roles from backend validation or finish wiring frontend routes/dashboardFor for them.
-Patch upload security (name sanitization + file-type/size validation on employee photos).
-Decide the fate of the remaining dead pages (DashboardPage, AdminPage, AttendancePage, Sidebar) — delete or wire in, don't leave them dangling.
-Cleanup pass: externalize API_BASE, fix requirements.txt, untrack settings.json, strip debug prints, fix README default-login line.
-
-----------------------------------------------------------------------------------------------------------------------------------------------
-
-## 🔴 MUST FIX
-* [ ] **Dead frontend pages from the ft3 merge are never wired in.** `DashboardPage.jsx`, `AdminPage.jsx`, `AttendancePage.jsx`, `AuditLogPage.jsx`, `Sidebar.jsx` (~76KB) exist in `frontend/src/pages`/`components` but aren't imported anywhere — `App.jsx` still routes only to the old `AdminDashboard/EmployeeDashboard/Attendance/AdminUsers` pages. This means your colleague's CSV export UI and Audit Log UI are **not reachable in the running app**, even though the backend supports them.
-* [ ] **Admin/manager roles get locked out after login.** `auth.py`'s `require_admin`/`require_hr` and `main.py`'s `create_user` accept roles `admin` and `manager`, but `AuthContext.dashboardFor()` and `App.jsx` only handle `ceo/owner/guard/hr`. A user with role `admin` or `manager` logs in successfully, then `dashboardFor()` returns `/login`, stranding them in a redirect-to-login loop with a valid session and no way to reach any page.
-* [ ] **Path traversal risk in employee photo upload.** `add_employee` builds `folder_name = name.replace(" ", "_")` and does `os.path.join(KNOWN_FACES_DIR, folder_name)` with zero sanitization of the `name` field — an employee name like `../../something` can write outside `known_faces/`.
-* [ ] **No file-type validation on photo uploads.** `_save_resized_photo` writes the raw upload straight to disk with a `.jpg` extension, then calls `Image.open()` — a non-image upload throws an unhandled exception (500 with no clean error), and nothing checks MIME type or size before writing.
-* [ ] **Hardcoded demo credentials auto-seeded into the DB on every fresh init** (`owner/ceo123`, `ceo/ceo123`, `hr/hr1234`, `guard/guard123` in `database.py`), with no forced password change. Fine for local dev, a real risk if this DB is ever reachable outside localhost.
-* [ ] **README default-login docs are wrong.** README says default login is `admin / ceo123`; actual seeded default (from `.env` fallback) is `admin / admin123`. Anyone following the README to demo/evaluate will fail to log in on the first try.
-
-## 🟠 SHOULD FIX
-* [ ] **API base URL hardcoded to `http://localhost:8000` in 3 separate files** (`AuthContext.jsx`, `CamerasAlerts.jsx`, `Settings.jsx`) — no `.env`/config value. Any deploy off localhost requires manual edits in multiple places and it's easy to miss one.
-* [ ] **`numpy` and `Pillow` are imported directly in `main.py` but missing from `requirements.txt`** — currently working only because `deepface`/`opencv-python` happen to pull them in transitively. Pin them explicitly.
-* [ ] **`backend/settings.json` is committed to git** despite being in `.gitignore` (it was tracked before the ignore rule was added) — this is runtime state, will cause merge noise and stale settings on fresh clones.
-* [ ] **Dangling/contradictory role constants:** `auth_users.py` defines `VALID_ROLES = {"ceo","owner","guard","hr"}` and `ADMIN_ROLES`, both unused and out of sync with `auth.py`'s actual `VALID_ROLES` (which includes `admin`, `manager`) and with the inline role lists duplicated in `create_user`/`update_user`. Consolidate into one source of truth.
-* [ ] **Audit log feature is backend-only and role-inconsistent.** `/audit-logs` requires literal role `owner` (`require_owner`), while everywhere else `ceo` is treated as equal to `owner`. Also unreachable from the UI (see dead-page issue above).
-* [ ] **CSV export endpoints (`/attendance/export`, `/records/export`) exist but the wired-in `Attendance.jsx` page has no export button** — the only export UI lives in the unused `AttendancePage.jsx`.
-* [ ] **README role table (ceo/owner/guard/hr only) doesn't mention `admin`/`manager`**, which the backend fully supports for account creation — decide: strip those roles from backend validation, or finish wiring + document them.
-* [ ] Leftover merge-artifact comment shipped in `auth.py` (`# backend/auth.py — replace entirely with ft3's version`) — cosmetic but signals an unfinished cleanup pass; check other merged files for similar leftovers.
-
-## 🟡 OPTIONAL
-* [ ] Delete the orphaned pages/components instead of leaving 76KB of dead code in the repo (once you decide whether to wire them in or drop them).
-* [ ] Add a loading/error state around the photo-upload flow so a rejected non-image upload shows a real message instead of a raw 500.
-* [ ] Move the 5 hardcoded demo accounts behind a `SEED_DEMO_USERS` env flag so they don't get created in non-dev environments.
-
-## 🚀 NEXT STEPS
-1. **Decide the frontend fork** — old pages (`AdminDashboard`/`Attendance`/`AdminUsers`) or ft3 pages (`DashboardPage`/`AttendancePage`/`AdminPage`/`AuditLogPage`). Don't keep both; pick one and delete the other's dead files.
-2. **Fix the role model end-to-end** — pick the final role set (recommend: keep `admin`/`manager` since backend already supports them), update `dashboardFor()` + `App.jsx` routes to cover every role, and delete the stale `VALID_ROLES`/`ADMIN_ROLES` in `auth_users.py`.
-3. **Wire the CSV export and audit log UI into the chosen page set** so those already-built backend features are actually reachable.
-4. **Patch the upload security gaps** — sanitize `name` before using it as a folder path, validate uploaded file type/size before writing/opening.
-5. **Fix `requirements.txt`** (add `numpy`, `Pillow`) and **externalize the API base URL** into a single env-driven config used by all 3 frontend files.
-6. **Untrack `backend/settings.json`**, update the README's default-login line and role table to match reality.
-7. **Sweep for merge leftovers** (stray comments, dead constants) across the files touched in the `feature/ft3` merge before final submission.
-8. Only after 1–7: harden the demo-seed accounts (env flag) — lowest priority, doesn't block a working demo.
+Fix the AuthContext session bug (add name back into the login payload/token, or drop the parsed.name requirement in loadSession) — this is silently breaking every refresh.
+Remove the duplicate DELETE /records definition in main.py, keep the one that returns counts.
+Decide and enforce the final role model everywhere: strip admin/manager from auth.py and main.py's inline role lists; point require_staff at something that includes guard (or split it into a proper require_records_access used by ack/delete/export).
+Fix employee rename to clean up/move the old known_faces folder; add basic upload validation (content-type, size) and sanitize name before using it in a path.
+Fix the README default-login line.
+Delete backend/settings.json from git tracking; pin numpy/Pillow in requirements.txt.
+Delete the dead SettingsWindow in Shell.jsx and the orphaned block in alerts.py; centralize API_BASE.
+Add basic loading/error states to Records.jsx (and audit the other wired pages for the same gap) before demo.

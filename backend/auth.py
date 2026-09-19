@@ -1,4 +1,3 @@
-# backend/auth.py — replace entirely with ft3's version
 from fastapi import Header, HTTPException, Query, Depends
 from typing import Optional, List
 from auth_users import decode_token
