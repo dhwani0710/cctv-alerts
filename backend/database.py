@@ -107,6 +107,7 @@ def init_db():
     cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()")
     cursor.execute("ALTER TABLE users DROP COLUMN IF EXISTS name")
 
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
             id SERIAL PRIMARY KEY,
