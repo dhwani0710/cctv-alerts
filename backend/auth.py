@@ -1,9 +1,7 @@
 from fastapi import Header, HTTPException, Query, Depends
 from typing import Optional, List
-from auth_users import decode_token
+from auth_users import decode_token, VALID_ROLES
 import jwt
-
-VALID_ROLES = {"owner", "ceo", "hr", "guard"}
 
 def verify_token(authorization: Optional[str] = Header(None), token: Optional[str] = Query(None)):
     raw_token = None
