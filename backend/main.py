@@ -8,6 +8,7 @@ import math
 import threading
 import uuid
 import numpy as np
+import re
 from typing import List, Optional
 from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Query, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +19,7 @@ from camera_worker import start_camera_threads, get_current_frame, start_health_
 from datetime import datetime, timedelta
 import config
 from auth import verify_token, require_owner, require_admin, require_hr, require_guard, require_staff
-from auth_users import verify_password, create_token, hash_password
+from auth_users import verify_password, create_token, hash_password, VALID_ROLES
 from app_settings import get_all_settings, set_setting
 from settings_store import load_settings, save_settings
 from audit import log_audit_event
@@ -30,10 +31,9 @@ app = FastAPI(title="Jewellery Store Alert System")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=[o.strip() for o in os.getenv(
+        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -143,7 +143,7 @@ def login(payload: LoginRequest):
 
 # --- System Audit Log (Owner Exclusive) ---
 
-@app.get("/audit-logs", dependencies=[Depends(require_owner)])
+@app.get("/audit-logs", dependencies=[Depends(require_admin)])
 def get_audit_logs(
     role: Optional[str] = None,
     module: Optional[str] = None,
@@ -193,8 +193,7 @@ def list_users():
 def create_user(payload: CreateUserRequest, current_user: dict = Depends(require_admin)):
     username = payload.username.strip()
     role = payload.role.strip().lower()
-    valid_roles = ["owner", "ceo", "admin", "hr", "manager", "guard"]
-    if role not in valid_roles:
+    if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(valid_roles)}")
     if not username or not payload.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
@@ -228,10 +227,9 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
 def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depends(require_admin)):
     updates = []
     params = []
-    valid_roles = ["owner", "ceo", "admin", "hr", "manager", "guard"]
     if req.role:
         role = req.role.strip().lower()
-        if role not in valid_roles:
+        if role not in VALID_ROLES:
             raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(valid_roles)}")
         updates.append("role = %s")
         params.append(role)
@@ -317,6 +315,29 @@ def _upload_photo_async(local_path, remote_path):
     except Exception as e:
         print(f"[main] Photo cloud upload failed: {e}")
 
+_SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_\-]")
+ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/jpg"}
+ALLOWED_PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+MAX_PHOTO_BYTES = 5 * 1024 * 1024  # 8MB
+
+def _safe_folder_name(name: str) -> str:
+    cleaned = _SAFE_NAME_RE.sub("_", name.strip().replace(" ", "_"))
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Invalid employee name")
+    return cleaned
+
+def _validate_photo_upload(photo: UploadFile):
+    if photo.content_type not in ALLOWED_PHOTO_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {photo.content_type}")
+    ext = os.path.splitext(photo.filename or "")[1].lower()
+    if ext not in ALLOWED_PHOTO_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file extension: {ext}")
+    photo.file.seek(0, os.SEEK_END)
+    size = photo.file.tell()
+    photo.file.seek(0)
+    if size > MAX_PHOTO_BYTES:
+        raise HTTPException(status_code=400, detail="Photo exceeds 5MB size limit")
+
 @app.post("/employees", dependencies=[Depends(require_hr)])
 async def add_employee(
     name: str = Form(...),
@@ -329,9 +350,13 @@ async def add_employee(
     if shift_start == shift_end:
         return {"error": "Shift start and end time cannot be the same."}
     if len(photos) == 0:
+        for photo in photos:
+            _validate_photo_upload(photo)
         return {"error": "At least one photo is required."}
 
-    folder_name = name.replace(" ", "_")
+    folder_name = _safe_folder_name(name)
+    for photo in photos:
+        _validate_photo(photo)
     employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
     os.makedirs(employee_folder, exist_ok=True)
 
@@ -399,8 +424,23 @@ async def update_employee(
             cur.close()
             return {"message": "Employee not found"}
 
+        old_name = emp["name"]
+        if old_name != name:
+            old_folder_name = _safe_folder_name(old_name)
+            new_folder_name = _safe_folder_name(name)
+            old_folder = os.path.join(KNOWN_FACES_DIR, old_folder_name)
+            new_folder = os.path.join(KNOWN_FACES_DIR, new_folder_name)
+            if os.path.exists(old_folder) and old_folder_name != new_folder_name:
+                if os.path.exists(new_folder):
+                    shutil.rmtree(old_folder)
+                else:
+                    os.rename(old_folder, new_folder)
+                storage.delete_prefix(f"known_faces/{old_folder_name}")
+                _clear_face_cache()
+
         if photo is not None and photo.filename:
-            folder_name = name.replace(" ", "_")
+            _validate_photo(photo)
+            folder_name = _safe_folder_name(name)
             employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
             os.makedirs(employee_folder, exist_ok=True)
             photo_path = os.path.join(employee_folder, "photo_1.jpg")
@@ -702,26 +742,6 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
         "total_pages": math.ceil(total / limit) if limit > 0 else 1
     }
 
-@app.delete("/records", dependencies=[Depends(require_admin)])
-def clear_all_records(current_user: dict = Depends(require_admin)):
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM alerts")
-        cur.execute("DELETE FROM incidents")
-        conn.commit()
-        cur.close()
-
-    log_audit_event(
-        username=current_user.get("username"),
-        user_role=current_user.get("role"),
-        action="RECORDS_CLEARED",
-        target_module="Records",
-        details="Cleared all alert and incident records",
-        user_id=current_user.get("user_id")
-    )
-
-    return {"message": "All records cleared"}
-
 @app.delete("/records/{alert_id}", dependencies=[Depends(require_staff)])
 def delete_record(alert_id: int, current_user: dict = Depends(require_staff)):
     with get_db() as conn:
@@ -757,10 +777,11 @@ def clear_all_records(current_user: dict = Depends(require_admin)):
         incidents_deleted = cur.rowcount
         conn.commit()
         cur.close()
-    log_audit_event(username=current_user.get("username"), user_role=current_user.get("role"),
-                     action="RECORDS_CLEARED", target_module="Records",
-                     details=f"Cleared all records ({alerts_deleted} alerts, {incidents_deleted} incidents)",
-                     user_id=current_user.get("user_id"))
+    log_audit_event(username=current_user.get("username"), 
+        user_role=current_user.get("role"), 
+        action="RECORDS_CLEARED", target_module="Records",
+        details=f"Cleared all records ({alerts_deleted} alerts, {incidents_deleted} incidents)",
+        user_id=current_user.get("user_id"))
     return {"message": "All records cleared", "alerts_deleted": alerts_deleted, "incidents_deleted": incidents_deleted}
 
 @app.get("/records/export", dependencies=[Depends(require_staff)])
