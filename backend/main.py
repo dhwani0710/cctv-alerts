@@ -31,10 +31,9 @@ app = FastAPI(title="Jewellery Store Alert System")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=[o.strip() for o in os.getenv(
+        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -318,7 +317,8 @@ def _upload_photo_async(local_path, remote_path):
 
 _SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_\-]")
 ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/jpg"}
-MAX_PHOTO_BYTES = 8 * 1024 * 1024  # 8MB
+ALLOWED_PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+MAX_PHOTO_BYTES = 5 * 1024 * 1024  # 8MB
 
 def _safe_folder_name(name: str) -> str:
     cleaned = _SAFE_NAME_RE.sub("_", name.strip().replace(" ", "_"))
@@ -326,14 +326,17 @@ def _safe_folder_name(name: str) -> str:
         raise HTTPException(status_code=400, detail="Invalid employee name")
     return cleaned
 
-def _validate_photo_upload(upload_file):
-    if upload_file.content_type not in ALLOWED_PHOTO_TYPES:
-        raise HTTPException(status_code=400, detail=f"Unsupported photo type: {upload_file.content_type}")
-    upload_file.file.seek(0, os.SEEK_END)
-    size = upload_file.file.tell()
-    upload_file.file.seek(0)
+def _validate_photo_upload(photo: UploadFile):
+    if photo.content_type not in ALLOWED_PHOTO_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {photo.content_type}")
+    ext = os.path.splitext(photo.filename or "")[1].lower()
+    if ext not in ALLOWED_PHOTO_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file extension: {ext}")
+    photo.file.seek(0, os.SEEK_END)
+    size = photo.file.tell()
+    photo.file.seek(0)
     if size > MAX_PHOTO_BYTES:
-        raise HTTPException(status_code=400, detail="Photo too large (max 8MB)")
+        raise HTTPException(status_code=400, detail="Photo exceeds 5MB size limit")
 
 @app.post("/employees", dependencies=[Depends(require_hr)])
 async def add_employee(
@@ -353,8 +356,7 @@ async def add_employee(
 
     folder_name = _safe_folder_name(name)
     for photo in photos:
-        if photo.content_type not in ALLOWED_PHOTO_TYPES:
-            raise HTTPException(status_code=400, detail=f"Unsupported file type: {photo.content_type}")
+        _validate_photo(photo)
     employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
     os.makedirs(employee_folder, exist_ok=True)
 
@@ -422,30 +424,28 @@ async def update_employee(
             cur.close()
             return {"message": "Employee not found"}
 
-        old_folder_name = _safe_folder_name(emp["name"])
-        new_folder_name = _safe_folder_name(name)
-
-        if old_folder_name != new_folder_name:
-            old_path = os.path.join(KNOWN_FACES_DIR, old_folder_name)
-            new_path = os.path.join(KNOWN_FACES_DIR, new_folder_name)
-            if os.path.exists(old_path):
-                if os.path.exists(new_path):
-                    shutil.rmtree(old_path)
+        old_name = emp["name"]
+        if old_name != name:
+            old_folder_name = _safe_folder_name(old_name)
+            new_folder_name = _safe_folder_name(name)
+            old_folder = os.path.join(KNOWN_FACES_DIR, old_folder_name)
+            new_folder = os.path.join(KNOWN_FACES_DIR, new_folder_name)
+            if os.path.exists(old_folder) and old_folder_name != new_folder_name:
+                if os.path.exists(new_folder):
+                    shutil.rmtree(old_folder)
                 else:
-                    os.rename(old_path, new_path)
-                try:
-                    storage.delete_prefix(f"known_faces/{old_folder_name}")
-                except Exception as e:
-                    print(f"[update_employee] Cloud cleanup of old folder failed: {e}")
-            _clear_face_cache()
+                    os.rename(old_folder, new_folder)
+                storage.delete_prefix(f"known_faces/{old_folder_name}")
+                _clear_face_cache()
 
         if photo is not None and photo.filename:
-            _validate_photo_upload(photo)
-            employee_folder = os.path.join(KNOWN_FACES_DIR, new_folder_name)
+            _validate_photo(photo)
+            folder_name = _safe_folder_name(name)
+            employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
             os.makedirs(employee_folder, exist_ok=True)
             photo_path = os.path.join(employee_folder, "photo_1.jpg")
             _save_resized_photo(photo, photo_path)
-            threading.Thread(target=_upload_photo_async, args=(photo_path, f"known_faces/{new_folder_name}/photo_1.jpg"), daemon=True).start()
+            threading.Thread(target=_upload_photo_async, args=(photo_path, f"known_faces/{folder_name}/photo_1.jpg"), daemon=True).start()
             _clear_face_cache()
 
         cur.execute(
