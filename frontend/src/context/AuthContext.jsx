@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext(null);
 const SESSION_KEY = 'vaultwatch_session';
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 export function dashboardFor(role) {
   if (role === 'ceo' || role === 'owner') return '/admin-dashboard';
@@ -16,7 +16,7 @@ function loadSession() {
     const raw = sessionStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed || !parsed.role || !parsed.name) return null;
+    if (!parsed || !parsed.role) return null;
     return parsed;
   } catch {
     return null;

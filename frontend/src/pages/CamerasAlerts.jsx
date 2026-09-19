@@ -7,7 +7,7 @@ import { useStatus } from '../context/StatusContext.jsx';
 import { GuardAckModal } from '../components/GuardAckModal';
 
 const PANEL_HEIGHT = 620;
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 export default function CamerasAlerts() {
   const { session, apiFetch } = useAuth();
@@ -244,7 +244,7 @@ export default function CamerasAlerts() {
         <div className="cam-lightbox-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setSnapshotView(null); }}>
           <div className="cam-lightbox">
             <img
-              src={snapshotView.snapshot_filename.startsWith('http') ? snapshotView.snapshot_filename : `http://localhost:8000${snapshotView.snapshot_filename}?token=${encodeURIComponent(session.token)}`}
+              src={snapshotView.snapshot_filename.startsWith('http') ? snapshotView.snapshot_filename : `${API_BASE}${snapshotView.snapshot_filename}?token=${encodeURIComponent(session.token)}`}
               alt="Alert snapshot"
               style={{ width: '100%', height: 'auto', display: 'block' }}
             />
