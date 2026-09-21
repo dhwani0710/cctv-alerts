@@ -1,100 +1,42 @@
 import os
-import sqlite3
+import psycopg2
+import psycopg2.extras
 from contextlib import contextmanager
 from datetime import datetime
 from dotenv import load_dotenv
+from psycopg2 import pool
 
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+_pg_pool = None
+def _get_pg_pool():
+    global _pg_pool
+    if _pg_pool is None:
+        _pg_pool = pool.ThreadedConnectionPool(
+            minconn=2,
+            maxconn=20,
+            dsn=DATABASE_URL,
+            cursor_factory=psycopg2.extras.RealDictCursor,
+        )
+    return _pg_pool
+
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
+DEFAULT_ADMIN_ROLE = os.getenv("DEFAULT_ADMIN_ROLE", "owner")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
 
-DB_TYPE = "postgres" if (DATABASE_URL and ("postgres" in DATABASE_URL or "postgresql" in DATABASE_URL)) else "sqlite"
-
-import re
-
-class SQLiteCursorWrapper:
-    def __init__(self, cursor):
-        self.cursor = cursor
-
-    def execute(self, query, params=None):
-        # Convert Postgres %s placeholders to SQLite ? placeholders
-        sqlite_query = query.replace("%s", "?")
-        # Replace Postgres SERIAL with INTEGER
-        sqlite_query = sqlite_query.replace("SERIAL PRIMARY KEY", "INTEGER PRIMARY KEY AUTOINCREMENT")
-        sqlite_query = sqlite_query.replace("DEFAULT NOW()", "DEFAULT CURRENT_TIMESTAMP")
-
-        # Handle ALTER TABLE ... ADD COLUMN IF NOT EXISTS in SQLite
-        if re.search(r'ALTER\s+TABLE\s+.*?\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS', sqlite_query, re.IGNORECASE):
-            clean_query = re.sub(r'ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS', 'ADD COLUMN', sqlite_query, flags=re.IGNORECASE)
-            try:
-                if params is not None:
-                    return self.cursor.execute(clean_query, params)
-                return self.cursor.execute(clean_query)
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" in str(e).lower():
-                    return self.cursor
-                raise e
-
-        if params is not None:
-            return self.cursor.execute(sqlite_query, params)
-        return self.cursor.execute(sqlite_query)
-
-    def fetchone(self):
-        row = self.cursor.fetchone()
-        if row is None:
-            return None
-        return dict(row)
-
-    def fetchall(self):
-        rows = self.cursor.fetchall()
-        return [dict(r) for r in rows]
-
-    def close(self):
-        self.cursor.close()
-
-    @property
-    def lastrowid(self):
-        return self.cursor.lastrowid
-
-class SQLiteConnWrapper:
-    def __init__(self, conn):
-        self.conn = conn
-
-    def cursor(self):
-        return SQLiteCursorWrapper(self.conn.cursor())
-
-    def commit(self):
-        self.conn.commit()
-
-    def rollback(self):
-        self.conn.rollback()
-
-    def close(self):
-        self.conn.close()
-
-def _get_raw_connection():
-    global DB_TYPE
-    if DB_TYPE == "postgres":
-        try:
-            import psycopg2
-            import psycopg2.extras
-            conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
-            return "postgres", conn
-        except Exception as e:
-            print(f"[database] PostgreSQL connection failed ({e}). Falling back to local SQLite database.")
-            DB_TYPE = "sqlite"
-
-    # SQLite connection
-    db_path = os.path.join(os.path.dirname(__file__), "cctv.db")
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return "sqlite", SQLiteConnWrapper(conn)
 
 def init_db():
-    db_type, conn = _get_raw_connection()
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
+
+    cursor.execute("SELECT pg_advisory_lock(918273645)")
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts (timestamp DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_last_seen ON incidents (last_seen DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents (status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_currently_detected_last_seen ON currently_detected (last_seen)")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS employees (
@@ -105,6 +47,7 @@ def init_db():
             photo_filename TEXT NOT NULL
         )
     """)
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS alerts (
             id SERIAL PRIMARY KEY,
@@ -112,16 +55,36 @@ def init_db():
             alert_type TEXT NOT NULL,
             priority TEXT NOT NULL,
             message TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            snapshot_filename TEXT
+            timestamp TEXT NOT NULL
         )
     """)
+    cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS snapshot_filename TEXT")
+    cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS camera_name TEXT")
+    cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS zone_name TEXT")
+    cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS permanent BOOLEAN NOT NULL DEFAULT FALSE")
+
+    try:
+        cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'")
+        cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_by TEXT")
+        cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_at TEXT")
+        cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_proof_image TEXT")
+        cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_notes TEXT")
+    except Exception as e:
+        print(f"[database] Note on alerts columns: {e}")
+
     cursor.execute("""
-            ALTER TABLE alerts ADD COLUMN IF NOT EXISTS snapshot_filename TEXT
-        """)
-    cursor.execute("""
-            ALTER TABLE alerts ADD COLUMN IF NOT EXISTS camera_id TEXT
-        """)
+        CREATE TABLE IF NOT EXISTS alert_records (
+            id SERIAL PRIMARY KEY,
+            person_name TEXT NOT NULL,
+            alert_type TEXT NOT NULL,
+            priority TEXT NOT NULL,
+            message TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            snapshot_filename TEXT,
+            camera_id TEXT,
+            zone_id TEXT
+        )
+    """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS employee_photos (
@@ -130,21 +93,19 @@ def init_db():
             filename TEXT NOT NULL
         )
     """)
-    cursor.execute("""
-        ALTER TABLE employees ADD COLUMN IF NOT EXISTS designation TEXT NOT NULL DEFAULT 'Staff'
-    """)
+    cursor.execute("ALTER TABLE employees ADD COLUMN IF NOT EXISTS designation TEXT NOT NULL DEFAULT 'Staff'")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
-            role TEXT NOT NULL,
-            name TEXT NOT NULL
+            role TEXT NOT NULL
         )
     """)
-    cursor.execute("""
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()
-    """)
+    cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()")
+    cursor.execute("ALTER TABLE users DROP COLUMN IF EXISTS name")
+
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
@@ -156,33 +117,55 @@ def init_db():
             UNIQUE(employee_id, attendance_date)
         )
     """)
-    cursor.execute("""
-        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS last_camera_id TEXT
-    """)
-    cursor.execute("""
-        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS zone_id TEXT
-    """)
-    cursor.execute("""
-        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'present'
-    """)
-    cursor.execute("""
-        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS override_reason TEXT
-    """)
-    cursor.execute("""
-        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS is_override BOOLEAN DEFAULT FALSE
-    """)
+    cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS zone_name TEXT")
+    cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'present'")
+    cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS override_reason TEXT")
+    cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS is_override BOOLEAN DEFAULT FALSE")
 
-    cursor.execute("DROP TABLE IF EXISTS currently_detected")
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS currently_detected (
             person_name TEXT NOT NULL,
-            camera_id TEXT NOT NULL,
+            camera_name TEXT NOT NULL,
             last_seen TEXT NOT NULL,
-            PRIMARY KEY (person_name, camera_id)
+            PRIMARY KEY (person_name, camera_name)
         )
     """)
+    cursor.execute("ALTER TABLE currently_detected ADD COLUMN IF NOT EXISTS camera_name TEXT")
+    cursor.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.table_constraints
+                WHERE table_name = 'currently_detected' AND constraint_type = 'PRIMARY KEY'
+            ) THEN
+                EXECUTE (
+                    SELECT 'ALTER TABLE currently_detected DROP CONSTRAINT ' || quote_ident(constraint_name)
+                    FROM information_schema.table_constraints
+                    WHERE table_name = 'currently_detected' AND constraint_type = 'PRIMARY KEY'
+                );
+            END IF;
+        END $$;
+    """)
+    cursor.execute("ALTER TABLE currently_detected ADD PRIMARY KEY (person_name, camera_name)")
+    try:
+        cursor.execute("ALTER TABLE currently_detected ALTER COLUMN camera_id DROP NOT NULL")
+    except Exception:
+        pass
+    # Clear stale "currently in view" rows left over from before a restart
+    try:
+        cursor.execute("DELETE FROM currently_detected")
+    except Exception:
+        pass
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS system_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS app_settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         )
@@ -198,26 +181,79 @@ def init_db():
         )
     """)
 
-    # Users Table for Role Based Access Control
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE IF NOT EXISTS zones (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL
+        )
+    """)
+    cursor.execute("ALTER TABLE cameras ADD COLUMN IF NOT EXISTS zone_name TEXT")
+    cursor.execute("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'cameras' AND column_name = 'location'
+    """)
+    if cursor.fetchone():
+        cursor.execute("UPDATE cameras SET zone_name = location WHERE zone_name IS NULL")
+        cursor.execute("ALTER TABLE cameras DROP COLUMN location")
+    cursor.execute("ALTER TABLE cameras DROP COLUMN IF EXISTS zone_id")
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
             id SERIAL PRIMARY KEY,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            user_id INTEGER,
+            username TEXT NOT NULL,
+            user_role TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target_module TEXT NOT NULL,
+            details TEXT NOT NULL,
+            proof_image TEXT,
+            timestamp TEXT NOT NULL
         )
     """)
 
-    # Auto-seed default Super Admin if not present
-    cursor.execute("SELECT id FROM users WHERE username = %s", (DEFAULT_ADMIN_USERNAME,))
-    if not cursor.fetchone():
-        from auth_users import hash_password
-        admin_pwd_hash = hash_password(DEFAULT_ADMIN_PASSWORD)
-        cursor.execute(
-            "INSERT INTO users (username, password_hash, role, name, created_at) VALUES (%s, %s, %s, %s, %s)",
-            (DEFAULT_ADMIN_USERNAME, admin_pwd_hash, "admin", DEFAULT_ADMIN_USERNAME, datetime.utcnow().isoformat())
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS incidents (
+            id SERIAL PRIMARY KEY,
+            person_name TEXT NOT NULL,
+            alert_type TEXT NOT NULL,
+            priority TEXT NOT NULL,
+            camera_name TEXT,
+            zone_name TEXT,
+            first_seen TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            alert_count INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'new'
         )
+    """)
+    cursor.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS incident_id INTEGER REFERENCES incidents(id)")
+    cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS last_notified TEXT")
+    cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS camera_id TEXT")
+    cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS zone_id TEXT")
+
+    # Seed default accounts so every role in the RBAC set has a working login
+    # out of the box. The primary admin account honors the env vars if set;
+    # the rest are fixed demo credentials, meant to be changed after first login.
+    from auth_users import hash_password
+    default_users = [
+        {"username": DEFAULT_ADMIN_USERNAME, "password": DEFAULT_ADMIN_PASSWORD, "role": DEFAULT_ADMIN_ROLE},
+        {"username": "owner", "password": "ceo123", "role": "owner"},
+        {"username": "ceo", "password": "ceo123", "role": "ceo"},
+        {"username": "hr", "password": "hr1234", "role": "hr"},
+        {"username": "guard", "password": "guard123", "role": "guard"},
+    ]
+
+    for u in default_users:
+        cursor.execute("SELECT id FROM users WHERE username = %s", (u["username"],))
+        existing = cursor.fetchone()
+        if not existing:
+            cursor.execute(
+                "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
+                (u["username"], hash_password(u["password"]), u["role"])
+            )
+        # Existing accounts are left untouched — don't clobber a real admin's
+        # changed password/role on every restart.
+
+    cursor.execute("SELECT pg_advisory_unlock(918273645)")
 
     conn.commit()
     cursor.close()
@@ -225,8 +261,9 @@ def init_db():
 
 @contextmanager
 def get_db():
-    db_type, conn = _get_raw_connection()
+    p = _get_pg_pool()
+    conn = p.getconn()
     try:
         yield conn
     finally:
-        conn.close()
+        p.putconn(conn)

@@ -1,0 +1,34 @@
+🔴 MUST FIX
+ Guard role is broken for its own core job. PUT /incidents/{id} (acknowledge/dismiss alert, used by GuardAckModal/CamerasAlerts.jsx), DELETE /records/{id}, and /records/export all use require_staff, which maps to require_hr — this excludes guard. Guard has frontend routes to Cameras/Alerts and Records but every write action on those pages 403s for a guard user.
+ AuthContext.jsx: login response/create_token() never include name, but loadSession() requires parsed.name to accept a stored session → every page refresh logs the user out.
+ backend/main.py defines DELETE /records (clear_all_records) twice — the first, dead-simple definition wins and shadows the second, so the route never returns alerts_deleted/incidents_deleted. Settings.jsx's "Clear all records" shows "Cleared undefined alert(s)...".
+ Role source-of-truth conflict: auth.py VALID_ROLES still includes admin/manager (and require_admin/require_hr accept them), while auth_users.py has a separate, correct, unused VALID_ROLES = {ceo, owner, guard, hr}. Per your confirmed 4-role model, admin/manager need to be stripped from auth.py and every inline role list in main.py (create_user/update_user).
+ Renaming an employee (PUT /employees/{id}) doesn't rename or delete the old known_faces/<old_name> folder — the old identity keeps existing and keeps getting matched by recognition under the stale name (ghost identity).
+ No validation on employee photo uploads: no content-type/size check (a non-image upload → unhandled exception → raw 500), and the employee name field is written unsanitized into a filesystem path (known_faces/<name>) — path-traversal risk.
+ README "Default Login" section is wrong: says admin / ceo123; actual seeded default is admin / admin123.
+
+🟠 SHOULD FIX
+ backend/settings.json is committed to git despite being in .gitignore — causes merge noise / stale settings on fresh clones. git rm --cached it.
+ numpy and Pillow are imported directly in main.py but missing from requirements.txt — currently works only because deepface/opencv-python pull them in transitively. Pin explicitly.
+ API base URL hardcoded (http://localhost:8000) in AuthContext.jsx, CamerasAlerts.jsx, AuditLogPage.jsx, Settings.jsx — move to one env-driven config.
+ Dead/fake duplicate Settings UI: SettingsWindow in Shell.jsx (~300 lines) is a second, fully mocked settings panel — fake password change, sensitivity, after-hours window, door-held threshold, clear-records/reset-demo — defined but never rendered anywhere. Delete it; it's stale scope-creep duplicating the real Settings.jsx.
+ Records.jsx has no loading or error state on any of its fetches (list, delete, export, camera filter) — silent failures on network/API errors.
+ Orphaned unreachable code block in alerts.py, sitting after the return in is_within_store_hours() — dead dedupe logic with undefined variable references (person_name, priority never passed in). Harmless (unreachable) but confusing; delete it.
+ recognition.py's _get_known_faces_info() has unconditional infinite self-recursion. Currently dead/unused (recognize_faces does its own os.walk instead), but a landmine if anyone calls it later — fix or remove.
+ add_zone/delete_zone don't call log_audit_event like every other admin mutation in the file — inconsistent audit trail.
+ Leftover merge-artifact comment in auth.py: # backend/auth.py — replace entirely with ft3's version.
+
+🟡 OPTIONAL
+ Add a duplicate-name guard on employee creation — two employees with the same name currently silently share/clobber the same known_faces/<name> folder.
+ recognition.py picks the first candidate folder whose distance count clears the threshold (dict-iteration order), not the closest match — fine at small scale, could misattribute with multiple similar candidates as headcount grows.
+ Trim AddCameraModal/camera form validation (currently accepts any string as rtsp_url with no format check).
+
+🚀 NEXT STEPS
+Fix the AuthContext session bug (add name back into the login payload/token, or drop the parsed.name requirement in loadSession) — this is silently breaking every refresh.
+Remove the duplicate DELETE /records definition in main.py, keep the one that returns counts.
+Decide and enforce the final role model everywhere: strip admin/manager from auth.py and main.py's inline role lists; point require_staff at something that includes guard (or split it into a proper require_records_access used by ack/delete/export).
+Fix employee rename to clean up/move the old known_faces folder; add basic upload validation (content-type, size) and sanitize name before using it in a path.
+Fix the README default-login line.
+Delete backend/settings.json from git tracking; pin numpy/Pillow in requirements.txt.
+Delete the dead SettingsWindow in Shell.jsx and the orphaned block in alerts.py; centralize API_BASE.
+Add basic loading/error states to Records.jsx (and audit the other wired pages for the same gap) before demo.

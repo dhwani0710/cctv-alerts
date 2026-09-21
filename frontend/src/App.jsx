@@ -1,51 +1,80 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { ProtectedRoute } from './components/ProtectedRoute';
-import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { AdminPage } from './pages/AdminPage';
-import { Attendance } from './pages/Attendance';
-import { Records } from './pages/Records';
-import { SettingsPage } from './pages/SettingsPage';
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 
-const RootRedirect = () => {
-  const { user, getDefaultRedirect } = useAuth();
-  if (!user || !user.token) {
-    return <Navigate to="/login" replace />;
-  }
-  return <Navigate to={getDefaultRedirect(user.role)} replace />;
-};
+import { AuthProvider } from './context/AuthContext.jsx';
+import { StatusProvider } from './context/StatusContext.jsx';
 
-function App() {
+import ProtectedRoute from './components/ProtectedRoute.jsx';
+
+import Login from './pages/Login.jsx';
+import AdminDashboard from './pages/AdminDashboard.jsx';
+import EmployeeDashboard from './pages/EmployeeDashboard.jsx';
+import CamerasAlerts from './pages/CamerasAlerts.jsx';
+import Records from './pages/Records.jsx';
+import AdminEmployees from './pages/AdminEmployees.jsx';
+import Attendance from './pages/Attendance.jsx';
+import AdminUsers from './pages/AdminUsers.jsx';
+import Settings from './pages/Settings.jsx';
+import { AuditLogPage } from './pages/AuditLogPage.jsx';
+
+export default function App() {
   return (
-    <Router>
-      <AuthProvider>
+    <AuthProvider>
+      <StatusProvider>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<Login />} />
 
           <Route
-            path="/dashboard"
+            path="/admin-dashboard"
             element={
-              <ProtectedRoute allowedRoles={['admin', 'manager', 'guard']}>
-                <DashboardPage />
+              <ProtectedRoute allowedRoles={['ceo', 'owner']}>
+                <AdminDashboard />
               </ProtectedRoute>
             }
           />
 
           <Route
-            path="/admin"
+            path="/guard-dashboard"
             element={
-              <ProtectedRoute allowedRoles={['admin', 'manager']}>
-                <AdminPage />
+              <ProtectedRoute allowedRoles={['guard']}>
+                <EmployeeDashboard />
               </ProtectedRoute>
             }
           />
 
           <Route
-            path="/attendance"
+            path="/hr-dashboard"
             element={
-              <ProtectedRoute allowedRoles={['admin', 'manager']}>
-                <Attendance />
+              <ProtectedRoute allowedRoles={['hr']}>
+                <EmployeeDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin-employees"
+            element={
+              <ProtectedRoute allowedRoles={['ceo', 'owner', 'hr']}>
+                <AdminEmployees />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin-users"
+            element={
+              <ProtectedRoute allowedRoles={['ceo', 'owner']}>
+                <AdminUsers />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/cameras-alerts"
+            element={
+              <ProtectedRoute allowedRoles={['ceo', 'owner', 'guard']}>
+                <CamerasAlerts />
               </ProtectedRoute>
             }
           />
@@ -53,27 +82,42 @@ function App() {
           <Route
             path="/records"
             element={
-              <ProtectedRoute allowedRoles={['admin', 'manager', 'guard']}>
+              <ProtectedRoute allowedRoles={['ceo', 'owner', 'guard']}>
                 <Records />
               </ProtectedRoute>
             }
           />
-          
+
           <Route
-            path="/settings"
+            path="/attendance"
             element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <SettingsPage />
+              <ProtectedRoute allowedRoles={['ceo', 'owner', 'hr']}>
+                <Attendance />
               </ProtectedRoute>
             }
           />
 
-          <Route path="/" element={<RootRedirect />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute allowedRoles={['ceo', 'owner', 'guard', 'hr']}>
+                <Settings />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/audit-logs"
+            element={
+              <ProtectedRoute allowedRoles={['ceo', 'owner']}>
+                <AuditLogPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
-      </AuthProvider>
-    </Router>
+      </StatusProvider>
+    </AuthProvider>
   );
 }
-
-export default App;
