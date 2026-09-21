@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from database import init_db, get_db
-from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, restart_single_camera
+from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, restart_single_camera, stop_all_cameras
 from datetime import datetime, timedelta
 import config
 from auth import verify_token, require_owner, require_admin, require_hr, require_guard, require_staff
@@ -64,6 +64,12 @@ def startup():
     start_escalation_thread()
     start_retention_thread()
     start_daily_reset_thread()
+
+@app.on_event("shutdown")
+def shutdown():
+    print("[shutdown] Stopping camera threads...")
+    stop_all_cameras()
+    print("[shutdown] Camera threads stopped.")
 
 @app.get("/")
 def health_check():
