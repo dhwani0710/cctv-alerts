@@ -6,11 +6,12 @@ import { useAuth } from '../context/AuthContext.jsx';
 const API_URL = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 export default function Settings() {
-  const { session } = useAuth();
+  const { session, updateSession } = useAuth();
   const token = session?.token;
 
   const isAdmin = session?.role === 'ceo' || session?.role === 'owner';
-  const canSeeThresholds = session?.role !== 'employee';
+  const isHRorGuard = session?.role === 'hr' || session?.role === 'guard';
+  const canSeeThresholds = session?.role !== 'employee' && !isHRorGuard;
 
   const DEFAULT_NOTIFICATIONS = {
     notifyMotion: true,
@@ -32,22 +33,27 @@ export default function Settings() {
     storeCloseTime: '21:00',
   };
 
-  const CATEGORIES = [
-    { key: 'notifications', label: 'Notifications' },
-    ...(canSeeThresholds
-      ? [{ key: 'thresholds', label: 'Alert thresholds' }]
-      : []),
-    ...(isAdmin
-      ? [{ key: 'store-hours', label: 'Store hours' }]
-      : []),
-    { key: 'security', label: 'Security' },
-    { key: 'account', label: 'Account' },
-    ...(isAdmin
-      ? [{ key: 'system', label: 'System' }]
-      : []),
-  ];
+  const CATEGORIES = isHRorGuard
+    ? [
+        { key: 'security', label: 'Security' },
+        { key: 'account', label: 'Account' },
+      ]
+    : [
+        { key: 'notifications', label: 'Notifications' },
+        ...(canSeeThresholds
+          ? [{ key: 'thresholds', label: 'Alert thresholds' }]
+          : []),
+        ...(isAdmin
+          ? [{ key: 'store-hours', label: 'Store hours' }]
+          : []),
+        { key: 'security', label: 'Security' },
+        { key: 'account', label: 'Account' },
+        ...(isAdmin
+          ? [{ key: 'system', label: 'System' }]
+          : []),
+      ];
 
-  const [activeCategory, setActiveCategory] = useState('notifications');
+  const [activeCategory, setActiveCategory] = useState(isHRorGuard ? 'security' : 'notifications');
   const [search, setSearch] = useState('');
 
   // Notifications
@@ -80,6 +86,16 @@ export default function Settings() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearingRecords, setClearingRecords] = useState(false);
 
+  // Account
+  const [accountName, setAccountName] = useState('');
+  const [savingAccount, setSavingAccount] = useState(false);
+
+  useEffect(() => {
+    if (session?.username) {
+      setAccountName(session.username);
+    }
+  }, [session?.username]);
+
   // Messages and loading
   const [message, setMessage] = useState('');
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -102,6 +118,11 @@ export default function Settings() {
 
   useEffect(() => {
     async function loadSettings() {
+      if (isHRorGuard) {
+        setSettingsLoaded(true);
+        return;
+      }
+      
       setSettingsLoaded(false);
       setSettingsError(false);
 
@@ -604,6 +625,41 @@ export default function Settings() {
       );
     } finally {
       setChangingPassword(false);
+    }
+  }
+
+  // =========================================================
+  // UPDATE ACCOUNT
+  // =========================================================
+
+  async function saveAccount(event) {
+    event.preventDefault();
+    if (!accountName.trim()) {
+      showMessage('Name cannot be empty.');
+      return;
+    }
+    setSavingAccount(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/me`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ username: accountName.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to update account');
+      }
+      const data = await res.json();
+      updateSession({ username: data.username, token: data.token });
+      showMessage('Account updated successfully.');
+    } catch (err) {
+      console.error(err);
+      showMessage(err.message || 'Failed to update account.');
+    } finally {
+      setSavingAccount(false);
     }
   }
 
@@ -1403,14 +1459,14 @@ export default function Settings() {
                   ================================================= */}
 
               {activeCategory === 'account' && (
-                <div>
+                <form onSubmit={saveAccount}>
 
                   <div className="vscode-field">
                     <label>Name</label>
 
                     <input
-                      value={session?.name || ''}
-                      disabled
+                      value={accountName}
+                      onChange={(e) => setAccountName(e.target.value)}
                     />
                   </div>
 
@@ -1423,7 +1479,15 @@ export default function Settings() {
                     />
                   </div>
 
-                </div>
+                  <button
+                    type="submit"
+                    className="vscode-primary-btn"
+                    disabled={savingAccount}
+                  >
+                    {savingAccount ? 'Saving…' : 'Save changes'}
+                  </button>
+
+                </form>
               )}
 
               {/* =================================================

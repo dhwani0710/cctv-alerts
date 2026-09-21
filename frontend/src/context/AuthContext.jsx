@@ -61,6 +61,13 @@ export function AuthProvider({ children }) {
     setSession(null);
   }
 
+  function updateSession(updates) {
+    if (!session) return;
+    const next = { ...session, ...updates };
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+    setSession(next);
+  }
+
   async function apiFetch(path, options = {}) {
     const headers = {
       ...(options.headers || {}),
@@ -72,7 +79,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, user: session, login, logout, apiFetch }}>
+    <AuthContext.Provider value={{ session, user: session, login, logout, updateSession, apiFetch }}>
       {children}
     </AuthContext.Provider>
   );
