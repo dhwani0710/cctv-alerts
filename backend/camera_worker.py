@@ -318,6 +318,12 @@ def stop_single_camera(camera_id):
     if t:
         t.join(timeout=5)
 
+def stop_all_cameras():
+    with _registry_lock:
+        camera_ids = list(_camera_threads.keys())
+    for camera_id in camera_ids:
+        stop_single_camera(camera_id)
+
 def restart_single_camera(camera_config):
     stop_single_camera(camera_config["id"])
     start_single_camera(camera_config)
