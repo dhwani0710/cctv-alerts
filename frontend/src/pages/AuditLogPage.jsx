@@ -232,20 +232,35 @@ const AD_CSS = `
 .ad-count { min-width: 24px; text-align: right; color: var(--ad-muted); font-variant-numeric: tabular-nums; }
 
 .ad-donut-wrap { display: flex; align-items: center; gap: 16px; }
-.ad-donut { position: relative; width: 104px; height: 104px; flex: none; border-radius: 50%; }
-.ad-donut::after {
-  content: ''; position: absolute; inset: 14px; border-radius: 50%;
-  background: var(--ad-surface);
+.ad-donut { position: relative; width: 104px; height: 104px; flex: none; }
+.ad-donut-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  display: block;
 }
 .ad-donut-center {
   position: absolute; inset: 0; z-index: 1;
   display: grid; place-items: center; text-align: center; line-height: 1.15;
+  pointer-events: none;
 }
 .ad-donut-total { font-size: 18px; font-weight: 600; color: var(--ad-text); font-variant-numeric: tabular-nums; }
 .ad-donut-cap { font-size: 10.5px; color: var(--ad-muted); }
 .ad-legend { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; font-size: 12.5px; color: var(--ad-text); }
 .ad-legend-item { display: flex; align-items: center; gap: 8px; }
 .ad-dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+
+.print-only { display: none; }
+.ad-print-meta {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 8.5pt;
+  color: #334155;
+  line-height: 1.6;
+}
 
 /* Ledger table, grouped by day */
 .ad-ledger-head {
@@ -331,10 +346,232 @@ const AD_CSS = `
 @media (prefers-reduced-motion: reduce) {
   .ad-hour-bar, .ad-loading { transition: none; }
 }
+
+/* ================================================================== */
+/*  Print Report Styles                                                */
+/* ================================================================== */
 @media print {
-  .ad-scroll { max-height: none; overflow: visible; }
-  .ad-table th, .ad-day td { position: static; }
-  .ad-pager { display: none; }
+  .print-only { display: block !important; }
+  .ad-root {
+    --ad-surface: #ffffff !important;
+    --ad-border: #cbd5e1 !important;
+    --ad-text: #0f172a !important;
+    --ad-muted: #475569 !important;
+    --ad-brass: #b8860b !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Force print colors to exact representation */
+  .ad-root * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Fix SVG sizes */
+  .ad-root svg.ad-donut-svg {
+    width: 96px !important;
+    height: 96px !important;
+    max-width: none !important;
+    max-height: none !important;
+    transform: rotate(-90deg) !important;
+    display: block !important;
+  }
+
+  /* Summary strip */
+  .ad-stats {
+    display: grid !important;
+    grid-template-columns: repeat(5, 1fr) !important;
+    gap: 1px !important;
+    background: #cbd5e1 !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+    margin-bottom: 14px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  .ad-stat {
+    background: #ffffff !important;
+    padding: 10px 12px !important;
+  }
+  .ad-stat-top {
+    color: #475569 !important;
+    font-size: 8pt !important;
+    font-weight: 600 !important;
+  }
+  .ad-stat-value {
+    color: #0f172a !important;
+    font-size: 15pt !important;
+  }
+  .ad-stat-hint {
+    color: #64748b !important;
+    font-size: 7.5pt !important;
+  }
+
+  /* Charts Container */
+  .ad-charts {
+    display: grid !important;
+    grid-template-columns: 1.35fr 1fr 1fr !important;
+    gap: 10px !important;
+    margin-bottom: 14px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  .ad-card {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+    border-radius: 6px !important;
+    padding: 10px 12px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  .ad-card h3 {
+    color: #0f172a !important;
+    font-size: 9.5pt !important;
+    font-weight: 700 !important;
+  }
+  .ad-sub {
+    color: #475569 !important;
+    font-size: 7.5pt !important;
+    margin: 2px 0 8px !important;
+  }
+
+  /* 1. Activity by hour */
+  .ad-hours {
+    height: 75px !important;
+    gap: 2px !important;
+  }
+  .ad-hour-bar {
+    background: #c9a36b !important;
+    border: 1px solid #9c7336 !important;
+    min-height: 4px !important;
+  }
+  .ad-hour.peak .ad-hour-bar {
+    background: #78350f !important;
+    border: 1px solid #451a03 !important;
+  }
+  .ad-hour.empty .ad-hour-bar {
+    background: #f1f5f9 !important;
+    border: 1px solid #e2e8f0 !important;
+    height: 3px !important;
+  }
+  .ad-hour-axis {
+    margin-top: 4px !important;
+    font-size: 7pt !important;
+    color: #475569 !important;
+    font-weight: 600 !important;
+  }
+
+  /* 2. Events by module */
+  .ad-rows {
+    gap: 6px !important;
+  }
+  .ad-row {
+    font-size: 8pt !important;
+    color: #0f172a !important;
+    font-weight: 600 !important;
+    grid-template-columns: minmax(0, 90px) 1fr auto !important;
+    gap: 6px !important;
+  }
+  .ad-track {
+    height: 8px !important;
+    background: #e2e8f0 !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+  .ad-fill {
+    background: #b8860b !important;
+  }
+  .ad-count {
+    color: #334155 !important;
+    font-size: 8pt !important;
+    font-weight: 600 !important;
+  }
+
+  /* 3. Events by role */
+  .ad-donut-wrap {
+    gap: 10px !important;
+  }
+  .ad-donut {
+    width: 90px !important;
+    height: 90px !important;
+  }
+  .ad-donut-total {
+    font-size: 13pt !important;
+    color: #0f172a !important;
+  }
+  .ad-donut-cap {
+    font-size: 7pt !important;
+    color: #475569 !important;
+  }
+  .ad-legend {
+    gap: 4px !important;
+  }
+  .ad-legend-item {
+    font-size: 8pt !important;
+    color: #0f172a !important;
+    gap: 6px !important;
+  }
+  .ad-dot {
+    width: 8px !important;
+    height: 8px !important;
+    border-radius: 2px !important;
+    border: 1px solid rgba(0,0,0,0.2) !important;
+  }
+
+  /* Ledger Table */
+  .ad-scroll {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  .ad-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 8pt !important;
+  }
+  .ad-table th {
+    position: static !important;
+    background: #f1f5f9 !important;
+    color: #1e293b !important;
+    border-bottom: 2px solid #64748b !important;
+    padding: 6px 8px !important;
+    font-size: 8pt !important;
+  }
+  .ad-table td {
+    color: #0f172a !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    padding: 6px 8px !important;
+  }
+  .ad-day td {
+    position: static !important;
+    background: #e2e8f0 !important;
+    color: #0f172a !important;
+    padding: 5px 8px !important;
+    font-weight: 700 !important;
+    border-bottom: 1px solid #cbd5e1 !important;
+  }
+  .ad-day-inner {
+    color: #0f172a !important;
+    font-size: 8pt !important;
+  }
+  .ad-tag {
+    background: #f1f5f9 !important;
+    border: 1px solid #94a3b8 !important;
+    color: #0f172a !important;
+  }
+  .ad-ledger-head {
+    background: #ffffff !important;
+    border-bottom: 1px solid #cbd5e1 !important;
+    padding: 8px 12px !important;
+  }
+  .ad-ledger-head h3 {
+    color: #0f172a !important;
+    font-size: 10pt !important;
+  }
+  .ad-pager {
+    display: none !important;
+  }
 }
 `;
 
@@ -475,16 +712,28 @@ export const AuditLogPage = () => {
     return Array.from(map.values());
   }, [pagedLogs]);
 
-  /* donut gradient */
-  let acc = 0;
-  const donutStops = stats.roles.map(([role, count]) => {
-    const from = (acc / total) * 100;
-    acc += count;
-    return `${roleColor(role)} ${from}% ${(acc / total) * 100}%`;
-  });
-  const donutBg = total
-    ? `conic-gradient(${donutStops.join(', ')})`
-    : 'conic-gradient(var(--ad-border) 0% 100%)';
+  /* donut SVG segments calculation */
+  const donutSegments = useMemo(() => {
+    if (!total || !stats.roles.length) return [];
+    const radius = 38;
+    const circumference = 2 * Math.PI * radius; // ~238.761
+    let accumulated = 0;
+    return stats.roles.map(([role, count]) => {
+      const ratio = count / total;
+      const dash = ratio * circumference;
+      const gap = circumference - dash;
+      const offset = -accumulated * circumference;
+      accumulated += ratio;
+      return {
+        role,
+        count,
+        color: roleColor(role),
+        dash: dash.toFixed(2),
+        gap: gap.toFixed(2),
+        offset: offset.toFixed(2),
+      };
+    });
+  }, [stats.roles, total]);
 
   const statCells = [
     { key: 'total', icon: 'list', label: 'Audit records', hint: 'In current view', value: total },
@@ -535,6 +784,22 @@ export const AuditLogPage = () => {
               <Icon name="refresh" />
               <span>{loading ? 'Refreshing...' : 'Refresh'}</span>
             </button>
+          </div>
+        </div>
+
+        {/* ---------- Print-only Report Metadata Header ---------- */}
+        <div className="print-only ad-print-meta">
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span><strong>Report:</strong> System Audit Log & Security Intelligence</span>
+            <span><strong>Generated:</strong> {new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'medium' })}</span>
+          </div>
+          <div>
+            <strong>Filter Parameters:</strong>{' '}
+            {selectedRole ? `Role: ${ROLE_LABEL[selectedRole] || selectedRole} | ` : ''}
+            {selectedModule ? `Module: ${selectedModule} | ` : ''}
+            {selectedDate ? `Date: ${selectedDate} | ` : ''}
+            {searchTerm ? `Search: "${searchTerm}" | ` : ''}
+            {!selectedRole && !selectedModule && !selectedDate && !searchTerm ? 'All Records (Unfiltered)' : ''}
           </div>
         </div>
 
@@ -673,7 +938,31 @@ export const AuditLogPage = () => {
             <h3>Events by role</h3>
             <p className="ad-sub">Who is generating activity</p>
             <div className="ad-donut-wrap">
-              <div className="ad-donut" style={{ background: donutBg }} role="img" aria-label="Events by role">
+              <div className="ad-donut" role="img" aria-label="Events by role">
+                <svg className="ad-donut-svg" viewBox="0 0 100 100">
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="38"
+                    fill="none"
+                    stroke="var(--ad-border)"
+                    strokeWidth="14"
+                  />
+                  {donutSegments.map((seg) => (
+                    <circle
+                      key={seg.role}
+                      cx="50"
+                      cy="50"
+                      r="38"
+                      fill="none"
+                      stroke={seg.color}
+                      strokeWidth="14"
+                      strokeDasharray={`${seg.dash} ${seg.gap}`}
+                      strokeDashoffset={seg.offset}
+                      strokeLinecap="butt"
+                    />
+                  ))}
+                </svg>
                 <div className="ad-donut-center">
                   <div>
                     <div className="ad-donut-total">{total}</div>
