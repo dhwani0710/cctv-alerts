@@ -74,6 +74,7 @@ def health_check():
 class LoginRequest(BaseModel):
     username: str
     password: str
+    remember_me: bool = False  # When True, a 30-day token is issued instead of 12 h
 
 class CreateUserRequest(BaseModel):
     username: str
@@ -123,7 +124,7 @@ def login(payload: LoginRequest):
     if not user or not verify_password(payload.password, user["password_hash"]):
         return {"ok": False, "error": "Incorrect username or password"}
 
-    token = create_token(user["id"], user["username"], user["role"])
+    token = create_token(user["id"], user["username"], user["role"], remember=payload.remember_me)
 
     log_audit_event(
         username=user["username"],
