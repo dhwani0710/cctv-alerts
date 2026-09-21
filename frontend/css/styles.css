@@ -2432,8 +2432,8 @@ table.records tr:last-child td {
     box-shadow: none !important;
   }
 
-  /* Prevent SVGs from expanding arbitrarily in print */
-  svg {
+  /* Prevent icon SVGs from expanding arbitrarily in print while preserving charts */
+  svg:not(.ad-donut-svg):not(.chart-svg) {
     max-width: 24px !important;
     max-height: 24px !important;
   }
