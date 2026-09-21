@@ -1,0 +1,101 @@
+VaultWatch / eSamyak Frontend — CHANGE LOG
+Date: 2026-09-02
+
+============================================================
+1. LOGIN PAGE — REDESIGNED (src/pages/Login.jsx)
+============================================================
+- Replaced the old two-panel "Vault" style login (shield stamp,
+  light hero panel) with a new eSamyak-branded dark layout, based
+  on a reference design.
+- New layout: full dark background (--night-bg), left side is a
+  hero panel with brand mark ("e"), headline "Protect what matters
+  most.", subtext, and two feature rows (AI-powered monitoring,
+  24/7 security intelligence). Right side is a dark sign-in card.
+- Sign-in card changes:
+  * "Username" field relabeled to "Security ID"
+  * Added a working Show/Hide toggle for the password field
+  * Added a "Remember this device" checkbox (UI-only for now —
+    not wired to persistence since there's no backend yet)
+  * Added a "Forgot password?" link (placeholder — does not route
+    anywhere yet)
+  * Submit button relabeled "Enter Command Center"
+  * Added a "Secure" badge and a system-status footer line
+    ("All systems operational · Encrypted connection")
+- Login/auth LOGIC is unchanged: still calls the same login()
+  function from AuthContext.jsx with the same demo credentials
+  (admin/admin123, employee/employee123). Only the visual layer
+  changed.
+
+============================================================
+2. STYLES — CSS VARIABLES ADDED (css/styles.css)
+============================================================
+Added new theme variables to :root for the dark eSamyak look:
+  --gold-1, --gold-2                (gold gradient for accents/CTA)
+  --night-bg, --night-card,
+  --night-card-2                    (dark backgrounds for login page)
+  --night-line, --night-line-2      (dark borders)
+  --night-text-muted                (muted text on dark backgrounds)
+  --green                           (used for the "Secure" badge)
+
+============================================================
+3. STYLES — LOGIN CSS REPLACED (css/styles.css)
+============================================================
+- Removed the old .login-wrap / .login-hero / .login-card rule set
+  (light-panel version) and replaced it with new rules matching the
+  new Login.jsx markup: .login-glow, .brand-mark, .login-hero-mid,
+  .login-features, .feature-row, .secure-badge, .field-row,
+  .show-toggle, .login-card-foot, .login-footer, etc.
+
+============================================================
+4. BUGFIX — GENERIC FORM FIELD STYLES RESTORED (css/styles.css)
+============================================================
+Issue: When the old login CSS block was removed in step 3, it
+accidentally took the generic .field / .field label / .field input
+rules with it. Those rules are shared by every form in the app —
+not just login — so the "Add employee" form (AdminEmployees.jsx)
+lost its styling (label and input rendered inline instead of
+stacked, no border/padding).
+
+Fix: Re-added a standalone generic form-field block:
+  .field{ margin-bottom:16px; }
+  .field label{ display:block; font-size:12px; font-weight:600;
+    margin-bottom:6px; color:var(--text-muted); letter-spacing:.02em; }
+  .field input, .field select{ width:100%; padding:11px 13px;
+    border-radius:var(--radius-md); border:1px solid var(--border);
+    background:var(--surface); font-size:14px; font-family:var(--font-body);
+    color:var(--text); }
+  .field input:focus, .field select:focus{ outline:none;
+    border-color:var(--brass); box-shadow:0 0 0 3px var(--brass-glow); }
+
+This block is placed BEFORE the login-page CSS section. The more
+specific .login-card .field rules further down still override it
+correctly inside the dark login card only, so:
+  - Login form  → keeps dark eSamyak styling
+  - Every other form (Add employee, filters, etc.) → back to
+    normal light-theme field styling
+
+============================================================
+5. ADMIN EMPLOYEES PAGE — SEARCH & FILTER (src/pages/AdminEmployees.jsx)
+============================================================
+(Edited directly, not by Claude — noting for the team's record.)
+- Added search-by-name input and a role filter dropdown above the
+  staff grid.
+- Added a "results count" line (e.g. "3 employees") above the grid.
+- Staff grid now renders the filtered list instead of the full
+  MOCK_STAFF_INITIAL array.
+
+============================================================
+FILES TOUCHED THIS SESSION
+============================================================
+- src/pages/Login.jsx        (rewritten)
+- css/styles.css              (variables added, login section
+                                replaced, generic .field block
+                                restored after bugfix)
+- src/pages/AdminEmployees.jsx (search/filter added)
+
+NOT changed / still using mock data & client-side-only auth:
+- src/context/AuthContext.jsx (still hardcoded demo credentials —
+  flagged in code comments for real API integration later)
+- src/data/mockData.js
+- All other pages (AdminDashboard, EmployeeDashboard,
+  CamerasAlerts, Records)
