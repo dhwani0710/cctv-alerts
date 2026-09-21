@@ -1,34 +1,35 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth, dashboardFor } from '../context/AuthContext.jsx';
 
 export default function Login() {
   const { login, session } = useAuth();
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(() => localStorage.getItem('vaultwatch_remembered_username') || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [remember, setRemember] = useState(false);
+  const [remember, setRemember] = useState(() => localStorage.getItem('vaultwatch_remember_device') === 'true' || Boolean(localStorage.getItem('vaultwatch_remembered_username')));
   const [error, setError] = useState(false);
 
-  // Only redirect away from /login if a session already exists WHEN THE
-  // PAGE FIRST LOADS. This does not re-run on every keystroke or failed
-  // attempt, so a wrong-password error stays visible instead of getting
-  // overridden by a redirect.
-  React.useEffect(() => {
-    if (session) {
-      navigate(dashboardFor(session.role), { replace: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // If already authenticated, redirect immediately without rendering the form
+  if (session) {
+    return <Navigate to={dashboardFor(session.role)} replace />;
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError(false);
-    const result = await login(username, password);
+    const result = await login(username, password, remember);
     if (!result.ok) {
       setError(true);
       return;
+    }
+    if (remember) {
+      localStorage.setItem('vaultwatch_remembered_username', username.trim());
+      localStorage.setItem('vaultwatch_remember_device', 'true');
+    } else {
+      localStorage.removeItem('vaultwatch_remembered_username');
+      localStorage.removeItem('vaultwatch_remember_device');
     }
     navigate(dashboardFor(result.session.role), { replace: true });
   }

@@ -17,12 +17,19 @@ import AdminUsers from './pages/AdminUsers.jsx';
 import Settings from './pages/Settings.jsx';
 import { AuditLogPage } from './pages/AuditLogPage.jsx';
 
+import { useAuth, dashboardFor } from './context/AuthContext.jsx';
+
+function RootRoute() {
+  const { session } = useAuth();
+  return session ? <Navigate to={dashboardFor(session.role)} replace /> : <Navigate to="/login" replace />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <StatusProvider>
         <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/" element={<RootRoute />} />
           <Route path="/login" element={<Login />} />
 
           <Route

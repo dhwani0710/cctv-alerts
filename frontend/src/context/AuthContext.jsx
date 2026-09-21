@@ -13,7 +13,9 @@ export function dashboardFor(role) {
 
 function loadSession() {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    // Check localStorage first (set when user chose "Remember this device"),
+    // then fall back to sessionStorage (standard tab-scoped session).
+    const raw = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || !parsed.role) return null;
@@ -26,12 +28,12 @@ function loadSession() {
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(loadSession);
 
-  async function login(username, password) {
+  async function login(username, password, rememberMe = false) {
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify({ username: username.trim(), password, remember_me: rememberMe }),
       });
       const data = await res.json();
       if (!data.ok) return { ok: false };
@@ -42,7 +44,9 @@ export function AuthProvider({ children }) {
         token: data.token,
         loggedInAt: Date.now(),
       };
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+      // Persist to the appropriate store based on user choice
+      const store = rememberMe ? localStorage : sessionStorage;
+      store.setItem(SESSION_KEY, JSON.stringify(next));
       setSession(next);
       return { ok: true, session: next };
     } catch (err) {
@@ -51,7 +55,9 @@ export function AuthProvider({ children }) {
   }
 
   function logout() {
+    // Clear both stores — covers both remembered and non-remembered sessions
     sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_KEY);
     setSession(null);
   }
 

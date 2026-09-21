@@ -13,7 +13,8 @@ JWT_SECRET = os.getenv("JWT_SECRET")
 if not JWT_SECRET:
     raise RuntimeError("JWT_SECRET environment variable is not set")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_HOURS = 12
+JWT_EXPIRY_HOURS      = 12
+REMEMBER_EXPIRY_HOURS = 720   # 30 days — used when "Remember this device" is checked
 
 def hash_password(password: str) -> str:
     pwd_bytes = password.encode('utf-8')[:72]
@@ -26,12 +27,15 @@ def verify_password(password: str, password_hash: str) -> bool:
     except Exception:
         return False
 
-def create_token(user_id, username, role):
+def create_token(user_id, username, role, remember: bool = False):
+    """Create a signed JWT. When remember=True a 30-day token is issued;
+    otherwise the standard 12-hour expiry is used."""
+    hours = REMEMBER_EXPIRY_HOURS if remember else JWT_EXPIRY_HOURS
     payload = {
         "user_id": user_id,
         "username": username,
         "role": role,
-        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+        "exp": datetime.utcnow() + timedelta(hours=hours)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
