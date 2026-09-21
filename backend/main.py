@@ -84,9 +84,42 @@ class UpdateUserRequest(BaseModel):
     role: Optional[str] = None
     password: Optional[str] = None
 
+class UpdateAccountRequest(BaseModel):
+    username: str
+
 @app.get("/auth/me")
 def get_me(current_user: dict = Depends(verify_token)):
     return current_user
+
+@app.put("/auth/me")
+def update_own_account(req: UpdateAccountRequest, current_user: dict = Depends(verify_token)):
+    new_username = req.username.strip()
+    if not new_username:
+        raise HTTPException(status_code=400, detail="Username cannot be empty")
+    
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE username = %s AND id != %s", (new_username, current_user["user_id"]))
+        if cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=400, detail="Username already taken")
+            
+        cur.execute("UPDATE users SET username = %s WHERE id = %s", (new_username, current_user["user_id"]))
+        conn.commit()
+        cur.close()
+
+    new_token = create_token(current_user["user_id"], new_username, current_user["role"])
+    
+    log_audit_event(
+        username=new_username,
+        user_role=current_user.get("role"),
+        action="ACCOUNT_UPDATED",
+        target_module="Users",
+        details=f"User updated their username to '{new_username}'",
+        user_id=current_user.get("user_id")
+    )
+    
+    return {"message": "Account updated", "username": new_username, "token": new_token}
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
