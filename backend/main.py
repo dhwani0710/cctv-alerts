@@ -787,6 +787,7 @@ def delete_record(alert_id: int, current_user: dict = Depends(require_staff)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM alerts WHERE incident_id = %s", (alert_id,))
+        cur.execute("DELETE FROM alert_records WHERE incident_id = %s", (alert_id,))
         cur.execute("DELETE FROM incidents WHERE id = %s", (alert_id,))
         deleted = cur.rowcount
         conn.commit()
@@ -811,6 +812,7 @@ def clear_all_records(current_user: dict = Depends(require_admin)):
         cur = conn.cursor()
         cur.execute("DELETE FROM alerts")
         alerts_deleted = cur.rowcount
+        cur.execute("DELETE FROM alert_records")
         cur.execute("DELETE FROM incidents")
         incidents_deleted = cur.rowcount
         conn.commit()
