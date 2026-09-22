@@ -390,13 +390,11 @@ async def add_employee(
     if shift_start == shift_end:
         return {"error": "Shift start and end time cannot be the same."}
     if len(photos) == 0:
-        for photo in photos:
-            _validate_photo_upload(photo)
         return {"error": "At least one photo is required."}
 
     folder_name = _safe_folder_name(name)
     for photo in photos:
-        _validate_photo(photo)
+        _validate_photo_upload(photo)
     employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
     os.makedirs(employee_folder, exist_ok=True)
 
@@ -908,25 +906,24 @@ def _normalize_time(date_str: str, time_val: Optional[str], default_time: str) -
         return f"{date_str}T{parts[0].zfill(2)}:{parts[1].zfill(2)}:{parts[2].zfill(2)}"
     return f"{date_str}T{default_time}"
 
-def _build_attendance_query(start_date=None, end_date=None, date=None, employee_id=None, zone_name=None, status=None, search=None):
+def _resolve_attendance_range(start_date=None, end_date=None, date=None):
+    if start_date and end_date:
+        return start_date, end_date
+    if start_date:
+        return start_date, start_date
+    if end_date:
+        return end_date, end_date
+    if date:
+        return date, date
+    today = datetime.now().date().isoformat()
+    return today, today
+
+def _build_attendance_filters(employee_id=None, zone_name=None, status=None, search=None):
     where_clauses = []
     params = []
 
-    if start_date and end_date:
-        where_clauses.append("a.attendance_date >= %s AND a.attendance_date <= %s")
-        params.extend([start_date, end_date])
-    elif start_date:
-        where_clauses.append("a.attendance_date >= %s")
-        params.append(start_date)
-    elif end_date:
-        where_clauses.append("a.attendance_date <= %s")
-        params.append(end_date)
-    elif date:
-        where_clauses.append("a.attendance_date = %s")
-        params.append(date)
-
     if employee_id:
-        where_clauses.append("a.employee_id = %s")
+        where_clauses.append("emp.id = %s")
         params.append(int(employee_id))
 
     if zone_name and zone_name.strip():
@@ -934,11 +931,13 @@ def _build_attendance_query(start_date=None, end_date=None, date=None, employee_
         params.append(zone_name.strip())
 
     if status and status.strip() and status.lower() != "all":
-        where_clauses.append("LOWER(COALESCE(a.status, 'present')) = LOWER(%s)")
+        where_clauses.append(
+            "LOWER(CASE WHEN a.id IS NULL THEN 'absent' ELSE COALESCE(a.status, 'present') END) = LOWER(%s)"
+        )
         params.append(status.strip())
 
     if search and search.strip():
-        where_clauses.append("LOWER(e.name) LIKE %s")
+        where_clauses.append("LOWER(emp.name) LIKE %s")
         params.append(f"%{search.strip().lower()}%")
 
     where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
@@ -956,32 +955,36 @@ def get_attendance(
     page: int = 1,
     limit: int = 20
 ):
-    where_sql, params = _build_attendance_query(start_date, end_date, date, employee_id, zone_name, status, search)
+    range_start, range_end = _resolve_attendance_range(start_date, end_date, date)
+    where_sql, filter_params = _build_attendance_filters(employee_id, zone_name, status, search)
+
+    base_from = (
+        "FROM employees emp "
+        "CROSS JOIN generate_series(%s::date, %s::date, interval '1 day') AS d(day) "
+        "LEFT JOIN attendance a ON a.employee_id = emp.id AND a.attendance_date = d.day::date::text"
+    )
+    range_params = [range_start, range_end]
 
     with get_db() as conn:
         cur = conn.cursor()
-        count_query = (
-            "SELECT COUNT(*) as total FROM attendance a "
-            "JOIN employees e ON e.id = a.employee_id"
-            + where_sql
-        )
-        cur.execute(count_query, tuple(params))
+        count_query = "SELECT COUNT(*) as total " + base_from + where_sql
+        cur.execute(count_query, tuple(range_params + filter_params))
         count_row = cur.fetchone()
         total = count_row["total"] if count_row else 0
 
         offset = max(0, (page - 1) * limit)
         data_query = (
-            "SELECT a.id, a.employee_id, e.name, e.designation, e.shift_start, e.shift_end, "
-            "a.attendance_date, a.first_seen, a.last_seen, "
-            "COALESCE(a.zone_name, 'Front Door') as zone_name, "
-            "COALESCE(a.status, 'present') as status, a.override_reason, "
+            "SELECT emp.id as employee_id, emp.name, emp.designation, emp.shift_start, emp.shift_end, "
+            "d.day::date::text as attendance_date, "
+            "a.first_seen, a.last_seen, "
+            "a.zone_name, "
+            "CASE WHEN a.id IS NULL THEN 'absent' ELSE COALESCE(a.status, 'present') END as status, "
+            "a.override_reason, "
             "COALESCE(a.is_override, FALSE) as is_override "
-            "FROM attendance a "
-            "JOIN employees e ON e.id = a.employee_id"
-            + where_sql
-            + " ORDER BY a.attendance_date DESC, a.first_seen ASC LIMIT %s OFFSET %s"
+            + base_from + where_sql
+            + " ORDER BY d.day DESC, emp.name ASC LIMIT %s OFFSET %s"
         )
-        data_params = list(params) + [limit, offset]
+        data_params = range_params + filter_params + [limit, offset]
         cur.execute(data_query, tuple(data_params))
         rows = cur.fetchall()
         cur.close()
@@ -1004,9 +1007,9 @@ def get_attendance(
         "page": page,
         "limit": limit,
         "total_pages": total_pages,
-        "start_date": start_date or date,
-        "end_date": end_date or date,
-        "date": date or start_date or datetime.now().date().isoformat()
+        "start_date": range_start,
+        "end_date": range_end,
+        "date": date or range_start
     }
 
 @app.get("/attendance/export", dependencies=[Depends(verify_token)])
@@ -1020,23 +1023,29 @@ def export_attendance(
     search: Optional[str] = None,
     format: Optional[str] = "csv"
 ):
-    where_sql, params = _build_attendance_query(start_date, end_date, date, employee_id, zone_name, status, search)
+    range_start, range_end = _resolve_attendance_range(start_date, end_date, date)
+    where_sql, filter_params = _build_attendance_filters(employee_id, zone_name, status, search)
+
+    base_from = (
+        "FROM employees emp "
+        "CROSS JOIN generate_series(%s::date, %s::date, interval '1 day') AS d(day) "
+        "LEFT JOIN attendance a ON a.employee_id = emp.id AND a.attendance_date = d.day::date::text"
+    )
+    range_params = [range_start, range_end]
 
     with get_db() as conn:
         cur = conn.cursor()
         data_query = (
-            "SELECT a.id, a.employee_id, e.name, e.designation, "
-            "a.attendance_date, a.first_seen, a.last_seen, "
-            "a.attendance_date, a.first_seen, a.last_seen, "
+            "SELECT emp.id as employee_id, emp.name, emp.designation, "
+            "d.day::date::text as attendance_date, a.first_seen, a.last_seen, "
             "COALESCE(a.zone_name, 'Front Door') as zone_name, "
-            "COALESCE(a.status, 'present') as status, a.override_reason, "
+            "CASE WHEN a.id IS NULL THEN 'absent' ELSE COALESCE(a.status, 'present') END as status, "
+            "a.override_reason, "
             "COALESCE(a.is_override, FALSE) as is_override "
-            "FROM attendance a "
-            "JOIN employees e ON e.id = a.employee_id"
-            + where_sql
-            + " ORDER BY a.attendance_date DESC, a.first_seen ASC"
+            + base_from + where_sql
+            + " ORDER BY d.day DESC, emp.name ASC"
         )
-        cur.execute(data_query, tuple(params))
+        cur.execute(data_query, tuple(range_params + filter_params))
         rows = cur.fetchall()
         cur.close()
 
