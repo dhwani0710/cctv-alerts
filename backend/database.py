@@ -85,6 +85,7 @@ def init_db():
             zone_id TEXT
         )
     """)
+    cursor.execute("ALTER TABLE alert_records ADD COLUMN IF NOT EXISTS incident_id INTEGER")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS employee_photos (
