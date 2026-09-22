@@ -158,7 +158,7 @@ export default function Shell({
   const { hasHighAlert } = useStatus();
 
   const role = session?.role || 'employee';
-  const name = session?.name || 'User';
+  const name = session?.username || 'User';
 
   const isAdmin = role === 'ceo' || role === 'owner';
   const isGuard = role === 'guard';
