@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Shell from '../components/Shell.jsx';
-import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const STATUS_LABEL = { high: 'Flagged', medium: 'Review', low: 'Clear' };
@@ -89,12 +88,6 @@ export default function Records() {
   useEffect(() => { loadRecords(); }, [loadRecords]);
   useEffect(() => { setPage(1); }, [camera, status, date]);
 
-  async function confirmDelete() {
-    await apiFetch(`/records/${deleteTarget.id}`, { method: 'DELETE' });
-    setDeleteTarget(null);
-    loadRecords();
-  }
-
   return (
     <Shell active="records" title="Records">
       <div className="page-head">
@@ -102,7 +95,7 @@ export default function Records() {
         <h1>Access & alert records</h1>
         <p>Every entry, exit and flagged event, in order.</p>
       </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
         <button className="btn btn-outline btn-sm" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>Prev</button>
         <span style={{ alignSelf: 'center', fontSize: 13.5 }}>Page {page} of {totalPages}</span>
         <button className="btn btn-outline btn-sm" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
@@ -157,19 +150,11 @@ export default function Records() {
                 <th style={{ textAlign: 'center' }}>Event</th>
                 <th style={{ textAlign: 'center' }}>Count</th>
                 <th style={{ textAlign: 'center' }}>Status</th>
-                {isAdmin && <th></th>}
               </tr>
             </thead>
             <tbody>
               {records.map((r) => (
                 <tr key={r.id}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(r.id)}
-                      onChange={() => toggleSelectOne(r.id)}
-                    />
-                  </td>
                   <td className="mono">{new Date(r.timestamp).toLocaleDateString()}</td>
                   <td className="mono">{new Date(r.timestamp).toLocaleTimeString()}</td>
                   <td>{r.camera_name}</td>
@@ -178,11 +163,10 @@ export default function Records() {
                   <td>{r.person_name === 'Unknown@front' ? 'Detect outside the store' : r.message.replace(/^\[.*?\]\s*/, '').replace(/^\S+\s*present\s*/i, '')}</td>
                   <td className="mono">{r.occurrences}</td>
                   <td><span className={`pill ${STATUS_PILL[r.priority]}`}>{STATUS_LABEL[r.priority]}</span></td>
-                  {isAdmin && <td><button className="btn btn-outline btn-sm" onClick={() => setDeleteTarget(r)}>Delete</button></td>}
                 </tr>
               ))}
               {records.length === 0 && (
-                <tr><td colSpan={isAdmin ? 10 : 9} style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No records match these filters.</td></tr>
+                <tr><td colSpan={8} style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No records match these filters.</td></tr>
               )}
             </tbody>
           </table>
