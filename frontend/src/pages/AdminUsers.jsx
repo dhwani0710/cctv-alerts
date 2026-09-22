@@ -117,16 +117,26 @@ export default function AdminUsers() {
     }
   }
 
+  async function handleExport() {
+    const res = await apiFetch('/users/export');
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'users.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    }
+  }
+
   return (
     <Shell active="users" title="Users">
-      <div className="page-head" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-        <div>
-          <h1>Login accounts</h1>
-          <p>Create logins and manage roles for admin, hr, and guard accounts.</p>
-        </div>
-        {isAdmin && (
-          <button className="btn btn-brass" onClick={() => setShowAdd((v) => !v)}>+ Create user</button>
-        )}
+      <div className="page-head">
+        <h1>Login accounts</h1>
+        <p>Create logins and manage roles for admin, hr, and guard accounts.</p>
       </div>
 
       <div className="filter-bar">
@@ -134,6 +144,10 @@ export default function AdminUsers() {
           <option value="">All roles</option>
           {roles.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
+
+        {isAdmin && (
+          <button className="btn btn-brass" style={{ marginLeft: 'auto' }} onClick={() => setShowAdd((v) => !v)}>+ Create user</button>
+        )}
       </div>
 
       {isAdmin && showAdd && (
@@ -141,15 +155,15 @@ export default function AdminUsers() {
           <div className="panel-head"><h2>New user</h2></div>
           {addError && <div className="form-error show">{addError}</div>}
           <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div className="field"><label>Username</label><input value={username} onChange={(e) => setUsername(e.target.value)} required /></div>
+            <div className="field"><label>Username</label><input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" required /></div>
             <div className="field">
               <label>Role</label>
               <select value={role} onChange={(e) => setRole(e.target.value)}>
                 {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
-            <div className="field"><label>Password</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
-            <div className="field"><label>Confirm password</label><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required /></div>
+            <div className="field"><label>Password</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required /></div>
+            <div className="field"><label>Confirm password</label><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" required /></div>
             <div style={{ gridColumn: '1/-1', display: 'flex', gap: 10 }}>
               <button type="submit" className="btn btn-brass">Create user</button>
               <button type="button" className="btn btn-outline" onClick={() => setShowAdd(false)}>Cancel</button>

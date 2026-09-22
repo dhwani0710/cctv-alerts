@@ -221,33 +221,14 @@ export default function AdminEmployees() {
 
   return (
     <Shell active="employees" title="Employees">
-      <div
-        className="page-head"
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-        }}
-      >
-        <div>
-          <h1>Staff roster</h1>
+      <div className="page-head">
+        <h1>Staff roster</h1>
 
-          <p>
-            {canManageEmployees
-              ? 'Add employees, manage staff details, and set shift hours.'
-              : 'View who’s on the team and their shift hours.'}
-          </p>
-        </div>
-
-        {/* HR, CEO and Owner can add employees */}
-        {canManageEmployees && (
-          <button
-            className="btn btn-brass"
-            onClick={() => setShowAdd((value) => !value)}
-          >
-            + Add employee
-          </button>
-        )}
+        <p>
+          {canManageEmployees
+            ? 'Add employees, manage staff details, and set shift hours.'
+            : 'View who’s on the team and their shift hours.'}
+        </p>
       </div>
 
       <div className="filter-bar">
@@ -279,6 +260,17 @@ export default function AdminEmployees() {
           <option value="day">Day shift</option>
           <option value="night">Night shift</option>
         </select>
+
+        {/* HR, CEO and Owner can add employees */}
+        {canManageEmployees && (
+          <button
+            className="btn btn-brass"
+            style={{ marginLeft: 'auto' }}
+            onClick={() => setShowAdd((value) => !value)}
+          >
+            + Add employee
+          </button>
+        )}
       </div>
 
       {/* Add Employee Form */}
@@ -416,8 +408,6 @@ export default function AdminEmployees() {
               <span>{employee.shift}</span>
             </div>
 
-            {/* PUT THE EDIT AND REMOVE BUTTONS HERE */}
-            {/* Directly below the shift row */}
             {canManageEmployees && (
               <div className="actions">
                 <button
@@ -452,7 +442,6 @@ export default function AdminEmployees() {
         )}
       </div>
 
-      {/* Edit Employee Modal */}
       {editTarget && (
         <div
           className="cam-lightbox-backdrop"
