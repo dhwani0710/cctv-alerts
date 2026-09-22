@@ -477,7 +477,7 @@ async def update_employee(
                 _clear_face_cache()
 
         if photo is not None and photo.filename:
-            _validate_photo(photo)
+            _validate_photo_upload(photo)
             folder_name = _safe_folder_name(name)
             employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
             os.makedirs(employee_folder, exist_ok=True)
