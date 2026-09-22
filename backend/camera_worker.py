@@ -52,16 +52,20 @@ def update_currently_detected(name, camera_name, now):
         conn.commit()
         cur.close()
 
-def update_attendance(employee_id, now, camera_id):
+def update_attendance(employee_id, now, camera_id, shift_start_dt=None):
     today = now.date().isoformat()
     zone_name = _get_camera_zone_name(camera_id)
+    status = "late" if shift_start_dt is not None and now > shift_start_dt else "present"
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, zone_name) "
-            "VALUES (%s, %s, %s, %s, %s) "
-            "ON CONFLICT(employee_id, attendance_date) DO UPDATE SET last_seen = EXCLUDED.last_seen, zone_name = EXCLUDED.zone_name",
-            (employee_id, today, now.isoformat(), now.isoformat(), zone_name)
+            "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, zone_name, status) "
+            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT(employee_id, attendance_date) DO UPDATE SET "
+            "last_seen = EXCLUDED.last_seen, zone_name = EXCLUDED.zone_name, "
+            "status = CASE WHEN attendance.status = 'absent' THEN EXCLUDED.status ELSE attendance.status END, "
+            "is_override = CASE WHEN attendance.status = 'absent' THEN FALSE ELSE attendance.is_override END",
+            (employee_id, today, now.isoformat(), now.isoformat(), zone_name, status)
         )
         conn.commit()
         cur.close()
@@ -180,8 +184,8 @@ def _process_frame(frame, camera_id, camera_name):
                 emp = cur.fetchone()
                 cur.close()
             if emp:
-                update_attendance(emp["id"], now, camera_id)
                 shift_start_dt, shift_end_dt = get_shift_datetimes(now, emp["shift_start"], emp["shift_end"])
+                update_attendance(emp["id"], now, camera_id, shift_start_dt)
 
                 if now < shift_start_dt:
                     minutes_early = (shift_start_dt - now).total_seconds() / 60
