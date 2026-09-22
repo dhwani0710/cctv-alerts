@@ -2438,3 +2438,59 @@ table.records tr:last-child td {
     max-height: 24px !important;
   }
 }
+
+/* ---------- feedback banners / loading states (Records page etc.) ---------- */
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13.5px;
+  margin-bottom: 12px;
+}
+
+.banner-error {
+  background: rgba(193, 67, 46, .08);
+  border: 1px solid var(--brick);
+  color: var(--brick);
+}
+
+.banner-error button {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--brick);
+  color: var(--brick);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.banner-error button:hover {
+  background: rgba(193, 67, 46, .12);
+}
+
+.spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--border);
+  border-top-color: var(--brass);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.table-empty-state {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  padding: 24px 0;
+}
