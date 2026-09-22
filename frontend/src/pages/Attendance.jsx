@@ -4,38 +4,52 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 const tightCell = { padding: '11px 6px' };
 
+function monthRange(monthStr) {
+  const [year, month] = monthStr.split('-').map(Number);
+  const start = `${monthStr}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const today = new Date();
+  const isCurrentMonth = today.getFullYear() === year && today.getMonth() + 1 === month;
+  const endDay = isCurrentMonth ? today.getDate() : lastDay;
+  const end = `${monthStr}-${String(endDay).padStart(2, '0')}`;
+  return { start, end };
+}
+
 export default function Attendance() {
   const { apiFetch } = useAuth();
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [records, setRecords] = useState([]);
   const [search, setSearch] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await apiFetch(`/attendance?date=${date}`);
+    const { start, end } = monthRange(month);
+    const res = await apiFetch(`/attendance?start_date=${start}&end_date=${end}&limit=1000`);
     if (res.ok) {
       const data = await res.json();
       setRecords(data.records || []);
     }
-  }, [apiFetch, date]);
+  }, [apiFetch, month]);
 
   useEffect(() => { load(); }, [load]);
 
   async function handleExport() {
-    const res = await apiFetch(`/attendance/export?date=${date}`);
+    const { start, end } = monthRange(month);
+    const res = await apiFetch(`/attendance/export?start_date=${start}&end_date=${end}`);
     if (res.ok) {
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `attendance-${date}.csv`;
+      a.download = `attendance-${month}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
     }
   }
-    const filteredRecords = records.filter((r) =>
+
+  const filteredRecords = records.filter((r) =>
     r.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -49,16 +63,13 @@ export default function Attendance() {
 
   return (
     <Shell active="attendance" title="Attendance">
-      <div className="page-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <h1>Attendance</h1>
-          <p>Staff attendance based on camera first-seen / last-seen detection.</p>
-        </div>
-        <button className="btn btn-brass" onClick={handleExport}>Export CSV</button>
+      <div className="page-head">
+        <h1>Attendance</h1>
+        <p>Staff attendance based on camera first-seen / last-seen detection.</p>
       </div>
 
       <div className="filter-bar" style={{ gap: 12, display: 'flex', alignItems: 'center', position: 'relative' }}>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
 
         <div style={{ position: 'relative' }}>
           <input
@@ -87,6 +98,8 @@ export default function Attendance() {
             </ul>
           )}
         </div>
+
+        <button className="btn btn-brass" style={{ marginLeft: 'auto' }} onClick={handleExport}>Export CSV</button>
       </div>
 
       <div className="table-wrap">
@@ -103,11 +116,11 @@ export default function Attendance() {
           <tbody>
             {filteredRecords.map((r, i) => (
               <tr key={i}>
-                <td className="mono" style={tightCell}>{date}</td>
+                <td className="mono" style={tightCell}>{r.attendance_date}</td>
                 <td>{r.name}</td>
-                <td className="mono" style={tightCell}>{new Date(r.first_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
-                <td className="mono" style={tightCell}>{new Date(r.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
-                <td><span className="pill clear">Present</span></td>
+                <td className="mono" style={tightCell}>{r.first_seen ? new Date(r.first_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                <td className="mono" style={tightCell}>{r.last_seen ? new Date(r.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                <td><span className={`pill ${r.status === 'present' ? 'clear' : 'flag'}`}>{r.status === 'present' ? 'Present' : r.status === 'absent' ? 'Absent' : r.status}</span></td>
               </tr>
             ))}
             {filteredRecords.length === 0 && (
