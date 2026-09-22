@@ -18,7 +18,12 @@ export default function Records() {
   const [selectedIds, setSelectedIds] = useState([]);
 
   function toggleSelectAll(e) {
-    setSelectedIds(e.target.checked ? records.map((r) => r.id) : []);
+    const pageIds = records.map((r) => r.id);
+    if (e.target.checked) {
+      setSelectedIds((prev) => [...new Set([...prev, ...pageIds])]);
+    } else {
+      setSelectedIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+    }
   }
 
   function toggleSelectOne(id) {
@@ -27,11 +32,12 @@ export default function Records() {
     );
   }
 
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+
   async function deleteSelected() {
-    for (const id of selectedIds) {
-      await apiFetch(`/records/${id}`, { method: 'DELETE' });
-    }
+    await Promise.all(selectedIds.map((id) => apiFetch(`/records/${id}`, { method: 'DELETE' })));
     setSelectedIds([]);
+    setConfirmBulkDelete(false);
     loadRecords();
   }
 
@@ -113,15 +119,24 @@ export default function Records() {
           <option value="review">Needs review</option>
         </select>
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5 }}>
+            <input
+              type="checkbox"
+              checked={records.length > 0 && records.every((r) => selectedIds.includes(r.id))}
+              onChange={toggleSelectAll}
+            />
+            Select all
+          </label>
           {selectedIds.length > 0 && (
-            <button className="btn btn-outline" onClick={deleteSelected}>
+            <button className="btn btn-outline" onClick={() => setConfirmBulkDelete(true)}>
               Delete selected ({selectedIds.length})
             </button>
           )}
           {isAdmin && <button className="btn btn-brass" onClick={handleExport}>Export CSV</button>}
         </div>
       </div>
+
       <div className="panel">
         <div className="table-wrap">
           <table className="records" style={{ tableLayout: 'fixed', width: '100%', textAlign: 'center' }}>
@@ -130,7 +145,7 @@ export default function Records() {
                 <th style={{ width: 40, textAlign: 'center' }}>
                   <input
                     type="checkbox"
-                    checked={records.length > 0 && selectedIds.length === records.length}
+                    checked={records.length > 0 && records.every((r) => selectedIds.includes(r.id))}
                     onChange={toggleSelectAll}
                   />
                 </th>
@@ -182,6 +197,15 @@ export default function Records() {
         danger
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
+      />
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title="Delete selected records"
+        message={`Permanently delete ${selectedIds.length} selected record${selectedIds.length === 1 ? '' : 's'}? This cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        onConfirm={deleteSelected}
+        onCancel={() => setConfirmBulkDelete(false)}
       />
     </Shell>
   );

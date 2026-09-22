@@ -786,11 +786,9 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
 def delete_record(alert_id: int, current_user: dict = Depends(require_staff)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM alerts WHERE id = %s", (alert_id,))
+        cur.execute("DELETE FROM alerts WHERE incident_id = %s", (alert_id,))
+        cur.execute("DELETE FROM incidents WHERE id = %s", (alert_id,))
         deleted = cur.rowcount
-        if deleted == 0:
-            cur.execute("DELETE FROM alert_records WHERE id = %s", (alert_id,))
-            deleted = cur.rowcount
         conn.commit()
         cur.close()
     if deleted == 0:
