@@ -1442,7 +1442,7 @@ def _mjpeg_generator(camera_id):
         if frame is not None:
             _, buffer = cv2.imencode(".jpg", frame, encode_params)
             yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
-            time.sleep(1/15)
+            time.sleep(1/8)
         else:
             yield offline_bytes
             time.sleep(1.0)
