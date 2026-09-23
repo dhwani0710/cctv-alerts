@@ -92,6 +92,8 @@ def recognize_faces(frame):
             max_distance = get_setting_float("match_distance_threshold")
 
             accepted_name = "Unknown"
+            best_folder = None
+            best_avg_distance = None
             for folder_name, raw_distances in matches_by_employee.items():
                 distances = raw_distances
                 if max_distance is not None:
@@ -99,8 +101,13 @@ def recognize_faces(frame):
                 required = min(min_matching, photo_counts.get(folder_name, 1))
                 print(f"[DEBUG] {folder_name}: {len(distances)} photo(s) matched (need {required}), raw distances: {raw_distances}, filtered: {distances}")
                 if len(distances) >= required:
-                    accepted_name = folder_name.replace("_", " ")
-                    break
+                    avg_distance = sum(distances) / len(distances)
+                    if best_avg_distance is None or avg_distance < best_avg_distance:
+                        best_folder = folder_name
+                        best_avg_distance = avg_distance
+
+            if best_folder is not None:
+                accepted_name = best_folder.replace("_", " ")
 
             names.append(accepted_name)
 

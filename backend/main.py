@@ -392,6 +392,14 @@ async def add_employee(
     if len(photos) == 0:
         return {"error": "At least one photo is required."}
 
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM employees WHERE LOWER(name) = LOWER(%s)", (name.strip(),))
+        existing = cur.fetchone()
+        cur.close()
+    if existing:
+        return {"error": f"An employee named '{name.strip()}' already exists."}
+
     folder_name = _safe_folder_name(name)
     for photo in photos:
         _validate_photo_upload(photo)

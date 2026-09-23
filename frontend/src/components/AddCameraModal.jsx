@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 
+const RTSP_URL_RE = /^rtsps?:\/\/(?:[^\s@]+@)?[a-zA-Z0-9.-]+(?::\d{1,5})?(?:\/[^\s]*)?$/i;
+
 export default function AddCameraModal({ onClose, onAdded }) {
   const { apiFetch } = useAuth();
   const [name, setName] = useState('');
@@ -14,6 +16,10 @@ export default function AddCameraModal({ onClose, onAdded }) {
     setError('');
     if (!name.trim() || !rtspUrl.trim()) {
       setError('Camera name and stream address are both required.');
+      return;
+    }
+    if (!RTSP_URL_RE.test(rtspUrl.trim())) {
+      setError('Stream address must be a valid RTSP URL, e.g. rtsp://username:password@camera-ip:554/path');
       return;
     }
     const id = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
