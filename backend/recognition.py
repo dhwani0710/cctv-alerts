@@ -18,7 +18,14 @@ def _get_known_faces_info():
     now = time.time()
     if now - _face_cache["ts"] < _FACE_CACHE_TTL:
         return _face_cache["has_photos"], _face_cache["photo_counts"]
-    has_photos, photo_counts = _get_known_faces_info()
+    has_photos = False
+    photo_counts = {}
+    for root, dirs, files in os.walk(KNOWN_FACES_DIR):
+        image_files = [f for f in files if f.lower().endswith(VALID_PHOTO_EXTENSIONS)]
+        if image_files:
+            has_photos = True
+            folder_name = os.path.basename(root)
+            photo_counts[folder_name] = len(image_files)
     _face_cache.update(has_photos=has_photos, photo_counts=photo_counts, ts=now)
     return has_photos, photo_counts
 

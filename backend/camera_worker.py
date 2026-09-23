@@ -1,5 +1,5 @@
 import os
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay"
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|stimeout;5000000"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 import cv2
@@ -242,10 +242,14 @@ def _camera_loop(camera_config, stop_event):
 
     cap = _open_capture()
 
-    if not cap.isOpened():
-        print(f"[camera_worker] Camera '{camera_name}' ({camera_id}) not detected — running without live video.")
-        while not stop_event.is_set():
-            time.sleep(5)
+    while not cap.isOpened() and not stop_event.is_set():
+        print(f"[camera_worker] Camera '{camera_name}' ({camera_id}) not detected — retrying in 10s...")
+        cap.release()
+        time.sleep(10)
+        cap = _open_capture()
+
+    if stop_event.is_set():
+        cap.release()
         _cleanup_camera_state(camera_id)
         return
 
