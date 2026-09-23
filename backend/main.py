@@ -1318,21 +1318,41 @@ def list_zones():
     return [dict(r) for r in rows]
 
 @app.post("/zones", dependencies=[Depends(require_admin)])
-def add_zone(payload: ZoneRequest):
+def add_zone(payload: ZoneRequest, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("INSERT INTO zones (id, name) VALUES (%s, %s)", (payload.id, payload.name))
         conn.commit()
         cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="ZONE_ADDED",
+        target_module="Zones",
+        details=f"Added zone '{payload.name}' ({payload.id})",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": "Zone added"}
 
 @app.delete("/zones/{zone_id}", dependencies=[Depends(require_admin)])
-def delete_zone(zone_id: str):
+def delete_zone(zone_id: str, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM zones WHERE id = %s", (zone_id,))
         conn.commit()
         cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="ZONE_DELETED",
+        target_module="Zones",
+        details=f"Deleted zone {zone_id}",
+        user_id=current_user.get("user_id")
+    )
+
     return {"message": "Zone deleted"}
 
 # --- Incidents ---

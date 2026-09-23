@@ -61,24 +61,6 @@ def is_within_store_hours(now: datetime):
     close_t = now.replace(hour=close_h, minute=close_m, second=0, microsecond=0)
     return open_t <= now <= close_t
 
-    from app_settings import get_setting_int
-    if window_seconds is None:
-        window_seconds = get_setting_int("alert_dedupe_window_sec") or 60
-    cutoff = datetime.now() - timedelta(seconds=window_seconds)
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT timestamp FROM alerts WHERE person_name = %s AND alert_type = %s AND priority = %s "
-            "ORDER BY timestamp DESC LIMIT 1",
-            (person_name, alert_type, priority)
-        )
-        row = cur.fetchone()
-        cur.close()
-    if not row:
-        return False
-    alert_time = datetime.fromisoformat(row["timestamp"])
-    return alert_time >= cutoff
-
 def get_or_create_incident(person_name, alert_type, priority, camera_name, zone_name, window_seconds=None):
     from app_settings import get_setting_int
     if window_seconds is None:
