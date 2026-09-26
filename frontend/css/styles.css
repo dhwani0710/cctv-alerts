@@ -1281,6 +1281,11 @@ table.records tr:last-child td {
   color: var(--brass-dim);
 }
 
+.pill.late {
+  background: rgba(240, 195, 107, .18);
+  color: #B8860B;
+}
+
 /* ---------- staff ---------- */
 .staff-grid {
   display: grid;
