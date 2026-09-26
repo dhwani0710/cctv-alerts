@@ -120,7 +120,7 @@ export default function Attendance() {
                 <td>{r.name}</td>
                 <td className="mono" style={tightCell}>{r.first_seen ? new Date(r.first_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                 <td className="mono" style={tightCell}>{r.last_seen ? new Date(r.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-                <td><span className={`pill ${r.status === 'present' ? 'clear' : 'flag'}`}>{r.status === 'present' ? 'Present' : r.status === 'absent' ? 'Absent' : r.status}</span></td>
+                <td><span className={`pill ${r.status === 'present' ? 'clear' : r.status === 'late' ? 'late' : r.status === 'pending' ? 'review' : 'flag'}`}>{r.status === 'present' ? 'Present' : r.status === 'late' ? 'Late' : r.status === 'pending' ? 'Not yet due' : 'Absent'}</span></td>
               </tr>
             ))}
             {filteredRecords.length === 0 && (
