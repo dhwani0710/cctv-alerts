@@ -223,7 +223,7 @@ export default function Records() {
           </label>
           {selectedIds.length > 0 && (
             <button className="btn btn-outline" onClick={() => setConfirmBulkDelete(true)} disabled={deleting}>
-              {deleting ? <><span className="spinner" /> Deleting…</> : `Delete selected (${selectedIds.length})`}
+              {`Delete selected (${selectedIds.length})`}
             </button>
           )}
           {isAdmin && (
@@ -317,6 +317,7 @@ export default function Records() {
         message={`Permanently delete ${selectedIds.length} selected record${selectedIds.length === 1 ? '' : 's'}? This cannot be undone.`}
         confirmLabel="Delete"
         danger
+        loading={deleting}
         onConfirm={deleteSelected}
         onCancel={() => setConfirmBulkDelete(false)}
       />
