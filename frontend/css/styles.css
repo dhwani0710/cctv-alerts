@@ -612,6 +612,8 @@ button {
   align-items: center;
   gap: 6px;
   padding: 18px 0;
+  position: relative;
+  z-index: 50;
 }
 
 .rail-brand {
@@ -658,7 +660,8 @@ button {
   opacity: 0;
   pointer-events: none;
   transition: opacity .12s, transform .12s;
-  z-index: 20;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 .rail-link:hover .tip {
