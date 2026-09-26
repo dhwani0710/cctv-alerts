@@ -593,9 +593,6 @@ button {
 }
 
 /* ---------- app shell ---------- */
-/* FIX: was min-height: 100vh (allowed page to grow taller than viewport and scroll).
-   Now fixed to 100vh with overflow hidden so the shell itself never scrolls;
-   only .content (or .vscode-settings-content) scrolls internally when needed. */
 .shell {
   height: 100vh;
   overflow: hidden;
@@ -670,8 +667,6 @@ button {
   flex: 1;
 }
 
-/* FIX: .main now takes exactly the shell's height and clips its own overflow,
-   so only its children (.content) scroll — never the whole page. */
 .main {
   flex: 1;
   min-width: 0;
@@ -1541,23 +1536,25 @@ table.records tr:last-child td {
 }
 
 /* =====================================================
-   VS CODE STYLE SETTINGS
+   SETTINGS PAGE (VS CODE STYLE LAYOUT, APP THEME COLORS)
    ===================================================== */
 
-/* FIX: was min-height: calc(100vh - 60px), which forced this panel to be at
-   least viewport-height even after the topbar/rail already used up space —
-   that's what pushed content past the fold and created the scrollbar.
-   Now it just fills its parent (.content) at 100% and doesn't scroll itself;
-   only .vscode-settings-content scrolls if a category's fields get long. */
 .vscode-settings {
   width: 100%;
   height: 100%;
   min-height: 0;
-  background: #111418;
-  color: #e6e6e6;
+  background: var(--bg);
+  color: var(--text);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+}
+
+/* Recent Alerts + Activity Log */
+.alerts-activity-grid {
+  display: grid;
+  grid-template-columns: 1.7fr .85fr;
+  gap: 18px;
+  align-items: start;
 }
 
 /* TOP BAR */
@@ -1569,8 +1566,8 @@ table.records tr:last-child td {
   align-items: center;
   gap: 16px;
   padding: 0 24px;
-  border-bottom: 1px solid #30343b;
-  background: #17191d;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
 }
 
 .vscode-search {
@@ -1580,13 +1577,13 @@ table.records tr:last-child td {
   align-items: center;
   gap: 9px;
   padding: 0 10px;
-  border: 1px solid #3b4048;
-  background: #1d2025;
-  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-md);
 }
 
 .vscode-search-icon {
-  color: #a7adb7;
+  color: var(--text-muted);
   font-size: 20px;
 }
 
@@ -1595,17 +1592,21 @@ table.records tr:last-child td {
   border: none;
   outline: none;
   background: transparent;
-  color: #ddd;
+  color: var(--text);
   font-size: 13px;
 }
 
 .vscode-search input::placeholder {
-  color: #858b95;
+  color: var(--text-muted);
 }
 
 .vscode-search-shortcut {
-  color: #777e89;
+  color: var(--text-muted);
   font-size: 11px;
+}
+
+.vscode-search:focus-within {
+  border-color: var(--brass);
 }
 
 /* USER / WORKSPACE */
@@ -1619,15 +1620,15 @@ table.records tr:last-child td {
   border: none;
   padding: 0 16px;
   background: transparent;
-  color: #9ca2ac;
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 13px;
 }
 
 .vscode-scope-tabs button.active {
-  color: #ffffff;
-  background: #30343b;
-  border-radius: 4px;
+  color: var(--text);
+  background: var(--bg-soft);
+  border-radius: var(--radius-md);
 }
 
 .vscode-topbar-space {
@@ -1638,23 +1639,22 @@ table.records tr:last-child td {
   height: 34px;
   padding: 0 14px;
   border: none;
-  border-radius: 4px;
-  background: #0875a1;
-  color: white;
+  border-radius: var(--radius-md);
+  background: var(--brass);
+  color: #fff;
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s ease;
 }
 
 .vscode-backup-btn:hover {
-  background: #0b83b2;
+  background: var(--brass-dim);
 }
 
 /* MAIN BODY */
 
-/* FIX: was min-height: calc(100vh - 118px) — same double-counting issue as
-   .vscode-settings above. Now flex: 1 inside the flex-column .vscode-settings,
-   filling exactly the remaining space below the topbar, with its own overflow
-   hidden so only the inner content column scrolls. */
 .vscode-settings-body {
   display: flex;
   flex: 1;
@@ -1668,8 +1668,8 @@ table.records tr:last-child td {
   width: 260px;
   flex-shrink: 0;
   padding: 22px 12px;
-  border-right: 1px solid #30343b;
-  background: #15171b;
+  border-right: 1px solid var(--border);
+  background: var(--bg-soft);
   overflow-y: auto;
 }
 
@@ -1677,7 +1677,7 @@ table.records tr:last-child td {
   padding: 0 12px 14px;
   font-size: 13px;
   font-weight: 600;
-  color: #d7d9dd;
+  color: var(--text);
 }
 
 .vscode-settings-sidebar button {
@@ -1685,30 +1685,29 @@ table.records tr:last-child td {
   width: 100%;
   text-align: left;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: transparent;
-  color: #9da3ad;
+  color: var(--text-muted);
   padding: 9px 12px;
-  margin-bottom: 2px;
+  margin: 0 0 2px;
   font-size: 13px;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .vscode-settings-sidebar button:hover {
-  background: #22262c;
-  color: #ffffff;
+  background: rgba(176, 141, 87, 0.12);
+  color: var(--brass-dim);
 }
 
 .vscode-settings-sidebar button.active {
-  background: #30343b;
-  color: #ffffff;
+  background: var(--brass);
+  color: #fff;
+  font-weight: 600;
 }
 
 /* CONTENT */
 
-/* FIX: only this pane scrolls (overflow-y: auto) — it's the one place where
-   content can legitimately grow past the visible area (a long settings form),
-   so it gets its own internal scrollbar instead of the whole page scrolling. */
 .vscode-settings-content {
   width: min(900px, 100%);
   padding: 42px 52px;
@@ -1717,15 +1716,16 @@ table.records tr:last-child td {
 
 .vscode-settings-content h1 {
   margin: 0 0 30px;
-  font-size: 28px;
+  font-family: var(--font-display);
+  font-size: 26px;
   font-weight: 500;
-  color: #ffffff;
+  color: var(--text);
 }
 
 .vscode-description {
   max-width: 720px;
   margin-bottom: 30px;
-  color: #9da4ae;
+  color: var(--text-muted);
   line-height: 1.6;
   font-size: 13px;
 }
@@ -1738,7 +1738,7 @@ table.records tr:last-child td {
   align-items: center;
   justify-content: space-between;
   gap: 30px;
-  border-bottom: 1px solid #2d3138;
+  border-bottom: 1px solid var(--border);
   padding: 15px 0;
 }
 
@@ -1746,12 +1746,12 @@ table.records tr:last-child td {
   margin: 0 0 5px;
   font-size: 14px;
   font-weight: 600;
-  color: #eeeeee;
+  color: var(--text);
 }
 
 .vscode-setting-row p {
   margin: 0;
-  color: #9da4ae;
+  color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -1764,7 +1764,7 @@ table.records tr:last-child td {
   height: 20px;
   flex-shrink: 0;
   border-radius: 20px;
-  background: #3b414a;
+  background: var(--border-strong);
   position: relative;
   cursor: pointer;
   transition: 0.2s;
@@ -1778,16 +1778,21 @@ table.records tr:last-child td {
   top: 2px;
   left: 2px;
   border-radius: 50%;
-  background: #ffffff;
+  background: #fff;
   transition: 0.2s;
 }
 
 .vscode-setting-row input[type="checkbox"]:checked {
-  background: #0e8db8;
+  background: var(--brass);
 }
 
 .vscode-setting-row input[type="checkbox"]:checked::after {
   left: 16px;
+}
+
+.vscode-setting-row input[type="checkbox"]:focus-visible {
+  outline: 1px solid var(--brass);
+  outline-offset: 3px;
 }
 
 /* FIELDS */
@@ -1799,7 +1804,7 @@ table.records tr:last-child td {
 .vscode-field label {
   display: block;
   margin-bottom: 8px;
-  color: #c5cad1;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
@@ -1809,23 +1814,24 @@ table.records tr:last-child td {
   max-width: 520px;
   height: 36px;
   box-sizing: border-box;
-  border: 1px solid #3a4048;
-  border-radius: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   outline: none;
-  background: #1d2025;
-  color: #eeeeee;
+  background: var(--surface);
+  color: var(--text);
   padding: 0 10px;
   font-size: 13px;
 }
 
 .vscode-field input:focus,
 .vscode-field select:focus {
-  border-color: #1683a8;
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px var(--brass-glow);
 }
 
 .vscode-field input:disabled {
-  color: #777e88;
-  background: #191c20;
+  color: var(--text-muted);
+  background: var(--bg-soft);
 }
 
 /* TWO FIELDS */
@@ -1840,31 +1846,41 @@ table.records tr:last-child td {
 /* BUTTONS */
 
 .vscode-primary-btn {
+  min-height: 36px;
   border: none;
-  border-radius: 4px;
-  background: #0e8db8;
-  color: white;
-  padding: 9px 16px;
+  border-radius: var(--radius-md);
+  background: var(--brass);
+  color: #fff;
+  padding: 0 16px;
   cursor: pointer;
   font-size: 13px;
+  font-weight: 600;
+  transition: background 0.2s ease, transform 0.1s ease;
 }
 
 .vscode-primary-btn:hover {
-  background: #119bc8;
+  background: var(--brass-dim);
+}
+
+.vscode-primary-btn:active {
+  transform: translateY(1px);
 }
 
 .vscode-outline-btn {
-  border: 1px solid #484e57;
-  border-radius: 4px;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: transparent;
-  color: #c8ccd2;
-  padding: 8px 14px;
+  color: var(--text);
+  padding: 0 14px;
   cursor: pointer;
   font-size: 12px;
+  transition: all 0.2s ease;
 }
 
 .vscode-outline-btn:hover {
-  background: #252a30;
+  border-color: var(--border-strong);
+  background: var(--bg-soft);
 }
 
 .vscode-outline-btn:disabled {
@@ -1873,17 +1889,19 @@ table.records tr:last-child td {
 }
 
 .vscode-danger-btn {
-  border: 1px solid #a13d3d;
-  border-radius: 4px;
+  min-height: 34px;
+  border: 1px solid var(--brick);
+  border-radius: var(--radius-md);
   background: transparent;
-  color: #e87979;
-  padding: 8px 14px;
+  color: var(--brick);
+  padding: 0 14px;
   cursor: pointer;
   font-size: 12px;
 }
 
 .vscode-danger-btn:hover {
-  background: #352124;
+  background: rgba(193, 67, 46, .08);
+  border-color: var(--brick);
 }
 
 /* SEARCH RESULTS */
@@ -1901,24 +1919,24 @@ table.records tr:last-child td {
   justify-content: space-between;
   align-items: center;
   border: none;
-  border-bottom: 1px solid #2d3138;
+  border-bottom: 1px solid var(--border);
   background: transparent;
-  color: #ddd;
+  color: var(--text);
   padding: 14px 10px;
   cursor: pointer;
   text-align: left;
 }
 
 .vscode-search-result:hover {
-  background: #22262c;
+  background: var(--bg-soft);
 }
 
 .vscode-search-result small {
-  color: #7e8691;
+  color: var(--text-muted);
 }
 
 .vscode-no-results {
-  color: #858c96;
+  color: var(--text-muted);
   padding: 30px 10px;
 }
 
@@ -1928,9 +1946,9 @@ table.records tr:last-child td {
   display: inline-block;
   margin-bottom: 18px;
   padding: 8px 12px;
-  border-radius: 4px;
-  background: #173c35;
-  color: #79d8b4;
+  border-radius: var(--radius-md);
+  background: rgba(87, 121, 95, .12);
+  color: var(--sage);
   font-size: 12px;
 }
 
@@ -1938,19 +1956,23 @@ table.records tr:last-child td {
 
 .vscode-section {
   padding-bottom: 30px;
-  border-bottom: 1px solid #30343b;
+  border-bottom: 1px solid var(--border);
 }
 
 .vscode-section h2,
 .vscode-danger-section h2 {
   font-size: 18px;
   font-weight: 500;
-  color: #eeeeee;
+  color: var(--text);
+}
+
+.vscode-danger-section h2 {
+  color: var(--brick);
 }
 
 .vscode-section p,
 .vscode-danger-row p {
-  color: #9299a3;
+  color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -1965,12 +1987,13 @@ table.records tr:last-child td {
   align-items: center;
   gap: 25px;
   padding: 20px 0;
-  border-bottom: 1px solid #30343b;
+  border-bottom: 1px solid var(--border);
 }
 
 .vscode-danger-row h3 {
   margin: 0;
   font-size: 14px;
+  color: var(--text);
 }
 
 .vscode-danger-row p {
@@ -1984,7 +2007,7 @@ table.records tr:last-child td {
 }
 
 .vscode-confirm span {
-  color: #c5cad1;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -2009,7 +2032,7 @@ table.records tr:last-child td {
   .vscode-settings-sidebar {
     width: auto;
     border-right: none;
-    border-bottom: 1px solid #30343b;
+    border-bottom: 1px solid var(--border);
     overflow-y: visible;
   }
 
@@ -2027,185 +2050,7 @@ table.records tr:last-child td {
   }
 }
 
-/* =========================================================
-   GOLD / YELLOW THEME FOR SETTINGS
-   ========================================================= */
-
-/* Primary buttons */
-.vscode-primary-btn {
-  min-height: 36px;
-  padding: 0 16px;
-
-  border: none;
-  border-radius: 4px;
-
-  background: #d4a85c;
-  color: #111418;
-
-  font-size: 13px;
-  font-weight: 600;
-
-  cursor: pointer;
-
-  transition: background 0.2s ease, transform 0.1s ease;
-}
-
-.vscode-primary-btn:hover {
-  background: #e2b96b;
-}
-
-.vscode-primary-btn:active {
-  background: #c4954d;
-  transform: translateY(1px);
-}
-
-
-/* Backup & Sync button */
-.vscode-backup-btn {
-  height: 34px;
-
-  padding: 0 14px;
-
-  border: none;
-  border-radius: 4px;
-
-  background: #d4a85c;
-  color: #111418;
-
-  font-size: 12px;
-  font-weight: 600;
-
-  cursor: pointer;
-
-  white-space: nowrap;
-
-  transition: background 0.2s ease;
-}
-
-.vscode-backup-btn:hover {
-  background: #e2b96b;
-}
-
-
-/* Left sidebar buttons */
-.vscode-settings-sidebar button {
-  display: block;
-
-  width: 100%;
-
-  padding: 9px 12px;
-  margin: 0 0 2px;
-
-  border: none;
-  border-radius: 4px;
-
-  background: transparent;
-
-  color: #b9bdc5;
-
-  font-size: 13px;
-
-  text-align: left;
-
-  cursor: pointer;
-
-  transition: all 0.2s ease;
-}
-
-
-/* Sidebar hover */
-.vscode-settings-sidebar button:hover {
-  background: rgba(212, 168, 92, 0.12);
-  color: #d4a85c;
-}
-
-
-/* Selected sidebar item */
-.vscode-settings-sidebar button.active {
-  background: #d4a85c;
-  color: #111418;
-
-  font-weight: 600;
-}
-
-
-/* Outline buttons */
-.vscode-outline-btn {
-  min-height: 34px;
-
-  padding: 0 14px;
-
-  border: 1px solid #d4a85c;
-  border-radius: 4px;
-
-  background: transparent;
-
-  color: #d4a85c;
-
-  font-size: 12px;
-
-  cursor: pointer;
-
-  transition: all 0.2s ease;
-}
-
-.vscode-outline-btn:hover {
-  background: #d4a85c;
-  color: #111418;
-}
-
-
-/* Search focus */
-.vscode-search:focus-within {
-  border-color: #d4a85c;
-}
-
-
-/* Form field focus */
-.vscode-field input:focus,
-.vscode-field select:focus {
-  border-color: #d4a85c;
-  box-shadow: 0 0 0 1px rgba(212, 168, 92, 0.15);
-}
-
-
-/* Toggle ON */
-.vscode-setting-row input[type="checkbox"]:checked {
-  background: #d4a85c;
-}
-
-
-/* Toggle keyboard focus */
-.vscode-setting-row input[type="checkbox"]:focus-visible {
-  outline: 1px solid #d4a85c;
-  outline-offset: 3px;
-}
-
-
-/* Danger button stays different */
-.vscode-danger-btn {
-  min-height: 34px;
-
-  padding: 0 14px;
-
-  border: 1px solid #a13d3d;
-  border-radius: 4px;
-
-  background: transparent;
-
-  color: #e87979;
-
-  font-size: 12px;
-
-  cursor: pointer;
-}
-
-.vscode-danger-btn:hover {
-  background: #352124;
-  border-color: #c14b4b;
-}
-
-/* Recent Alerts + Activity Log */
+/* Recent Alerts + Activity Log grid tweaks */
 .alerts-activity-grid {
   width: 100%;
 }
@@ -2319,7 +2164,7 @@ table.records tr:last-child td {
 }
 
 .vscode-confirm-text {
-  color: #c5cad1;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
