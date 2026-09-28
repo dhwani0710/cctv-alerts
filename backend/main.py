@@ -234,7 +234,7 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
     username = payload.username.strip()
     role = payload.role.strip().lower()
     if role not in VALID_ROLES:
-        raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(valid_roles)}")
+        raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(VALID_ROLES)}")
     if not username or not payload.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
 
@@ -270,7 +270,7 @@ def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depen
     if req.role:
         role = req.role.strip().lower()
         if role not in VALID_ROLES:
-            raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(valid_roles)}")
+            raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(VALID_ROLES)}")
         updates.append("role = %s")
         params.append(role)
     if req.password:
@@ -788,8 +788,8 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
         "total_pages": math.ceil(total / limit) if limit > 0 else 1
     }
 
-@app.delete("/records/{alert_id}", dependencies=[Depends(require_staff)])
-def delete_record(alert_id: int, current_user: dict = Depends(require_staff)):
+@app.delete("/records/{alert_id}", dependencies=[Depends(require_admin)])
+def delete_record(alert_id: int, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM alerts WHERE incident_id = %s", (alert_id,))
