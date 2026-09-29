@@ -659,16 +659,13 @@ button {
   z-index: 30;
   width: 68px;
   background: var(--chrome);
-  border-right: 1px solid var(--chrome-line);
-  display: flex; flex-direction: column; align-items: stretch;
-  gap: 4px;
-  padding: 18px 12px;
-  transition: width .25s cubic-bezier(.4, 0, .2, 1), box-shadow .25s ease;
-}
-.rail:hover,
-.rail:focus-within {
-  width: 232px;
-  box-shadow: 10px 0 40px rgba(0, 0, 0, .35);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 0;
+  position: relative;
+  z-index: 50;
 }
 
 /* the page keeps a fixed gutter, so content never jumps when the rail opens */
@@ -716,10 +713,20 @@ button {
 .rail-link.active::before {
   content: '';
   position: absolute;
-  left: -12px; top: 10px; bottom: 10px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--brass);
+  left: 52px;
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  background: var(--chrome-hover);
+  color: var(--text-on-chrome);
+  font-size: 11.5px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s, transform .12s;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 /* labels (the old tooltip text): hidden at rest, fade in as the rail opens */
@@ -1491,6 +1498,12 @@ table.records tbody tr:hover td {
   color: var(--brass-dim);
 }
 
+.pill.late {
+  background: rgba(240, 195, 107, .18);
+  color: #B8860B;
+}
+
+/* ---------- staff ---------- */
 .staff-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 280px));

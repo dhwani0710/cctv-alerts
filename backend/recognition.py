@@ -114,8 +114,10 @@ def recognize_faces(frame):
                 folder_name = os.path.basename(os.path.dirname(identity_path))
                 matches_by_employee.setdefault(folder_name, []).append(row[distance_col])
 
-            best_folder = None
-            best_avg_distance = None
+            min_matching = get_setting_int("min_matching_photos") or 2
+            max_distance = get_setting_float("match_distance_threshold")
+            margin = get_setting_float("match_margin") or 0.05
+            candidates = []
 
             # Closest employee by best single distance (only used for the debug line)
             closest_folder = None
@@ -136,20 +138,26 @@ def recognize_faces(frame):
 
                 if len(distances) >= required:
                     avg_distance = sum(distances) / len(distances)
-                    if best_avg_distance is None or avg_distance < best_avg_distance:
-                        best_folder = folder_name
-                        best_avg_distance = avg_distance
+                    candidates.append((folder_name, avg_distance))
 
-            if best_folder is not None:
-                result_name = best_folder.replace("_", " ")
-            else:
-                result_name = "Unknown"
-            names.append(result_name)
+            accepted_name = "Unknown"
+            if candidates:
+                candidates.sort(key=lambda c: c[1])
+                best_folder, best_avg = candidates[0]
+                if len(candidates) == 1:
+                    accepted_name = best_folder.replace("_", " ")
+                else:
+                    _, second_avg = candidates[1]
+                    if (second_avg - best_avg) >= margin:
+                        accepted_name = best_folder.replace("_", " ")
+                    else:
+                        print(f"[DEBUG] Ambiguous: {best_folder} ({best_avg:.3f}) vs runner-up ({second_avg:.3f}) — margin too small, rejecting both")
+                names.append(accepted_name)
 
             # One line per detected face, showing only the closest employee
             if closest_folder is not None:
                 print(
-                    f"[DEBUG] Face -> {result_name} | closest: {closest_folder}, "
+                    f"[DEBUG] Face -> {accepted_name} | closest: {closest_folder}, "
                     f"{closest_matched}/{closest_required} photo(s) within {max_distance}, "
                     f"best distance {round(float(closest_distance), 3)}"
                 )
