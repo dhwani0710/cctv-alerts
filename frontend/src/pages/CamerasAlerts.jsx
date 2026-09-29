@@ -7,6 +7,13 @@ import { useStatus } from '../context/StatusContext.jsx';
 import { GuardAckModal } from '../components/GuardAckModal';
 
 const PANEL_HEIGHT = 620;
+
+function alertTitle(a) {
+  if (a.person_name && a.person_name.startsWith('Unknown@')) {
+    return `Stranger - ${a.person_name.split('@')[1]}`;
+  }
+  return `${a.person_name} — ${a.alert_type}`;
+}
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 export default function CamerasAlerts() {
@@ -169,7 +176,7 @@ export default function CamerasAlerts() {
                     style={{ overflowWrap: 'break-word', cursor: a.snapshot_filename ? 'pointer' : 'default' }}
                     onClick={() => a.snapshot_filename && setSnapshotView(a)}
                   >
-                    {a.person_name} — {a.alert_type}
+                    {alertTitle(a)}
                   </div>
                   <div className="d" style={{ overflowWrap: 'break-word' }}>{a.alert_count} occurrence(s)</div>
                   <div className="alert-actions">
@@ -225,7 +232,7 @@ export default function CamerasAlerts() {
       <ConfirmDialog
         open={!!dismissTarget}
         title="Dismiss alert"
-        message={dismissTarget ? `Dismiss the alert for ${dismissTarget.person_name}? It will be removed from the active list.` : ''}
+        message={dismissTarget ? `Dismiss the alert for ${alertTitle(dismissTarget)}? It will be removed from the active list.` : ''}
         confirmLabel="Dismiss"
         danger
         onConfirm={confirmDismiss}
@@ -250,7 +257,7 @@ export default function CamerasAlerts() {
             />
             <div className="cam-lightbox-head">
               <div>
-                <div className="name">{snapshotView.person_name} — {snapshotView.alert_type}</div>
+                <div className="name">{alertTitle(snapshotView)}</div>
               </div>
               <button className="cam-lightbox-close" onClick={() => setSnapshotView(null)} aria-label="Close">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">

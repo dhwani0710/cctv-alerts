@@ -187,7 +187,9 @@ def _process_frame(frame, camera_id, camera_name):
                 shift_start_dt, shift_end_dt = get_shift_datetimes(now, emp["shift_start"], emp["shift_end"])
                 update_attendance(emp["id"], now, camera_id, shift_start_dt)
 
-                if now < shift_start_dt:
+                if is_within_store_hours(now):
+                    pass  # no early-arrival / overstay alerts during store hours
+                elif now < shift_start_dt:
                     minutes_early = (shift_start_dt - now).total_seconds() / 60
                     priority = get_alert_priority(minutes_early)
                     current = get_current_frame(camera_id)
