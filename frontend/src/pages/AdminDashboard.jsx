@@ -12,10 +12,20 @@ const ALERT_TYPE_LABELS = {
   overstay: 'Overstay',
 };
 
+const ALERT_GRID = '10px 80px minmax(0, 1fr) 140px 100px 70px';
+
+const PRIORITY_COLORS = {
+  high: '#e5604d',
+  medium: '#f2994a',
+  low: '#f2c94c',
+};
+
 function formatIncident(a) {
+  if (a.person_name.startsWith('Unknown@')) {
+    return `Stranger - ${a.person_name.split('@')[1]}`;
+  }
   const label = ALERT_TYPE_LABELS[a.alert_type] || a.alert_type;
-  const who = a.person_name.startsWith('Unknown@') ? 'Unknown person' : a.person_name;
-  return `${label} — ${who}`;
+  return `${label} — ${a.person_name}`;
 }
 
 export default function AdminDashboard() {
@@ -113,24 +123,19 @@ export default function AdminDashboard() {
 
 
       {/* =====================================================
-          RECENT ALERTS + ACTIVITY LOG
-          SIDE BY SIDE
+          RECENT ALERTS
           ===================================================== */}
 
       <div
         className="alerts-activity-grid"
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+          gridTemplateColumns: 'minmax(0, 1fr)',
           gap: '12px',
           width: '100%',
           alignItems: 'stretch',
         }}
       >
-
-        {/* =================================================
-            RECENT ALERTS
-            ================================================= */}
 
         <div
           className="panel"
@@ -153,19 +158,38 @@ export default function AdminDashboard() {
           </div>
 
 
+          {incidents.length > 0 && (
+            <div
+              className="log-row"
+              style={{
+                gridTemplateColumns: ALERT_GRID,
+                borderTop: 'none',
+                fontSize: 11,
+                color: 'var(--text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+              }}
+            >
+              <div />
+              <div>Time</div>
+              <div>Alert</div>
+              <div>Camera</div>
+              <div>Zone</div>
+              <div style={{ textAlign: 'right' }}>Priority</div>
+            </div>
+          )}
+
           {incidents.slice(0, 5).map((a) => (
 
             <div
               className="log-row"
               key={a.id}
+              style={{ gridTemplateColumns: ALERT_GRID }}
             >
 
               <div
-                className={`log-dot ${
-                  a.priority === 'high'
-                    ? 'alert'
-                    : 'info'
-                }`}
+                className="log-dot"
+                style={{ background: PRIORITY_COLORS[a.priority] || 'var(--text-muted)' }}
               />
 
               <div className="log-time">
@@ -179,7 +203,24 @@ export default function AdminDashboard() {
                 {formatIncident(a)} <span className="mono" style={{ color: 'var(--text-muted)' }}>×{a.alert_count}</span>
               </div>
 
-              <div className="log-tag">
+              <div className="log-text">
+                {a.camera_name || '-'}
+              </div>
+
+              <div className="log-text">
+                {a.zone_name || '-'}
+              </div>
+
+              <div
+                className="log-tag"
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: PRIORITY_COLORS[a.priority] || 'var(--text)',
+                  textTransform: 'capitalize',
+                  textAlign: 'right',
+                }}
+              >
                 {a.priority}
               </div>
 
@@ -197,84 +238,6 @@ export default function AdminDashboard() {
               }}
             >
               No alerts.
-            </p>
-
-          )}
-
-        </div>
-
-
-        {/* =================================================
-            ACTIVITY LOG
-            ================================================= */}
-
-        <div
-          className="panel"
-          style={{
-            minWidth: 0,
-          }}
-        >
-
-          <div className="panel-head">
-
-            <h2>Activity log</h2>
-
-            <Link
-              className="link-btn"
-              to="/records"
-            >
-              Full records →
-            </Link>
-
-          </div>
-
-
-          {records.slice(0, 5).map((r) => (
-
-            <div
-              className="log-row"
-              key={r.id}
-            >
-
-              <div
-                className={`log-dot ${
-                  r.priority === 'high'
-                    ? 'alert'
-                    : r.priority === 'medium'
-                    ? 'info'
-                    : ''
-                }`}
-              />
-
-              <div className="log-time">
-                {new Date(r.timestamp).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </div>
-
-              <div className="log-text">
-                {r.alert_type} — {r.camera_id}
-              </div>
-
-              <div className="log-tag">
-                {r.person_name}
-              </div>
-
-            </div>
-
-          ))}
-
-
-          {records.length === 0 && (
-
-            <p
-              style={{
-                color: 'var(--text-muted)',
-                fontSize: 13.5,
-              }}
-            >
-              No records.
             </p>
 
           )}
