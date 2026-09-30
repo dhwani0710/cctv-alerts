@@ -12,27 +12,22 @@ const ALERT_TYPE_LABELS = {
   overstay: 'Overstay',
 };
 
-const ALERT_GRID = '10px 80px minmax(0, 1fr) 140px 100px 70px';
-
-const PRIORITY_COLORS = {
-  high: '#e5604d',
-  medium: '#f2994a',
-  low: '#f2c94c',
-};
-
 function formatIncident(a) {
-  if (a.person_name.startsWith('Unknown@')) {
-    return `Stranger - ${a.person_name.split('@')[1]}`;
+  const name = a.person_name || '';
+  if (name.startsWith('Unknown@')) {
+    return `Stranger - ${name.split('@')[1]}`;
   }
   const label = ALERT_TYPE_LABELS[a.alert_type] || a.alert_type;
-  return `${label} — ${a.person_name}`;
+  return `${label} — ${name}`;
 }
 
 function formatTime(value) {
-  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-/* ---------- icons + stat card (kept in this file) ---------- */
+/* ---------- icons + stat card ---------- */
 const svg = (children) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     {children}
@@ -94,13 +89,11 @@ export default function AdminDashboard() {
 
   return (
     <Shell active="dashboard" dark title="Overview">
-      {/* PAGE HEADER */}
       <div className="page-head">
         <h1>Good to see you</h1>
         <p>Here's what's happening at your store today.</p>
       </div>
 
-      {/* STAT CARDS */}
       <div className="stat-grid">
         <StatCard
           icon={icons.camera}
@@ -111,7 +104,7 @@ export default function AdminDashboard() {
         <StatCard
           icon={icons.bell}
           label="Active alerts"
-          value={status.recent_alerts.length}
+          value={incidents.length}
           sub={`${highAlerts} high severity`}
           tone={highAlerts > 0 ? 'warn' : ''}
         />
@@ -121,117 +114,52 @@ export default function AdminDashboard() {
           value={status.currently_detected.length}
           sub={`of ${employeeCount} total employees`}
         />
-        <StatCard
-          icon={icons.records}
-          label="Records today"
-          value={records.length}
-        />
+        <StatCard icon={icons.records} label="Records today" value={records.length} />
       </div>
 
-
-      {/* =====================================================
-          RECENT ALERTS
-          ===================================================== */}
-
-      <div
-        className="alerts-activity-grid"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr)',
-          gap: '12px',
-          width: '100%',
-          alignItems: 'stretch',
-        }}
-      >
-
-        <div
-          className="panel"
-          style={{
-            minWidth: 0,
-          }}
-        >
-
-          <div className="panel-head">
-            <h2>Recent alerts</h2>
-            <Link className="link-btn" to="/cameras-alerts">View all →</Link>
-          </div>
-
-
-          {incidents.length > 0 && (
-            <div
-              className="log-row"
-              style={{
-                gridTemplateColumns: ALERT_GRID,
-                borderTop: 'none',
-                fontSize: 11,
-                color: 'var(--text-muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-              }}
-            >
-              <div />
-              <div>Time</div>
-              <div>Alert</div>
-              <div>Camera</div>
-              <div>Zone</div>
-              <div style={{ textAlign: 'right' }}>Priority</div>
-            </div>
-          )}
-
-          {incidents.slice(0, 5).map((a) => (
-
-            <div
-              className="log-row"
-              key={a.id}
-              style={{ gridTemplateColumns: ALERT_GRID }}
-            >
-
-              <div
-                className="log-dot"
-                style={{ background: PRIORITY_COLORS[a.priority] || 'var(--text-muted)' }}
-              />
-
-              <div className="log-time">
-                {new Date(a.last_seen).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </div>
-
-              <div className="log-text">
-                {formatIncident(a)}{' '}
-                <span className="mono" style={{ color: 'var(--text-muted)' }}>×{a.alert_count}</span>
-              </div>
-
-              <div className="log-text">
-                {a.camera_name || '-'}
-              </div>
-
-              <div className="log-text">
-                {a.zone_name || '-'}
-              </div>
-
-              <div
-                className="log-tag"
-                style={{
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color: PRIORITY_COLORS[a.priority] || 'var(--text)',
-                  textTransform: 'capitalize',
-                  textAlign: 'right',
-                }}
-              >
-                {a.priority}
-              </div>
-
-            </div>
-          ))}
-
-          {incidents.length === 0 && (
-            <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No alerts.</p>
-          )}
+      {/* ---------- RECENT ALERTS ---------- */}
+      <div className="panel">
+        <div className="panel-head">
+          <h2>Recent alerts</h2>
+          <Link className="link-btn" to="/cameras-alerts">View all →</Link>
         </div>
 
+        {incidents.length > 0 ? (
+          <div className="table-wrap">
+            <table className="records">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Alert</th>
+                  <th>Camera</th>
+                  <th>Zone</th>
+                  <th style={{ textAlign: 'right' }}>Priority</th>
+                </tr>
+              </thead>
+              <tbody>
+                {incidents.slice(0, 5).map((a) => (
+                  <tr key={a.id}>
+                    <td className="alert-time-cell mono">
+                      <span className={`log-dot p-${a.priority}`} />
+                      {formatTime(a.last_seen)}
+                    </td>
+                    <td className="cell-ellipsis">
+                      {formatIncident(a)}
+                      <span className="alert-count">×{a.alert_count}</span>
+                    </td>
+                    <td>{a.camera_name || '-'}</td>
+                    <td>{a.zone_name || '-'}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <span className={`pill p-${a.priority}`}>{a.priority}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="empty-note">No alerts.</p>
+        )}
       </div>
     </Shell>
   );

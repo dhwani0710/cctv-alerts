@@ -40,12 +40,12 @@
   --gold-grad: linear-gradient(135deg, #D9895A, #B8622F);
   --on-gold: #FFFFFF;
 
-  --night-bg: #0A0B0E;
-  --night-card: #14161C;
-  --night-card-2: #1A1D24;
+  --night-bg: #121316;
+  --night-card: #1B1C20;
+  --night-card-2: #232429;
   --night-line: rgba(255, 255, 255, .08);
   --night-line-2: rgba(255, 255, 255, .14);
-  --night-text-muted: #8B95A5;
+  --night-text-muted: #9A9AA3;
   --green: #3ECF7E;
 
   --shadow-card: 0 1px 2px rgba(40, 30, 20, .05), 0 6px 18px rgba(40, 30, 20, .04);
@@ -74,13 +74,13 @@
   --shadow-card: none;
 }
 
-/* login page keeps its gold look */
+/* login page: copper on charcoal (always dark, in both themes) */
 .login-wrap {
-  --brass: #E0B565;
-  --brass-dim: #F0C36B;
-  --brass-glow: rgba(224, 181, 101, .3);
-  --gold-grad: linear-gradient(135deg, var(--gold-1), var(--gold-2));
-  --on-gold: #1A1200;
+  --brass: #E08F5F;
+  --brass-dim: #EBA57C;
+  --brass-glow: rgba(224, 143, 95, .3);
+  --gold-grad: linear-gradient(135deg, #E39A6B, #BF6A38);
+  --on-gold: #FFFFFF;
 }
 
 /* =====================================================
@@ -275,8 +275,8 @@ button {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(700px 500px at 78% 35%, rgba(176, 141, 87, .14), transparent 65%),
-    radial-gradient(500px 400px at 10% 85%, rgba(176, 141, 87, .06), transparent 70%);
+    radial-gradient(700px 500px at 78% 35%, rgba(224, 143, 95, .13), transparent 65%),
+    radial-gradient(500px 400px at 10% 85%, rgba(224, 143, 95, .06), transparent 70%);
 }
 
 .login-hero {
@@ -373,8 +373,8 @@ button {
   height: 30px;
   border-radius: 8px;
   flex-shrink: 0;
-  color: var(--gold-1);
-  background: rgba(176, 141, 87, .12);
+  color: var(--brass);
+  background: rgba(224, 143, 95, .12);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -543,7 +543,7 @@ button {
 }
 
 .forgot-link:hover {
-  color: var(--gold-1);
+  color: var(--brass-dim);
 }
 
 .login-submit {
@@ -655,17 +655,26 @@ button {
 /* ---------- collapsible sidebar: icons at rest, slides out on hover ---------- */
 .rail {
   position: fixed;
-  top: 0; bottom: 0; left: 0;
-  z-index: 30;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
   width: 68px;
   background: var(--chrome);
+  border-right: 1px solid var(--chrome-line);
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;      /* children fill the rail, so nothing centers and overflows left */
   gap: 6px;
-  padding: 18px 0;
-  position: relative;
-  z-index: 50;
+  padding: 18px 12px;        /* 12px side padding keeps a 44px icon column */
+  overflow: hidden;          /* clips the labels while collapsed */
+  transition: width .25s ease, box-shadow .25s ease;
+}
+
+.rail:hover,
+.rail:focus-within {
+  width: 232px;
+  box-shadow: 8px 0 28px rgba(0, 0, 0, .35);
 }
 
 /* the page keeps a fixed gutter, so content never jumps when the rail opens */
@@ -673,14 +682,25 @@ button {
 
 /* brand */
 .rail-brand {
-  display: flex; align-items: center; gap: 12px;
-  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 22px;
+  white-space: nowrap;
 }
+
+.rail-brand .stamp {
+  --sc: var(--brass);
+  color: var(--brass);
+  font-size: 18px;
+}
+
 .rail-brand::after {
   content: 'eSamyak';
   color: var(--text-on-chrome);
-  font-weight: 700; font-size: 16px; letter-spacing: -.01em;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -.01em;
   white-space: nowrap;
   overflow: hidden;
   max-width: 0;
@@ -688,6 +708,7 @@ button {
   transform: translateX(-6px);
   transition: opacity .2s ease, max-width .25s ease, transform .25s ease;
 }
+
 .rail:hover .rail-brand::after,
 .rail:focus-within .rail-brand::after {
   max-width: 140px;
@@ -698,44 +719,47 @@ button {
 /* links */
 .rail-link {
   position: relative;
-  width: 100%; height: 42px;
+  width: 100%;
+  height: 42px;
+  flex-shrink: 0;
   border-radius: var(--radius-md);
-  display: flex; align-items: center; justify-content: flex-start;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   gap: 12px;
   padding: 0 12px;
   white-space: nowrap;
   color: var(--text-on-chrome-muted);
 }
-.rail-link svg { width: 19px; height: 19px; flex-shrink: 0; }
-.rail-link:hover { background: var(--chrome-hover); color: var(--text-on-chrome); }
-.rail-link.active { background: var(--chrome-active); color: var(--text-on-chrome); }
-.rail-link.active svg { color: var(--brass); }
-.rail-link.active::before {
-  content: '';
-  position: absolute;
-  left: 52px;
-  top: 50%;
-  transform: translateY(-50%) translateX(-4px);
-  background: var(--chrome-hover);
-  color: var(--text-on-chrome);
-  font-size: 11.5px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .12s, transform .12s;
-  z-index: 100;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+
+.rail-link svg {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
 }
 
-/* labels (the old tooltip text): hidden at rest, fade in as the rail opens */
-.rail-link .tip,
-.rail-link:hover .tip {
+.rail-link:hover {
+  background: var(--chrome-hover);
+  color: var(--text-on-chrome);
+}
+
+.rail-link.active {
+  background: var(--brass);
+  color: #fff;
+  box-shadow: 0 2px 10px var(--brass-glow);
+}
+
+.rail-link.active svg {
+  color: #fff;
+}
+
+/* labels: hidden at rest, fade in as the rail opens */
+.rail-link .tip {
   position: static;
   background: none;
   padding: 0;
-  font-size: 13.5px; font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 500;
   color: inherit;
   overflow: hidden;
   max-width: 0;
@@ -744,6 +768,7 @@ button {
   pointer-events: none;
   transition: opacity .2s ease, max-width .25s ease, transform .25s ease;
 }
+
 .rail:hover .rail-link .tip,
 .rail:focus-within .rail-link .tip {
   max-width: 160px;
@@ -752,19 +777,30 @@ button {
   pointer-events: auto;
 }
 
-.rail-spacer { flex: 1; }
+.rail-spacer {
+  flex: 1;
+}
 
 /* settings popup keeps a fixed width now that the rail changes size */
-.rail .settings-menu { left: 0; bottom: calc(100% + 8px); width: 208px; }
+.rail .settings-menu {
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: 208px;
+}
 
 @media (prefers-reduced-motion: reduce) {
+
   .rail,
   .rail-brand::after,
-  .rail-link .tip { transition: none; }
+  .rail-link .tip {
+    transition: none;
+  }
 }
 
 @media print {
-  .main { margin-left: 0 !important; }
+  .main {
+    margin-left: 0 !important;
+  }
 }
 
 .main {
@@ -1065,6 +1101,14 @@ button {
   border-radius: var(--radius-md);
 }
 
+.alert-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .alert-item:first-of-type {
   border-top: none;
 }
@@ -1200,6 +1244,59 @@ button {
 .cam-live:not(.offline) .rec-dot,
 .alert-sev:not(.low) {
   animation: signal-pulse 1.8s ease-out infinite;
+}
+
+/* ---------- priority pills + dots (dashboard) ---------- */
+.pill.p-high {
+  background: color-mix(in srgb, var(--brick) 14%, transparent);
+  color: var(--brick);
+  text-transform: capitalize;
+}
+
+.pill.p-medium {
+  background: color-mix(in srgb, var(--brass) 16%, transparent);
+  color: var(--brass-dim);
+  text-transform: capitalize;
+}
+
+.pill.p-low {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.log-dot.p-high { background: var(--brick); }
+.log-dot.p-medium { background: var(--brass); }
+.log-dot.p-low { background: var(--text-muted); }
+
+.alert-time-cell {
+  white-space: nowrap;
+}
+
+.alert-time-cell .log-dot {
+  display: inline-block;
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+.alert-count {
+  margin-left: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.cell-ellipsis {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-note {
+  color: var(--text-muted);
+  font-size: 13.5px;
+  margin: 8px 0 0;
 }
 
 /* =====================================================
