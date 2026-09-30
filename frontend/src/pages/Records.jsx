@@ -289,8 +289,8 @@ export default function Records() {
                   <td className="mono">{new Date(r.timestamp).toLocaleTimeString()}</td>
                   <td>{r.camera_name}</td>
                   <td>{r.zone_name || '-'}</td>
-                  <td>{r.person_name.replace('@front', '')}</td>
-                  <td>{r.person_name === 'Unknown@front' ? 'Detect outside the store' : r.message.replace(/^\[.*?\]\s*/, '').replace(/^\S+\s*present\s*/i, '')}</td>
+                  <td>{(r.person_name || '').startsWith('Unknown@') ? 'Unknown' : (r.person_name || '')}</td>
+                  <td>{(r.person_name || '').startsWith('Unknown@') ? 'Detect outside the store' : (r.message || '').replace(/^\[.*?\]\s*/, '').replace(/^\S+\s*present\s*/i, '')}</td>
                   <td className="mono">{r.occurrences}</td>
                   <td><span className={`pill ${STATUS_PILL[r.priority]}`}>{STATUS_LABEL[r.priority]}</span></td>
                 </tr>
