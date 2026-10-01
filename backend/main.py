@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from database import init_db, get_db
-from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, restart_single_camera, stop_all_cameras
+from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, restart_single_camera, stop_all_cameras, get_tampered_cameras
 from datetime import datetime, timedelta
 import config
 from auth import verify_token, require_owner, require_admin, require_hr, require_guard, require_staff
@@ -1223,11 +1223,21 @@ def list_cameras():
         rows = cur.fetchall()
         cur.close()
     heartbeats = get_all_camera_heartbeats()
+    tampered = get_tampered_cameras()
     result = []
     for cam in rows:
         heartbeat = heartbeats.get(cam["id"])
         is_live = heartbeat is not None and (now - heartbeat).total_seconds() <= config.CAMERA_OFFLINE_THRESHOLD_SEC
-        result.append({"id": cam["id"], "name": cam["name"], "zone_name": cam["zone_name"], "enabled": cam["enabled"], "live": is_live})
+        if not is_live:
+            cam_status = "offline"
+        elif cam["id"] in tampered:
+            cam_status = "tampered"
+        else:
+            cam_status = "online"
+        result.append({
+            "id": cam["id"], "name": cam["name"], "zone_name": cam["zone_name"],
+            "enabled": cam["enabled"], "live": is_live, "status": cam_status,
+        })
     return result
 
 class CameraRequest(BaseModel):

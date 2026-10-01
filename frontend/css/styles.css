@@ -2719,3 +2719,83 @@ table.records tbody tr:hover td {
     max-height: 24px !important;
   }
 }
+
+/* =====================================================
+   CAMERAS & ALERTS — multi-camera grid + alert sidebar
+   ===================================================== */
+.cag-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  height: calc(100vh - 235px);
+  min-height: 520px;
+}
+.cag-main, .cag-side { min-height: 0; display: flex; flex-direction: column; }
+.cag-main { overflow: hidden; }
+.cag-side { gap: 14px; overflow: hidden; }
+
+.cag-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; flex-shrink: 0; }
+.cag-chip {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-muted);
+  border-radius: 20px; padding: 4px 11px; font-size: 11.5px; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.cag-chip:hover { border-color: var(--brass); color: var(--text); }
+.cag-chip.active { background: var(--brass); border-color: var(--brass); color: #fff; }
+.cag-chip i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.cag-sep { flex: 1; }
+.cag-stats { display: flex; gap: 12px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.cag-stats b { color: var(--text); }
+.cag-stats .off b { color: var(--text-muted); }
+.cag-stats .tam b { color: var(--brick); }
+
+.cag-grid-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; overscroll-behavior: contain; }
+.cag-grid { display: grid; gap: 12px; align-items: start; }
+.cag-grid .cam-feed { aspect-ratio: 16 / 9; width: 100%; }
+.cag-grid .cam-feed img, .cam-lightbox .cam-feed img { display: block; }
+
+.cag-zone-badge {
+  position: absolute; top: 9px; right: 9px; color: #fff; font-size: 10px; font-weight: 700;
+  letter-spacing: .04em; padding: 3px 8px; border-radius: 20px; max-width: 55%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cam-live.cag-st-tampered { background: var(--brick); color: #fff; }
+.cam-live.cag-st-tampered .rec-dot { background: #fff; }
+
+.cag-overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 6px; text-align: center; padding: 12px; font-size: 12px; font-weight: 600;
+}
+.cag-overlay svg { width: 26px; height: 26px; }
+.cag-overlay.offline { background: rgba(10, 11, 13, .92); color: var(--text-on-chrome-muted); }
+.cag-overlay.tampered { background: rgba(193, 67, 46, .28); color: #fff; box-shadow: inset 0 0 0 2px var(--brick); }
+.cag-tile.is-tampered { border-color: var(--brick); }
+
+.cag-detected { flex-shrink: 0; padding: 12px 16px; }
+.cag-detected .row { padding: 4px 0; font-size: 12.5px; border-bottom: 1px solid var(--border); }
+.cag-detected .row:last-child { border-bottom: none; }
+
+.cag-alerts { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 14px 14px 10px; overflow: hidden; }
+.cag-alerts-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
+.cag-live-tag { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10.5px; color: var(--brick); letter-spacing: .08em; }
+.cag-live-tag .rec-dot { animation: signal-pulse 1.8s ease-out infinite; }
+
+.cag-inc {
+  display: flex; gap: 10px; padding: 10px; border: 1px solid var(--border); border-left: 3px solid var(--text-muted);
+  border-radius: var(--radius-md); background: var(--surface-2);
+}
+.cag-inc.p-high { border-left-color: var(--brick); }
+.cag-inc.p-medium { border-left-color: var(--brass); }
+.cag-inc-thumb { width: 54px; height: 54px; object-fit: cover; border-radius: var(--radius-sm); cursor: pointer; flex-shrink: 0; background: #000; }
+.cag-inc-body { flex: 1; min-width: 0; }
+.cag-inc-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cag-inc-title { font-size: 12.5px; font-weight: 600; margin: 4px 0 2px; overflow-wrap: anywhere; line-height: 1.3; }
+.cag-inc-meta { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cag-inc-time { font-size: 10.5px; color: var(--text-muted); }
+.cag-inc-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+@media (max-width: 1000px) {
+  .cag-layout { grid-template-columns: 1fr; height: auto; }
+  .cag-main { max-height: 70vh; }
+  .cag-side { height: 560px; }
+}

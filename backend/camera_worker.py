@@ -20,6 +20,10 @@ recognition_in_progress = {}
 _camera_threads = {}
 _camera_stop_events = {}
 _registry_lock = threading.Lock()
+_tampered = {}
+
+def get_tampered_cameras():
+    return {cid for cid, v in list(_tampered.items()) if v}
 
 def get_unknown_streak(camera_id):
     location = _get_camera_location(camera_id)
@@ -154,9 +158,11 @@ def _process_frame(frame, camera_id, camera_name):
     now = datetime.now()
     zone_name = _get_camera_zone(camera_id)
     if _is_frame_tampered(frame):
+        _tampered[camera_id] = True
         msg = f"[{camera_name}] Camera view blocked or tampered with"
         log_alert(f"camera_{camera_id}", "camera_tamper", "high", msg, frame=frame, camera_name=camera_name, zone_name=zone_name)
         return
+    _tampered[camera_id] = False
 
     names = recognize_faces(frame)
 
@@ -309,6 +315,7 @@ def _cleanup_camera_state(camera_id):
     latest_frames.pop(camera_id, None)
     recognition_locks.pop(camera_id, None)
     recognition_in_progress.pop(camera_id, None)
+    _tampered.pop(camera_id, None)
 
 def start_camera_threads():
     cameras = _load_cameras_from_db()
