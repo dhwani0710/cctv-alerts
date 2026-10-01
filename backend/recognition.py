@@ -152,10 +152,11 @@ def recognize_faces(frame):
                         accepted_name = best_folder.replace("_", " ")
                     else:
                         print(f"[DEBUG] Ambiguous: {best_folder} ({best_avg:.3f}) vs runner-up ({second_avg:.3f}) — margin too small, rejecting both")
-                names.append(accepted_name)
+            names.append(accepted_name)
 
-            # One line per detected face, showing only the closest employee
-            if closest_folder is not None:
+            # One line per detected face — only printed for actual matches now,
+            # to cut debug noise/overhead when nobody's recognized.
+            if closest_folder is not None and accepted_name != "Unknown":
                 print(
                     f"[DEBUG] Face -> {accepted_name} | closest: {closest_folder}, "
                     f"{closest_matched}/{closest_required} photo(s) within {max_distance}, "
