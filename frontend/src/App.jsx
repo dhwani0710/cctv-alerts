@@ -11,6 +11,7 @@ import AdminDashboard from './pages/AdminDashboard.jsx';
 import EmployeeDashboard from './pages/EmployeeDashboard.jsx';
 import CamerasAlerts from './pages/CamerasAlerts.jsx';
 import Records from './pages/Records.jsx';
+import Recordings from './pages/Recordings.jsx';
 import AdminEmployees from './pages/AdminEmployees.jsx';
 import Attendance from './pages/Attendance.jsx';
 import AdminUsers from './pages/AdminUsers.jsx';
@@ -91,6 +92,15 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['ceo', 'owner', 'guard']}>
                 <Records />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/recordings"
+            element={
+              <ProtectedRoute allowedRoles={['ceo', 'owner', 'guard']}>
+                <Recordings />
               </ProtectedRoute>
             }
           />

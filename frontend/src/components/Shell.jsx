@@ -46,6 +46,13 @@ const NAV_ICONS = {
     </svg>
   ),
 
+  recordings: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="6" width="15" height="12" rx="2" />
+      <polygon points="17 10 22 7 22 17 17 14" />
+    </svg>
+  ),
+
   'audit-logs': (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
       <path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4" />
@@ -232,6 +239,16 @@ export default function Shell({
             key: 'records',
             label: 'Records',
             to: '/records',
+          },
+        ]
+      : []),
+
+    ...((isAdmin || isGuard)
+      ? [
+          {
+            key: 'recordings',
+            label: 'Video Recordings',
+            to: '/recordings',
           },
         ]
       : []),
