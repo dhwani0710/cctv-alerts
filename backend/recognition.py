@@ -145,11 +145,11 @@ def recognize_faces(frame):
                 candidates.sort(key=lambda c: c[1])
                 best_folder, best_avg = candidates[0]
                 if len(candidates) == 1:
-                    accepted_name = best_folder.replace("_", " ")
+                    accepted_name = best_folder.replace("_", " ").strip()
                 else:
                     _, second_avg = candidates[1]
                     if (second_avg - best_avg) >= margin:
-                        accepted_name = best_folder.replace("_", " ")
+                        accepted_name = best_folder.replace("_", " ").strip()
                     else:
                         print(f"[DEBUG] Ambiguous: {best_folder} ({best_avg:.3f}) vs runner-up ({second_avg:.3f}) — margin too small, rejecting both")
             names.append(accepted_name)
