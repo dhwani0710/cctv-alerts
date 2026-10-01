@@ -10,6 +10,7 @@ from recognition import recognize_faces
 from alerts import get_alert_priority, is_within_store_hours, log_alert, format_duration, get_shift_datetimes, escalate_stale_incidents
 from database import get_db
 import config
+from video_recorder import get_recorder
 
 frame_locks = {}
 latest_frames = {}
@@ -209,6 +210,9 @@ def _process_frame(frame, camera_id, camera_name):
             print(f"[camera_worker] Error processing detected person '{name}': {e}")
 
     if any_unknown:
+        recorder = get_recorder(camera_id, camera_name)
+        recorder.trigger_unknown(zone_name)
+        
         streak = get_unknown_streak(camera_id) + 1
         set_unknown_streak(camera_id, streak)
         if streak >= config.UNKNOWN_STREAK_THRESHOLD and not is_within_store_hours(now):
@@ -277,6 +281,9 @@ def _camera_loop(camera_config, stop_event):
 
         with frame_locks[camera_id]:
             latest_frames[camera_id] = frame.copy()
+
+        recorder = get_recorder(camera_id, camera_name)
+        recorder.push_frame(frame)
 
         if time.time() - last_heartbeat > config.CAMERA_HEARTBEAT_INTERVAL_SEC:
             update_camera_heartbeat(camera_id, datetime.now())

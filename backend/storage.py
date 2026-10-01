@@ -13,8 +13,9 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY) if (SUPABASE_URL an
 def upload_file(local_path, remote_key):
     if not supabase:
         return local_path
+    content_type = "video/webm" if remote_key.endswith(".webm") else "video/mp4" if remote_key.endswith(".mp4") else "image/jpeg"
     with open(local_path, "rb") as f:
-        supabase.storage.from_(BUCKET).upload(remote_key, f, {"upsert": "true"})
+        supabase.storage.from_(BUCKET).upload(remote_key, f, {"upsert": "true", "content-type": content_type})
     return supabase.storage.from_(BUCKET).get_public_url(remote_key)
 
 def download_file(remote_key, local_path):
