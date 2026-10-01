@@ -231,6 +231,17 @@ def init_db():
     cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS camera_id TEXT")
     cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS zone_id TEXT")
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS recordings (
+            id SERIAL PRIMARY KEY,
+            camera_id TEXT NOT NULL,
+            camera_name TEXT NOT NULL,
+            zone_name TEXT,
+            timestamp TEXT NOT NULL,
+            video_url TEXT NOT NULL
+        )
+    """)
+
     # Seed default accounts so every role in the RBAC set has a working login
     # out of the box. The primary admin account honors the env vars if set;
     # the rest are fixed demo credentials, meant to be changed after first login.
