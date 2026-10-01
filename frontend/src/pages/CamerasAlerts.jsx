@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import Shell from '../components/Shell.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import AddCameraModal from '../components/AddCameraModal.jsx';
@@ -6,21 +6,72 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useStatus } from '../context/StatusContext.jsx';
 import { GuardAckModal } from '../components/GuardAckModal';
 
-const PANEL_HEIGHT = 620;
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+
+const ALERT_TYPE_LABELS = {
+  stranger: 'Unrecognized face',
+  camera_offline: 'Camera offline',
+  camera_tamper: 'Possible camera tampering',
+  early_arrival: 'Early arrival',
+  overstay: 'Overstay',
+};
+const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+const ZONE_COLORS = ['#C2703D', '#4F8FBF', '#57795F', '#9B6BC2', '#B8902F', '#BF4F7A'];
+const STATUS_LABEL = { online: 'LIVE', offline: 'OFFLINE', tampered: 'TAMPERED' };
 
 function alertTitle(a) {
   if (a.person_name && a.person_name.startsWith('Unknown@')) {
     return `Stranger - ${a.person_name.split('@')[1]}`;
   }
-  return `${a.person_name} — ${a.alert_type}`;
+  return `${a.person_name} — ${ALERT_TYPE_LABELS[a.alert_type] || a.alert_type}`;
 }
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+
+function zoneColor(zone = '') {
+  let h = 0;
+  for (const ch of zone) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return ZONE_COLORS[h % ZONE_COLORS.length];
+}
+
+function camStatus(c) {
+  return c.status || (c.live ? 'online' : 'offline');
+}
+
+function fmtTime(v) {
+  return new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function StatusBadge({ status }) {
+  return (
+    <div className={`cam-live ${status !== 'online' ? 'offline' : ''} cag-st-${status}`}>
+      <span className="rec-dot" />{STATUS_LABEL[status]}
+    </div>
+  );
+}
+
+function StatusOverlay({ status }) {
+  if (status === 'online') return null;
+  return (
+    <div className={`cag-overlay ${status}`}>
+      {status === 'offline' ? (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <path d="M2 2l20 20" /><rect x="2.5" y="7" width="14" height="11" rx="2" /><path d="M16.5 10.5 21 8v9" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3 2 20h20z" /><path d="M12 10v4M12 17.5v.01" />
+        </svg>
+      )}
+      {status === 'offline' ? 'Camera offline' : 'View blocked / tampered'}
+    </div>
+  );
+}
 
 export default function CamerasAlerts() {
   const { session, apiFetch } = useAuth();
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const canAckAlerts = ['owner', 'ceo', 'admin', 'guard'].includes(session.role);
   const { cameras, refreshCameras } = useStatus();
+
   const [selected, setSelected] = useState(null);
   const [showAddCamera, setShowAddCamera] = useState(false);
   const [incidents, setIncidents] = useState([]);
@@ -30,8 +81,13 @@ export default function CamerasAlerts() {
   const [detected, setDetected] = useState({});
   const [deleteCamTarget, setDeleteCamTarget] = useState(null);
   const [editCamTarget, setEditCamTarget] = useState(null);
+  const [deletingCam, setDeletingCam] = useState(false);
 
-    const loadIncidents = useCallback(async () => {
+  const [zoneFilter, setZoneFilter] = useState('all');
+  const [cols, setCols] = useState('auto');
+  const [ratios, setRatios] = useState({});
+
+  const loadIncidents = useCallback(async () => {
     const res = await apiFetch('/incidents?status=new');
     if (res.ok) setIncidents(await res.json());
   }, [apiFetch]);
@@ -44,7 +100,7 @@ export default function CamerasAlerts() {
 
   useEffect(() => {
     function onKey(e) {
-      if (e.key === 'Escape') setSelected(null);
+      if (e.key === 'Escape') { setSelected(null); setSnapshotView(null); }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -60,9 +116,7 @@ export default function CamerasAlerts() {
           (d) => d.name && d.name.toLowerCase() !== 'unknown'
         );
         const next = {};
-        incoming.forEach((d) => {
-          next[d.name] = d;
-        });
+        incoming.forEach((d) => { next[d.name] = d; });
         setDetected(next);
       }
     }
@@ -73,6 +127,41 @@ export default function CamerasAlerts() {
 
   const detectedList = Object.values(detected);
 
+  const zones = useMemo(
+    () => [...new Set(cameras.map((c) => c.zone_name).filter(Boolean))],
+    [cameras]
+  );
+  const filtered = useMemo(
+    () => (zoneFilter === 'all' ? cameras : cameras.filter((c) => c.zone_name === zoneFilter)),
+    [cameras, zoneFilter]
+  );
+  const counts = useMemo(() => {
+    const c = { online: 0, offline: 0, tampered: 0 };
+    cameras.forEach((cam) => { c[camStatus(cam)] += 1; });
+    return c;
+  }, [cameras]);
+
+  const sortedIncidents = useMemo(
+    () => [...incidents].sort((a, b) => {
+      const r = (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3);
+      return r !== 0 ? r : new Date(b.last_seen) - new Date(a.last_seen);
+    }),
+    [incidents]
+  );
+
+  const autoCols = filtered.length <= 1 ? 1 : filtered.length <= 4 ? 2 : filtered.length <= 9 ? 3 : 4;
+  const gridCols = cols === 'auto' ? autoCols : cols;
+
+  const setRatio = useCallback((id, r) => {
+    setRatios((p) => (Math.abs((p[id] || 0) - r) < 0.01 ? p : { ...p, [id]: r }));
+  }, []);
+
+  const feedSrc = (c) => `${API_BASE}/video_feed/${c.id}?token=${encodeURIComponent(session.token)}`;
+  const snapSrc = (a) =>
+    a.snapshot_filename.startsWith('http')
+      ? a.snapshot_filename
+      : `${API_BASE}${a.snapshot_filename}?token=${encodeURIComponent(session.token)}`;
+
   async function confirmDismiss() {
     await apiFetch(`/incidents/${dismissTarget.id}`, {
       method: 'PUT',
@@ -82,8 +171,6 @@ export default function CamerasAlerts() {
     setDismissTarget(null);
     loadIncidents();
   }
-
-  const [deletingCam, setDeletingCam] = useState(false);
 
   async function confirmDeleteCam() {
     setDeletingCam(true);
@@ -104,8 +191,9 @@ export default function CamerasAlerts() {
         <p>{cameras.length} camera{cameras.length === 1 ? '' : 's'}, monitored continuously. Click a camera to enlarge it.</p>
       </div>
 
-      <div className="two-col" style={{ gridTemplateColumns: '1fr 340px' }}>
-        <div className="panel" style={{ display: 'flex', flexDirection: 'column', height: PANEL_HEIGHT }}>
+      <div className="cag-layout">
+        {/* ---------- CAMERA GRID ---------- */}
+        <div className="panel cag-main">
           <div className="panel-head" style={{ flexShrink: 0 }}>
             <h2>Camera feeds</h2>
             {isAdmin && (
@@ -114,120 +202,191 @@ export default function CamerasAlerts() {
               </button>
             )}
           </div>
-          <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
-            <div className="cam-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-              {cameras.map((c) => (
-                <div className="cam-tile" key={c.id} onClick={() => setSelected(c)}>
-                  <div className="cam-feed">
-                    <img
-                      src={`${API_BASE}/video_feed/${c.id}?token=${encodeURIComponent(session.token)}`}
-                      alt={c.name}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                    <div className={`cam-live ${c.live ? '' : 'offline'}`}>
-                      <span className="rec-dot" />{c.live ? 'LIVE' : 'OFFLINE'}
+
+          <div className="cag-toolbar">
+            <button className={`cag-chip ${zoneFilter === 'all' ? 'active' : ''}`} onClick={() => setZoneFilter('all')}>
+              All zones
+            </button>
+            {zones.map((z) => (
+              <button
+                key={z}
+                className={`cag-chip ${zoneFilter === z ? 'active' : ''}`}
+                onClick={() => setZoneFilter(z)}
+              >
+                <i style={{ background: zoneColor(z) }} />{z}
+              </button>
+            ))}
+            <span className="cag-sep" />
+            {['auto', 1, 2, 3, 4].map((n) => (
+              <button
+                key={n}
+                className={`cag-chip ${cols === n ? 'active' : ''}`}
+                onClick={() => setCols(n)}
+                title="Grid columns"
+              >
+                {n === 'auto' ? 'Auto' : `${n}×`}
+              </button>
+            ))}
+          </div>
+
+          <div className="cag-stats" style={{ marginBottom: 10, flexShrink: 0 }}>
+            <span><b>{counts.online}</b> online</span>
+            <span className="off"><b>{counts.offline}</b> offline</span>
+            <span className="tam"><b>{counts.tampered}</b> tampered</span>
+          </div>
+
+          <div className="cag-grid-scroll">
+            <div className="cag-grid" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
+              {filtered.map((c) => {
+                const st = camStatus(c);
+                return (
+                  <div
+                    className={`cam-tile cag-tile ${st === 'tampered' ? 'is-tampered' : ''}`}
+                    key={c.id}
+                    onClick={() => setSelected(c)}
+                  >
+                    <div className="cam-feed" style={{ aspectRatio: ratios[c.id] || 16 / 9 }}>
+                      {st !== 'offline' && (
+                        <img
+                          src={feedSrc(c)}
+                          alt={c.name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onLoad={(e) => {
+                            const { naturalWidth: w, naturalHeight: h } = e.target;
+                            if (w && h) setRatio(c.id, w / h);
+                          }}
+                        />
+                      )}
+                      <StatusOverlay status={st} />
+                      <StatusBadge status={st} />
+                      {c.zone_name && (
+                        <div className="cag-zone-badge" style={{ background: zoneColor(c.zone_name) }}>
+                          {c.zone_name}
+                        </div>
+                      )}
+                      <div className="cam-time mono">{c.id}</div>
                     </div>
-                    <div className="cam-time mono">{c.id}</div>
-                  </div>
-                  <div className="cam-meta">
-                    <div>
-                      <div className="name">{c.name}</div>
-                      <div className="zone">{c.zone_name}</div>
-                    </div>
-                    {isAdmin && (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button
-                          className="btn btn-outline btn-sm"
-                          style={{ width: 70, textAlign: 'center' }}
-                          onClick={(e) => { e.stopPropagation(); setEditCamTarget(c); }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="btn btn-danger btn-sm"
-                          style={{ width: 70, textAlign: 'center' }}
-                          onClick={(e) => { e.stopPropagation(); setDeleteCamTarget(c); }}
-                        >
-                          Delete
-                        </button>
+                    <div className="cam-meta">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="name">{c.name}</div>
+                        <div className="zone">{c.zone_name}</div>
                       </div>
-                    )}
+                      {isAdmin && (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={(e) => { e.stopPropagation(); setEditCamTarget(c); }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="btn btn-danger btn-sm"
+                            onClick={(e) => { e.stopPropagation(); setDeleteCamTarget(c); }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
+            {filtered.length === 0 && (
+              <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No cameras in this zone.</p>
+            )}
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', height: PANEL_HEIGHT, gap: 20 }}>
-          <div className="panel" style={{ display: 'flex', flexDirection: 'column', flex: '0 0 auto' }}>
-            <div className="panel-head" style={{ flexShrink: 0 }}>
+        {/* ---------- SIDEBAR ---------- */}
+        <div className="cag-side">
+          <div className="panel cag-detected">
+            <div className="panel-head" style={{ marginBottom: 6 }}>
               <h2>Currently detected</h2>
-              <span className="eyebrow">{detectedList.length} on camera now</span>
+              <span className="eyebrow">{detectedList.length} now</span>
             </div>
-            <div style={{ overflowY: 'auto', maxHeight: 114, paddingRight: 4 }}>
+            <div style={{ maxHeight: 84, overflowY: 'auto' }}>
               {detectedList.map((d, i) => (
-                <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid var(--border, #2a2a2a)' }}>
-                  {d.name} <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>· {d.camera}</span>
+                <div className="row" key={i}>
+                  {d.name} <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>· {d.camera}</span>
                 </div>
               ))}
               {detectedList.length === 0 && (
-                <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No one currently detected.</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: 0 }}>No one detected.</p>
               )}
             </div>
           </div>
 
-          <div className="panel" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <div className="panel-head" style={{ flexShrink: 0 }}>
-            <h2>Alerts</h2>
-            <span className="eyebrow">{incidents.length} active</span>
-          </div>
-          <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
-            {incidents.map((a) => (
-              <div className="alert-item" key={a.id}>
-                <div className={`alert-sev ${a.priority === 'low' ? 'low' : ''}`} />
-                <div className="alert-body" style={{ minWidth: 0 }}>
-                  <div
-                    className="t"
-                    style={{ overflowWrap: 'break-word', cursor: a.snapshot_filename ? 'pointer' : 'default' }}
-                    onClick={() => a.snapshot_filename && setSnapshotView(a)}
-                  >
-                    {alertTitle(a)}
-                  </div>
-                  <div className="d" style={{ overflowWrap: 'break-word' }}>{a.alert_count} occurrence(s)</div>
-                  <div className="alert-actions">
-                    {canAckAlerts && (
-                      <button className="btn btn-outline btn-sm" onClick={() => setAckModalAlert(a)}>Acknowledge</button>
-                    )}
-                    {isAdmin && (
-                      <button className="btn btn-danger btn-sm" onClick={() => setDismissTarget(a)}>Dismiss</button>
-                    )}
+          <div className="panel cag-alerts">
+            <div className="panel-head" style={{ flexShrink: 0 }}>
+              <h2>Alerts</h2>
+              <span className="cag-live-tag"><span className="rec-dot" />LIVE · {incidents.length}</span>
+            </div>
+            <div className="cag-alerts-list">
+              {sortedIncidents.map((a) => (
+                <div className={`cag-inc p-${a.priority}`} key={a.id}>
+                  {a.snapshot_filename && (
+                    <img
+                      className="cag-inc-thumb"
+                      src={snapSrc(a)}
+                      alt="snapshot"
+                      onClick={() => setSnapshotView(a)}
+                    />
+                  )}
+                  <div className="cag-inc-body">
+                    <div className="cag-inc-top">
+                      <span className={`pill p-${a.priority}`}>{a.priority}</span>
+                      <span className="mono cag-inc-time">{fmtTime(a.last_seen)}</span>
+                    </div>
+                    <div className="cag-inc-title">{alertTitle(a)}</div>
+                    <div className="cag-inc-meta">
+                      {a.camera_name || '-'} · {a.zone_name || '-'} · ×{a.alert_count}
+                    </div>
+                    <div className="cag-inc-actions">
+                      {canAckAlerts && (
+                        <button className="btn btn-outline btn-sm" onClick={() => setAckModalAlert(a)}>
+                          Acknowledge
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button className="btn btn-danger btn-sm" onClick={() => setDismissTarget(a)}>
+                          Dismiss
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="alert-time mono">{new Date(a.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-              </div>
-            ))}
-            {incidents.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No active alerts.</p>}
-          </div>
+              ))}
+              {incidents.length === 0 && (
+                <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No active alerts.</p>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
+      {/* ---------- LIGHTBOX ---------- */}
       {selected && (
         <div
           className="cam-lightbox-backdrop"
           onClick={(e) => { if (e.target === e.currentTarget) setSelected(null); }}
         >
           <div className="cam-lightbox">
-            <div className="cam-feed">
-              <img
-                src={`${API_BASE}/video_feed/${selected.id}?token=${encodeURIComponent(session.token)}`}
-                alt={selected.name}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-              <div className={`cam-live ${selected.live ? '' : 'offline'}`}>
-                <span className="rec-dot" />{selected.live ? 'LIVE' : 'OFFLINE'}
-              </div>
+            <div className="cam-feed" style={{ aspectRatio: ratios[selected.id] || 16 / 9 }}>
+              {camStatus(selected) !== 'offline' && (
+                <img
+                  src={feedSrc(selected)}
+                  alt={selected.name}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              )}
+              <StatusOverlay status={camStatus(selected)} />
+              <StatusBadge status={camStatus(selected)} />
+              {selected.zone_name && (
+                <div className="cag-zone-badge" style={{ background: zoneColor(selected.zone_name) }}>
+                  {selected.zone_name}
+                </div>
+              )}
               <div className="cam-time mono">{selected.id}</div>
             </div>
             <div className="cam-lightbox-head">
@@ -236,6 +395,29 @@ export default function CamerasAlerts() {
                 <div className="zone">{selected.zone_name}</div>
               </div>
               <button className="cam-lightbox-close" onClick={() => setSelected(null)} aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {snapshotView && (
+        <div
+          className="cam-lightbox-backdrop"
+          onClick={(e) => { if (e.target === e.currentTarget) setSnapshotView(null); }}
+        >
+          <div className="cam-lightbox">
+            <img
+              src={snapSrc(snapshotView)}
+              alt="Alert snapshot"
+              style={{ width: '100%', height: 'auto', display: 'block' }}
+            />
+            <div className="cam-lightbox-head">
+              <div><div className="name">{alertTitle(snapshotView)}</div></div>
+              <button className="cam-lightbox-close" onClick={() => setSnapshotView(null)} aria-label="Close">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path d="M6 6l12 12M18 6 6 18" />
                 </svg>
@@ -264,32 +446,9 @@ export default function CamerasAlerts() {
         onConfirm={confirmDeleteCam}
         onCancel={() => setDeleteCamTarget(null)}
       />
-      {snapshotView && (
-        <div className="cam-lightbox-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setSnapshotView(null); }}>
-          <div className="cam-lightbox">
-            <img
-              src={snapshotView.snapshot_filename.startsWith('http') ? snapshotView.snapshot_filename : `${API_BASE}${snapshotView.snapshot_filename}?token=${encodeURIComponent(session.token)}`}
-              alt="Alert snapshot"
-              style={{ width: '100%', height: 'auto', display: 'block' }}
-            />
-            <div className="cam-lightbox-head">
-              <div>
-                <div className="name">{alertTitle(snapshotView)}</div>
-              </div>
-              <button className="cam-lightbox-close" onClick={() => setSnapshotView(null)} aria-label="Close">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M6 6l12 12M18 6 6 18" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
       {showAddCamera && (
-        <AddCameraModal
-          onClose={() => setShowAddCamera(false)}
-          onAdded={refreshCameras}
-        />
+        <AddCameraModal onClose={() => setShowAddCamera(false)} onAdded={refreshCameras} />
       )}
       {editCamTarget && (
         <AddCameraModal
@@ -298,7 +457,6 @@ export default function CamerasAlerts() {
           onAdded={refreshCameras}
         />
       )}
-      
       {ackModalAlert && (
         <GuardAckModal
           alert={ackModalAlert}
