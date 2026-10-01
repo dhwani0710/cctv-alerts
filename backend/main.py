@@ -218,6 +218,24 @@ def get_audit_logs(
 
     return [dict(r) for r in rows]
 
+# --- Video Recordings ---
+
+@app.get("/recordings", dependencies=[Depends(verify_token)])
+def get_recordings(page: int = 1, limit: int = 10):
+    offset = (page - 1) * limit
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as count FROM recordings")
+        total = cur.fetchone()["count"]
+
+        cur.execute(
+            "SELECT id, camera_id, camera_name, zone_name, timestamp, video_url FROM recordings ORDER BY timestamp DESC LIMIT %s OFFSET %s", 
+            (limit, offset)
+        )
+        rows = cur.fetchall()
+        cur.close()
+        return {"recordings": [dict(r) for r in rows], "total": total}
+
 # --- User Management (Owner & CEO) ---
 
 @app.get("/users", dependencies=[Depends(require_admin)])

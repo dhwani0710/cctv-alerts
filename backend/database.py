@@ -77,6 +77,8 @@ def init_db():
             )
         """)
         cursor.execute("ALTER TABLE alert_records ADD COLUMN IF NOT EXISTS incident_id INTEGER")
+        cursor.execute("ALTER TABLE alert_records ADD COLUMN IF NOT EXISTS camera_name TEXT")
+        cursor.execute("ALTER TABLE alert_records ADD COLUMN IF NOT EXISTS zone_name TEXT")
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS employee_photos (
@@ -123,10 +125,7 @@ def init_db():
             )
         """)
         cursor.execute("ALTER TABLE currently_detected ADD COLUMN IF NOT EXISTS camera_name TEXT")
-        # Drop the old camera_id column if it still exists (safe to run every time;
-        # also removes any old primary key that included camera_id).
         cursor.execute("ALTER TABLE currently_detected DROP COLUMN IF EXISTS camera_id")
-        # Make sure ON CONFLICT (person_name, camera_name) always has a matching constraint.
         cursor.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_cd_person_camera
             ON currently_detected (person_name, camera_name)
@@ -206,6 +205,18 @@ def init_db():
         cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS last_notified TEXT")
         cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS camera_id TEXT")
         cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS zone_id TEXT")
+
+        # From ft3
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS recordings (
+                id SERIAL PRIMARY KEY,
+                camera_id TEXT NOT NULL,
+                camera_name TEXT NOT NULL,
+                zone_name TEXT,
+                timestamp TEXT NOT NULL,
+                video_url TEXT NOT NULL
+            )
+        """)
 
         # Indexes — created AFTER the tables exist
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts (timestamp DESC)")
