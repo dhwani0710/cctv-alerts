@@ -223,6 +223,35 @@ button {
   color: var(--brass);
 }
 
+/* dashboard brand mark (the "e" tile) */
+.brandmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.brandmark__tile {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 22%;
+  background: var(--gold-grad);
+  color: var(--on-gold);
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 4px 14px var(--brass-glow);
+  user-select: none;
+}
+
+.brandmark__name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -.01em;
+  color: var(--text);
+}
+
 .field {
   margin-bottom: 16px;
 }
@@ -689,12 +718,33 @@ button {
   white-space: nowrap;
 }
 
+/* sidebar logo: same "e" tile as the login page */
 .rail-brand .stamp {
-  --sc: var(--brass);
-  color: var(--brass);
-  font-size: 18px;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  background: var(--gold-grad);
+  color: var(--on-gold);
+  box-shadow: 0 4px 14px var(--brass-glow);
 }
 
+.rail-brand .stamp::before {
+  content: 'e';
+  position: static;
+  inset: auto;
+  border: none;
+  border-radius: 0;
+  opacity: 1;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.rail-brand .stamp svg {
+  display: none;
+}
 .rail-brand::after {
   content: 'eSamyak';
   color: var(--text-on-chrome);
@@ -944,6 +994,13 @@ button {
   font-size: 13.5px;
   margin: 0;
   max-width: 46em;
+}
+
+/* dashboard header with the "e" logo beside the heading */
+.page-head--brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 /* =====================================================
