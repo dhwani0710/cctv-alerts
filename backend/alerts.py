@@ -132,6 +132,8 @@ def _notifications_enabled_for(alert_type):
     return True
 
 def log_alert(person_name, alert_type, priority, message, frame=None, camera_name=None, zone_name=None):
+    if alert_type == "stranger":
+        person_name = "Unknown"
     local_path, filename = (save_snapshot(frame) if frame is not None else (None, None))
     final_url = f"/snapshots/{filename}" if filename else None
 
