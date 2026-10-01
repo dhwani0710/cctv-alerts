@@ -29,6 +29,7 @@ export default function CamerasAlerts() {
   const [snapshotView, setSnapshotView] = useState(null);
   const [detected, setDetected] = useState({});
   const [deleteCamTarget, setDeleteCamTarget] = useState(null);
+  const [editCamTarget, setEditCamTarget] = useState(null);
 
     const loadIncidents = useCallback(async () => {
     const res = await apiFetch('/incidents?status=new');
@@ -84,10 +85,17 @@ export default function CamerasAlerts() {
     loadIncidents();
   }
 
+  const [deletingCam, setDeletingCam] = useState(false);
+
   async function confirmDeleteCam() {
-    await apiFetch(`/cameras/${deleteCamTarget.id}`, { method: 'DELETE' });
-    setDeleteCamTarget(null);
-    refreshCameras();
+    setDeletingCam(true);
+    try {
+      await apiFetch(`/cameras/${deleteCamTarget.id}`, { method: 'DELETE' });
+      setDeleteCamTarget(null);
+      refreshCameras();
+    } finally {
+      setDeletingCam(false);
+    }
   }
 
   return (
@@ -129,12 +137,22 @@ export default function CamerasAlerts() {
                       <div className="zone">{c.zone_name}</div>
                     </div>
                     {isAdmin && (
-                      <button
-                        className="btn btn-danger btn-sm"
-                        onClick={(e) => { e.stopPropagation(); setDeleteCamTarget(c); }}
-                      >
-                        Delete
-                      </button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          style={{ width: 70, textAlign: 'center' }}
+                          onClick={(e) => { e.stopPropagation(); setEditCamTarget(c); }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          style={{ width: 70, textAlign: 'center' }}
+                          onClick={(e) => { e.stopPropagation(); setDeleteCamTarget(c); }}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -244,6 +262,7 @@ export default function CamerasAlerts() {
         message={deleteCamTarget ? `Delete "${deleteCamTarget.name}"? This cannot be undone.` : ''}
         confirmLabel="Delete"
         danger
+        loading={deletingCam}
         onConfirm={confirmDeleteCam}
         onCancel={() => setDeleteCamTarget(null)}
       />
@@ -271,6 +290,13 @@ export default function CamerasAlerts() {
       {showAddCamera && (
         <AddCameraModal
           onClose={() => setShowAddCamera(false)}
+          onAdded={refreshCameras}
+        />
+      )}
+      {editCamTarget && (
+        <AddCameraModal
+          editCamera={editCamTarget}
+          onClose={() => setEditCamTarget(null)}
           onAdded={refreshCameras}
         />
       )}
