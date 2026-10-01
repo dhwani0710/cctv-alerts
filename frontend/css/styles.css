@@ -1,69 +1,110 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
+/* =====================================================
+   1. TOKENS  (charcoal + copper)
+   ===================================================== */
 :root {
   color-scheme: light;
-  --bg: #F6F3EC;
-  --bg-soft: #EDE7D8;
+  --bg: #F7F4EF;
+  --bg-soft: #EFEAE2;
   --surface: #FFFFFF;
-  --border: #DCD4BE;
-  --border-strong: #C7BC9E;
-  --text: #201C15;
-  --text-muted: #6B6357;
-  --chrome: #14171C;
-  --chrome-hover: #1B1F26;
-  --chrome-active: #242932;
-  --chrome-line: #333A44;
-  --text-on-chrome: #E9E6DD;
-  --text-on-chrome-muted: #9BA1A8;
-  --brass: #B08D57;
-  --brass-dim: #8C6F44;
-  --brass-glow: rgba(176, 141, 87, .35);
+  --surface-2: #F9F6F1;
+  --border: #E4DDD0;
+  --border-strong: #D3C9B7;
+  --text: #1C1A17;
+  --text-muted: #6F675B;
+
+  --chrome: #16171B;
+  --chrome-hover: #1E1F24;
+  --chrome-active: #26272D;
+  --chrome-line: #2E3038;
+  --text-on-chrome: #F1EEE8;
+  --text-on-chrome-muted: #9A9AA3;
+
+  --brass: #C2703D;
+  --brass-dim: #A85C2C;
+  --brass-glow: rgba(194, 112, 61, .28);
   --brick: #C1432E;
   --brick-glow: rgba(193, 67, 46, .35);
   --sage: #57795F;
-  --radius-sm: 3px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
-  --font-display: 'Fraunces', Georgia, serif;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
   --font-body: 'Inter', -apple-system, sans-serif;
+  --font-display: var(--font-body);
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
   --gold-1: #F0C36B;
   --gold-2: #C89A4A;
-  --night-bg: #0A0B0E;
-  --night-card: #14161C;
-  --night-card-2: #1A1D24;
+  --gold-grad: linear-gradient(135deg, #D9895A, #B8622F);
+  --on-gold: #FFFFFF;
+
+  --night-bg: #121316;
+  --night-card: #1B1C20;
+  --night-card-2: #232429;
   --night-line: rgba(255, 255, 255, .08);
   --night-line-2: rgba(255, 255, 255, .14);
-  --night-text-muted: #8B95A5;
+  --night-text-muted: #9A9AA3;
   --green: #3ECF7E;
+
+  --shadow-card: 0 1px 2px rgba(40, 30, 20, .05), 0 6px 18px rgba(40, 30, 20, .04);
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #14171C;
-  --bg-soft: #1B1F26;
-  --surface: #1E222A;
-  --border: #333A44;
-  --border-strong: #454D5A;
-  --text: #E9E6DD;
-  --text-muted: #9BA1A8;
-  --chrome: #0D0F12;
-  --chrome-hover: #17191D;
-  --chrome-active: #1F232A;
-  --chrome-line: #3A414C;
-  --text-on-chrome: #EDEAE1;
-  --text-on-chrome-muted: #9BA1A8;
-  --brass: #C7A06B;
-  --brass-dim: #B08D57;
-  --brass-glow: rgba(199, 160, 107, .3);
-  --brick: #E0604B;
-  --brick-glow: rgba(224, 96, 75, .3);
-  --sage: #74A17D;
+  --bg: #141518;
+  --bg-soft: #1A1B1F;
+  --surface: #1E1F24;
+  --surface-2: #25262C;
+  --border: #2C2E35;
+  --border-strong: #3A3D46;
+  --text: #F1EEE8;
+  --text-muted: #9A9AA3;
+  --chrome: #101114;
+  --chrome-hover: #17181D;
+  --chrome-active: #202127;
+  --chrome-line: #2A2C33;
+  --brass: #D98A5A;
+  --brass-dim: #E9A277;
+  --brass-glow: rgba(217, 138, 90, .28);
+  --brick: #E5604B;
+  --brick-glow: rgba(229, 96, 75, .3);
+  --sage: #5FBF86;
+  --shadow-card: none;
 }
 
+/* login page: copper on charcoal (always dark, in both themes) */
+.login-wrap {
+  --brass: #E08F5F;
+  --brass-dim: #EBA57C;
+  --brass-glow: rgba(224, 143, 95, .3);
+  --gold-grad: linear-gradient(135deg, #E39A6B, #BF6A38);
+  --on-gold: #FFFFFF;
+}
+
+/* =====================================================
+   2. BASE
+   ===================================================== */
 * {
   box-sizing: border-box;
-  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+  transition: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+a,
+button,
+input,
+select,
+.panel,
+.stat-card,
+.cam-tile,
+.rail-link,
+.alert-item,
+table.records td {
+  transition: background-color .15s ease, border-color .15s ease,
+    color .15s ease, box-shadow .15s ease, filter .15s ease;
 }
 
 html,
@@ -77,6 +118,7 @@ body {
   font-family: var(--font-body);
   background: var(--bg);
   color: var(--text);
+  letter-spacing: -.003em;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -93,6 +135,11 @@ button {
   font-family: var(--font-mono);
 }
 
+:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -101,7 +148,9 @@ button {
   color: var(--brass);
 }
 
-/* ---------- stamp mark ---------- */
+/* =====================================================
+   3. SMALL SHARED PIECES
+   ===================================================== */
 .stamp {
   --sc: var(--brass);
   width: 44px;
@@ -150,7 +199,6 @@ button {
   --sc: var(--brick);
 }
 
-/* ---------- theme toggle ---------- */
 .theme-toggle {
   width: 34px;
   height: 34px;
@@ -172,10 +220,38 @@ button {
 
 .theme-toggle:hover {
   border-color: var(--brass);
-  color: var(--brass-dim);
+  color: var(--brass);
 }
 
-/* ---------- generic form fields (used across app: Add employee, filters, etc.) ---------- */
+/* dashboard brand mark (the "e" tile) */
+.brandmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.brandmark__tile {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 22%;
+  background: var(--gold-grad);
+  color: var(--on-gold);
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 4px 14px var(--brass-glow);
+  user-select: none;
+}
+
+.brandmark__name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -.01em;
+  color: var(--text);
+}
+
 .field {
   margin-bottom: 16px;
 }
@@ -208,7 +284,9 @@ button {
   box-shadow: 0 0 0 3px var(--brass-glow);
 }
 
-/* ---------- login page ---------- */
+/* =====================================================
+   4. LOGIN PAGE
+   ===================================================== */
 .login-wrap {
   min-height: 100vh;
   position: relative;
@@ -221,19 +299,13 @@ button {
   padding: 60px 70px 90px;
 }
 
-@media (max-width:900px) {
-  .login-wrap {
-    grid-template-columns: 1fr;
-    padding: 40px 24px 90px;
-  }
-}
-
 .login-glow {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(700px 500px at 78% 35%, rgba(176, 141, 87, .14), transparent 65%),
-    radial-gradient(500px 400px at 10% 85%, rgba(176, 141, 87, .06), transparent 70%);
+  background:
+    radial-gradient(700px 500px at 78% 35%, rgba(224, 143, 95, .13), transparent 65%),
+    radial-gradient(500px 400px at 10% 85%, rgba(224, 143, 95, .06), transparent 70%);
 }
 
 .login-hero {
@@ -255,8 +327,8 @@ button {
   height: 40px;
   border-radius: 11px;
   flex-shrink: 0;
-  background: linear-gradient(135deg, var(--gold-1), var(--gold-2));
-  color: #1A1200;
+  background: var(--gold-grad);
+  color: var(--on-gold);
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 19px;
@@ -300,7 +372,7 @@ button {
 }
 
 .login-hero-mid h1 .accent {
-  background: linear-gradient(135deg, var(--gold-1), var(--gold-2));
+  background: var(--gold-grad);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -330,8 +402,8 @@ button {
   height: 30px;
   border-radius: 8px;
   flex-shrink: 0;
-  color: var(--gold-1);
-  background: rgba(176, 141, 87, .12);
+  color: var(--brass);
+  background: rgba(224, 143, 95, .12);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -500,7 +572,7 @@ button {
 }
 
 .forgot-link:hover {
-  color: var(--gold-1);
+  color: var(--brass-dim);
 }
 
 .login-submit {
@@ -510,8 +582,8 @@ button {
   justify-content: center;
   gap: 8px;
   padding: 13px;
-  background: linear-gradient(135deg, var(--gold-1), var(--gold-2));
-  color: #1A1200;
+  background: var(--gold-grad);
+  color: var(--on-gold);
   border: none;
   border-radius: 9px;
   font-size: 14px;
@@ -592,7 +664,16 @@ button {
   text-align: center;
 }
 
-/* ---------- app shell ---------- */
+@media (max-width: 900px) {
+  .login-wrap {
+    grid-template-columns: 1fr;
+    padding: 40px 24px 90px;
+  }
+}
+
+/* =====================================================
+   5. APP SHELL  (labeled sidebar)
+   ===================================================== */
 .shell {
   height: 100vh;
   overflow: hidden;
@@ -600,37 +681,111 @@ button {
   background: var(--bg);
 }
 
+/* ---------- collapsible sidebar: icons at rest, slides out on hover ---------- */
 .rail {
-  width: 64px;
-  flex-shrink: 0;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+  width: 68px;
   background: var(--chrome);
+  border-right: 1px solid var(--chrome-line);
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;      /* children fill the rail, so nothing centers and overflows left */
   gap: 6px;
-  padding: 18px 0;
-  position: relative;
-  z-index: 50;
+  padding: 18px 12px;        /* 12px side padding keeps a 44px icon column */
+  overflow: hidden;          /* clips the labels while collapsed */
+  transition: width .25s ease, box-shadow .25s ease;
 }
 
+.rail:hover,
+.rail:focus-within {
+  width: 232px;
+  box-shadow: 8px 0 28px rgba(0, 0, 0, .35);
+}
+
+/* the page keeps a fixed gutter, so content never jumps when the rail opens */
+.main { margin-left: 68px; }
+
+/* brand */
 .rail-brand {
-  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+  white-space: nowrap;
 }
 
+/* sidebar logo: same "e" tile as the login page */
+.rail-brand .stamp {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  background: var(--gold-grad);
+  color: var(--on-gold);
+  box-shadow: 0 4px 14px var(--brass-glow);
+}
+
+.rail-brand .stamp::before {
+  content: 'e';
+  position: static;
+  inset: auto;
+  border: none;
+  border-radius: 0;
+  opacity: 1;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.rail-brand .stamp svg {
+  display: none;
+}
+.rail-brand::after {
+  content: 'eSamyak';
+  color: var(--text-on-chrome);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity .2s ease, max-width .25s ease, transform .25s ease;
+}
+
+.rail:hover .rail-brand::after,
+.rail:focus-within .rail-brand::after {
+  max-width: 140px;
+  opacity: 1;
+  transform: none;
+}
+
+/* links */
 .rail-link {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 100%;
+  height: 42px;
+  flex-shrink: 0;
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 0 12px;
+  white-space: nowrap;
   color: var(--text-on-chrome-muted);
 }
 
 .rail-link svg {
   width: 19px;
   height: 19px;
+  flex-shrink: 0;
 }
 
 .rail-link:hover {
@@ -639,35 +794,63 @@ button {
 }
 
 .rail-link.active {
-  background: var(--chrome-active);
-  color: var(--brass);
+  background: var(--brass);
+  color: #fff;
+  box-shadow: 0 2px 10px var(--brass-glow);
 }
 
+.rail-link.active svg {
+  color: #fff;
+}
+
+/* labels: hidden at rest, fade in as the rail opens */
 .rail-link .tip {
-  position: absolute;
-  left: 52px;
-  top: 50%;
-  transform: translateY(-50%) translateX(-4px);
-  background: var(--chrome-hover);
-  color: var(--text-on-chrome);
-  font-size: 11.5px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
+  position: static;
+  background: none;
+  padding: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: inherit;
+  overflow: hidden;
+  max-width: 0;
   opacity: 0;
+  transform: translateX(-6px);
   pointer-events: none;
-  transition: opacity .12s, transform .12s;
-  z-index: 100;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: opacity .2s ease, max-width .25s ease, transform .25s ease;
 }
 
-.rail-link:hover .tip {
+.rail:hover .rail-link .tip,
+.rail:focus-within .rail-link .tip {
+  max-width: 160px;
   opacity: 1;
-  transform: translateY(-50%) translateX(0);
+  transform: none;
+  pointer-events: auto;
 }
 
 .rail-spacer {
   flex: 1;
+}
+
+/* settings popup keeps a fixed width now that the rail changes size */
+.rail .settings-menu {
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: 208px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .rail,
+  .rail-brand::after,
+  .rail-link .tip {
+    transition: none;
+  }
+}
+
+@media print {
+  .main {
+    margin-left: 0 !important;
+  }
 }
 
 .main {
@@ -693,6 +876,8 @@ button {
 .topbar-title {
   font-family: var(--font-display);
   font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -.01em;
 }
 
 .topbar-right {
@@ -719,7 +904,7 @@ button {
 
 .role-badge.admin {
   border-color: var(--brass);
-  color: var(--brass-dim);
+  color: var(--brass);
 }
 
 .user-chip {
@@ -732,10 +917,11 @@ button {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--chrome);
-  color: var(--text-on-chrome);
+  background: var(--brass);
+  color: #fff;
   font-family: var(--font-mono);
   font-size: 11px;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -772,6 +958,10 @@ button {
   background: var(--bg-soft);
 }
 
+.content:has(.vscode-settings) {
+  padding: 0;
+}
+
 .toast {
   position: fixed;
   top: 18px;
@@ -793,8 +983,9 @@ button {
 
 .page-head h1 {
   font-family: var(--font-display);
-  font-weight: 500;
-  font-size: 26px;
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: -.02em;
   margin: 4px 0 6px;
 }
 
@@ -805,10 +996,19 @@ button {
   max-width: 46em;
 }
 
-/* ---------- stat cards ---------- */
+/* dashboard header with the "e" logo beside the heading */
+.page-head--brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* =====================================================
+   6. STAT CARDS, PANELS, ALERTS, LOG
+   ===================================================== */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 14px;
   margin-bottom: 26px;
 }
@@ -818,12 +1018,57 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 16px 18px;
+  box-shadow: var(--shadow-card);
+}
+
+/* icon layout only applies when the card has an icon tile */
+.stat-card:has(.stat-icon) {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--brass) 14%, transparent);
+  color: var(--brass);
+}
+
+.stat-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.stat-card.warn .stat-icon {
+  background: color-mix(in srgb, var(--brick) 14%, transparent);
+  color: var(--brick);
+}
+
+.stat-card.good .stat-icon {
+  background: color-mix(in srgb, var(--sage) 16%, transparent);
+  color: var(--sage);
+}
+
+.stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .stat-card .value {
   font-family: var(--font-display);
+  font-weight: 700;
   font-size: 30px;
-  margin: 8px 0 4px;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  margin: 6px 0 2px;
 }
 
 .stat-card .delta {
@@ -831,15 +1076,10 @@ button {
   color: var(--text-muted);
 }
 
-.stat-card.good .value {
-  color: var(--sage);
-}
-
 .stat-card.warn .value {
   color: var(--brick);
 }
 
-/* ---------- panels ---------- */
 .two-col {
   display: grid;
   grid-template-columns: 1.1fr .9fr;
@@ -847,8 +1087,30 @@ button {
   align-items: start;
 }
 
-@media (max-width:900px) {
-  .two-col {
+.alerts-activity-grid,
+.cam-alerts-layout {
+  display: grid;
+  grid-template-columns: 1.7fr .85fr;
+  gap: 18px;
+  align-items: start;
+  width: 100%;
+}
+
+.alerts-activity-grid .panel,
+.cam-alerts-col {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+
+  .two-col,
+  .cam-alerts-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .alerts-activity-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -858,6 +1120,7 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 18px 20px;
+  box-shadow: var(--shadow-card);
 }
 
 .panel-head {
@@ -870,30 +1133,45 @@ button {
 .panel-head h2 {
   font-family: var(--font-display);
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: -.01em;
   margin: 0;
 }
 
 .link-btn {
   font-size: 12px;
-  color: var(--brass-dim);
+  color: var(--brass);
   font-weight: 600;
 }
 
 .link-btn:hover {
-  color: var(--brass);
+  color: var(--brass-dim);
 }
 
-/* ---------- alerts ---------- */
+/* alerts */
 .alert-item {
   display: flex;
   gap: 12px;
-  padding: 11px 0;
+  margin: 0 -10px;
+  padding: 12px 10px;
   border-top: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.alert-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .alert-item:first-of-type {
   border-top: none;
+}
+
+.alert-item:hover {
+  background: var(--bg-soft);
 }
 
 .alert-sev {
@@ -937,9 +1215,29 @@ button {
   font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-/* ---------- activity log ---------- */
+/* severity text: <span className={`sev sev-${severity}`}> */
+.sev {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.sev-high {
+  color: var(--brick);
+}
+
+.sev-medium {
+  color: var(--brass);
+}
+
+.sev-low {
+  color: var(--text-muted);
+}
+
+/* activity log */
 .log-row {
   display: grid;
   grid-template-columns: 10px 68px 1fr auto;
@@ -974,6 +1272,7 @@ button {
   font-size: 11.5px;
   color: var(--text-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .log-text {
@@ -988,7 +1287,78 @@ button {
   color: var(--text-muted);
 }
 
-/* ---------- cameras ---------- */
+/* live pulse (the one place we spend motion) */
+@keyframes signal-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--brick-glow);
+  }
+
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+.cam-live:not(.offline) .rec-dot,
+.alert-sev:not(.low) {
+  animation: signal-pulse 1.8s ease-out infinite;
+}
+
+/* ---------- priority pills + dots (dashboard) ---------- */
+.pill.p-high {
+  background: color-mix(in srgb, var(--brick) 14%, transparent);
+  color: var(--brick);
+  text-transform: capitalize;
+}
+
+.pill.p-medium {
+  background: color-mix(in srgb, var(--brass) 16%, transparent);
+  color: var(--brass-dim);
+  text-transform: capitalize;
+}
+
+.pill.p-low {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.log-dot.p-high { background: var(--brick); }
+.log-dot.p-medium { background: var(--brass); }
+.log-dot.p-low { background: var(--text-muted); }
+
+.alert-time-cell {
+  white-space: nowrap;
+}
+
+.alert-time-cell .log-dot {
+  display: inline-block;
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+.alert-count {
+  margin-left: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.cell-ellipsis {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-note {
+  color: var(--text-muted);
+  font-size: 13.5px;
+  margin: 8px 0 0;
+}
+
+/* =====================================================
+   7. CAMERAS
+   ===================================================== */
 .cam-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1001,12 +1371,17 @@ button {
   border-radius: var(--radius-lg);
   overflow: hidden;
   cursor: zoom-in;
+  box-shadow: var(--shadow-card);
+}
+
+.cam-tile:hover {
+  border-color: var(--brass);
 }
 
 .cam-feed {
   position: relative;
   aspect-ratio: 16/10;
-  background: var(--chrome);
+  background: radial-gradient(120% 100% at 50% 0%, #1E1F24, #0B0C0E);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1073,23 +1448,6 @@ button {
 .cam-meta .zone {
   font-size: 11.5px;
   color: var(--text-muted);
-}
-
-.cam-alerts-layout {
-  display: grid;
-  grid-template-columns: 1.7fr .85fr;
-  gap: 18px;
-  align-items: start;
-}
-
-@media (max-width:900px) {
-  .cam-alerts-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-.cam-alerts-col {
-  min-width: 0;
 }
 
 .cam-lightbox-backdrop {
@@ -1159,7 +1517,9 @@ button {
   color: var(--brick);
 }
 
-/* ---------- buttons ---------- */
+/* =====================================================
+   8. BUTTONS
+   ===================================================== */
 .btn {
   font-size: 12.5px;
   font-weight: 600;
@@ -1181,7 +1541,7 @@ button {
 }
 
 .btn-outline:hover {
-  border-color: var(--border-strong);
+  border-color: var(--brass);
 }
 
 .btn-danger {
@@ -1191,26 +1551,34 @@ button {
 }
 
 .btn-danger:hover {
-  background: rgba(193, 67, 46, .06);
+  background: rgba(193, 67, 46, .08);
 }
 
-.btn-brass {
-  background: var(--brass);
-  border-color: var(--brass);
-  color: #fff;
+.btn-brass,
+.vscode-primary-btn,
+.vscode-backup-btn {
+  background: var(--gold-grad);
+  border-color: transparent;
+  color: var(--on-gold);
+  font-weight: 700;
 }
 
-.btn-brass:hover {
-  background: var(--brass-dim);
+.btn-brass:hover,
+.vscode-primary-btn:hover,
+.vscode-backup-btn:hover {
+  background: var(--gold-grad);
+  filter: brightness(1.07);
 }
 
-/* ---------- records table ---------- */
+/* =====================================================
+   9. RECORDS TABLE, PILLS, STAFF
+   ===================================================== */
 .filter-bar {
   display: flex;
   gap: 10px;
   align-items: center;
-  margin-bottom: 18px;
   flex-wrap: wrap;
+  margin-bottom: 18px;
   position: relative;
   z-index: 20;
 }
@@ -1250,10 +1618,15 @@ table.records th {
 table.records td {
   padding: 11px 10px;
   border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
 }
 
 table.records tr:last-child td {
   border-bottom: none;
+}
+
+table.records tbody tr:hover td {
+  background: var(--bg-soft);
 }
 
 .pill {
@@ -1275,7 +1648,7 @@ table.records tr:last-child td {
 }
 
 .pill.review {
-  background: rgba(176, 141, 87, .14);
+  background: rgba(194, 112, 61, .14);
   color: var(--brass-dim);
 }
 
@@ -1302,16 +1675,18 @@ table.records tr:last-child td {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 18px;
+  box-shadow: var(--shadow-card);
 }
 
 .staff-card .avatar {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--chrome);
-  color: var(--text-on-chrome);
+  background: var(--brass);
+  color: #fff;
   font-family: var(--font-mono);
   font-size: 13px;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1347,7 +1722,9 @@ table.records tr:last-child td {
   margin-top: 14px;
 }
 
-/* ---------- settings page ---------- */
+/* =====================================================
+   10. SETTINGS
+   ===================================================== */
 .settings-stack {
   display: flex;
   flex-direction: column;
@@ -1399,7 +1776,7 @@ table.records tr:last-child td {
   height: 22px;
   flex-shrink: 0;
   appearance: none;
-  background: var(--border);
+  background: var(--border-strong);
   border-radius: 20px;
   position: relative;
   cursor: pointer;
@@ -1438,7 +1815,7 @@ table.records tr:last-child td {
   gap: 14px;
 }
 
-@media (max-width:500px) {
+@media (max-width: 500px) {
   .settings-two-field {
     grid-template-columns: 1fr;
   }
@@ -1476,12 +1853,12 @@ table.records tr:last-child td {
   color: var(--text-muted);
 }
 
-/* ---------- settings popup menu ---------- */
+/* popup menu (opens above the settings link, inside the wide sidebar) */
 .settings-menu {
   position: absolute;
-  left: 52px;
-  bottom: 0;
-  width: 220px;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: 100%;
   background: var(--chrome-hover);
   border: 1px solid var(--chrome-line);
   border-radius: var(--radius-md);
@@ -1516,7 +1893,7 @@ table.records tr:last-child td {
 }
 
 .settings-menu-item-danger {
-  color: #E0604B;
+  color: #E5604B;
 }
 
 .settings-menu-divider {
@@ -1534,7 +1911,7 @@ table.records tr:last-child td {
   height: 22px;
   border-radius: 50%;
   background: var(--brass);
-  color: #1A1200;
+  color: #fff;
   font-size: 10px;
   font-weight: 700;
   display: flex;
@@ -1543,29 +1920,16 @@ table.records tr:last-child td {
   flex-shrink: 0;
 }
 
-/* =====================================================
-   SETTINGS PAGE (VS CODE STYLE LAYOUT, APP THEME COLORS)
-   ===================================================== */
-
+/* full-screen settings layout */
 .vscode-settings {
   width: 100%;
   height: 100%;
-  min-height: 0;
-  background: var(--bg);
-  color: var(--text);
+  min-height: calc(100vh - 60px);
   display: flex;
   flex-direction: column;
+  background: var(--surface);
+  color: var(--text);
 }
-
-/* Recent Alerts + Activity Log */
-.alerts-activity-grid {
-  display: grid;
-  grid-template-columns: 1.7fr .85fr;
-  gap: 18px;
-  align-items: start;
-}
-
-/* TOP BAR */
 
 .vscode-settings-topbar {
   height: 58px;
@@ -1575,7 +1939,7 @@ table.records tr:last-child td {
   gap: 16px;
   padding: 0 24px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--surface);
 }
 
 .vscode-search {
@@ -1617,8 +1981,6 @@ table.records tr:last-child td {
   border-color: var(--brass);
 }
 
-/* USER / WORKSPACE */
-
 .vscode-scope-tabs {
   display: flex;
   height: 34px;
@@ -1648,20 +2010,10 @@ table.records tr:last-child td {
   padding: 0 14px;
   border: none;
   border-radius: var(--radius-md);
-  background: var(--brass);
-  color: #fff;
   font-size: 12px;
-  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.2s ease;
 }
-
-.vscode-backup-btn:hover {
-  background: var(--brass-dim);
-}
-
-/* MAIN BODY */
 
 .vscode-settings-body {
   display: flex;
@@ -1670,12 +2022,10 @@ table.records tr:last-child td {
   overflow: hidden;
 }
 
-/* SIDEBAR */
-
 .vscode-settings-sidebar {
   width: 260px;
   flex-shrink: 0;
-  padding: 22px 12px;
+  padding: 24px 16px;
   border-right: 1px solid var(--border);
   background: var(--bg-soft);
   overflow-y: auto;
@@ -1700,33 +2050,39 @@ table.records tr:last-child td {
   margin: 0 0 2px;
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.2s ease;
 }
 
 .vscode-settings-sidebar button:hover {
-  background: rgba(176, 141, 87, 0.12);
-  color: var(--brass-dim);
+  background: var(--bg);
+  color: var(--text);
 }
 
 .vscode-settings-sidebar button.active {
-  background: var(--brass);
-  color: #fff;
+  background: var(--surface);
+  color: var(--brass);
   font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--brass);
 }
 
-/* CONTENT */
-
 .vscode-settings-content {
-  width: min(900px, 100%);
-  padding: 42px 52px;
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  padding: 40px 56px;
   overflow-y: auto;
+}
+
+.vscode-settings-content form,
+.vscode-settings-content>div {
+  max-width: 720px;
 }
 
 .vscode-settings-content h1 {
   margin: 0 0 30px;
   font-family: var(--font-display);
   font-size: 26px;
-  font-weight: 500;
+  font-weight: 700;
+  letter-spacing: -.02em;
   color: var(--text);
 }
 
@@ -1737,8 +2093,6 @@ table.records tr:last-child td {
   line-height: 1.6;
   font-size: 13px;
 }
-
-/* SETTINGS ROW */
 
 .vscode-setting-row {
   min-height: 74px;
@@ -1764,8 +2118,6 @@ table.records tr:last-child td {
   line-height: 1.5;
 }
 
-/* CHECKBOX */
-
 .vscode-setting-row input[type="checkbox"] {
   appearance: none;
   width: 34px;
@@ -1775,11 +2127,11 @@ table.records tr:last-child td {
   background: var(--border-strong);
   position: relative;
   cursor: pointer;
-  transition: 0.2s;
+  transition: background .2s;
 }
 
 .vscode-setting-row input[type="checkbox"]::after {
-  content: "";
+  content: '';
   position: absolute;
   width: 16px;
   height: 16px;
@@ -1787,7 +2139,7 @@ table.records tr:last-child td {
   left: 2px;
   border-radius: 50%;
   background: #fff;
-  transition: 0.2s;
+  transition: left .2s;
 }
 
 .vscode-setting-row input[type="checkbox"]:checked {
@@ -1797,13 +2149,6 @@ table.records tr:last-child td {
 .vscode-setting-row input[type="checkbox"]:checked::after {
   left: 16px;
 }
-
-.vscode-setting-row input[type="checkbox"]:focus-visible {
-  outline: 1px solid var(--brass);
-  outline-offset: 3px;
-}
-
-/* FIELDS */
 
 .vscode-field {
   margin-bottom: 24px;
@@ -1821,7 +2166,6 @@ table.records tr:last-child td {
   width: 100%;
   max-width: 520px;
   height: 36px;
-  box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   outline: none;
@@ -1842,8 +2186,6 @@ table.records tr:last-child td {
   background: var(--bg-soft);
 }
 
-/* TWO FIELDS */
-
 .vscode-two-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1851,27 +2193,22 @@ table.records tr:last-child td {
   max-width: 760px;
 }
 
-/* BUTTONS */
-
 .vscode-primary-btn {
   min-height: 36px;
   border: none;
   border-radius: var(--radius-md);
-  background: var(--brass);
-  color: #fff;
   padding: 0 16px;
   cursor: pointer;
   font-size: 13px;
-  font-weight: 600;
-  transition: background 0.2s ease, transform 0.1s ease;
-}
-
-.vscode-primary-btn:hover {
-  background: var(--brass-dim);
 }
 
 .vscode-primary-btn:active {
   transform: translateY(1px);
+}
+
+.vscode-primary-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
 }
 
 .vscode-outline-btn {
@@ -1883,16 +2220,15 @@ table.records tr:last-child td {
   padding: 0 14px;
   cursor: pointer;
   font-size: 12px;
-  transition: all 0.2s ease;
 }
 
 .vscode-outline-btn:hover {
-  border-color: var(--border-strong);
+  border-color: var(--brass);
   background: var(--bg-soft);
 }
 
 .vscode-outline-btn:disabled {
-  opacity: 0.5;
+  opacity: .5;
   cursor: not-allowed;
 }
 
@@ -1909,10 +2245,7 @@ table.records tr:last-child td {
 
 .vscode-danger-btn:hover {
   background: rgba(193, 67, 46, .08);
-  border-color: var(--brick);
 }
-
-/* SEARCH RESULTS */
 
 .vscode-search-results {
   max-width: 850px;
@@ -1948,19 +2281,26 @@ table.records tr:last-child td {
   padding: 30px 10px;
 }
 
-/* SAVED MESSAGE */
-
 .vscode-saved {
-  display: inline-block;
-  margin-bottom: 18px;
-  padding: 8px 12px;
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 60;
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--sage);
   border-radius: var(--radius-md);
-  background: rgba(87, 121, 95, .12);
   color: var(--sage);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
 }
 
-/* SYSTEM */
+.vscode-saved.is-error {
+  color: var(--brick);
+  border-color: var(--brick);
+}
 
 .vscode-section {
   padding-bottom: 30px;
@@ -2019,7 +2359,30 @@ table.records tr:last-child td {
   font-size: 12px;
 }
 
-/* RESPONSIVE */
+.vscode-form-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  width: 100%;
+  margin-top: 28px;
+}
+
+.vscode-form-actions button {
+  margin: 0;
+}
+
+.vscode-confirm-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.vscode-confirm-text {
+  color: var(--text-muted);
+  font-size: 13px;
+}
 
 @media (max-width: 800px) {
   .vscode-settings-topbar {
@@ -2058,29 +2421,29 @@ table.records tr:last-child td {
   }
 }
 
-/* Recent Alerts + Activity Log grid tweaks */
-.alerts-activity-grid {
-  width: 100%;
-}
+@media (max-width: 600px) {
 
-.alerts-activity-grid .panel {
-  min-width: 0;
-}
+  .vscode-form-actions,
+  .vscode-confirm-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
 
-/* Mobile: stack the panels */
-@media (max-width: 768px) {
-  .alerts-activity-grid {
-    grid-template-columns: 1fr !important;
+  .vscode-form-actions button {
+    width: 100%;
   }
 }
 
-/* ---------- System Audit Log & Print Styles ---------- */
+/* =====================================================
+   11. AUDIT LOG, BANNERS, LOADING
+   ===================================================== */
 .audit-pill {
   display: inline-block;
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.05em;
+  letter-spacing: .05em;
   text-transform: uppercase;
   padding: 2px 7px;
   border-radius: var(--radius-sm);
@@ -2088,36 +2451,34 @@ table.records tr:last-child td {
 }
 
 .audit-pill.owner {
-  background: rgba(176, 141, 87, 0.18);
+  background: rgba(194, 112, 61, .18);
   border-color: var(--brass);
   color: var(--brass-dim);
 }
 
 .audit-pill.ceo,
 .audit-pill.admin {
-  background: rgba(176, 141, 87, 0.14);
+  background: rgba(194, 112, 61, .12);
   border-color: var(--border-strong);
   color: var(--brass-dim);
 }
 
 .audit-pill.hr,
 .audit-pill.manager {
-  background: rgba(87, 121, 95, 0.14);
+  background: rgba(87, 121, 95, .14);
   border-color: var(--sage);
   color: var(--sage);
 }
 
 .audit-pill.guard {
-  background: rgba(62, 207, 126, 0.14);
-  border-color: rgba(62, 207, 126, 0.35);
+  background: rgba(62, 207, 126, .14);
+  border-color: rgba(62, 207, 126, .35);
   color: #279455;
 }
 
-/* Dedicated vertical scrollbar for System Audit Log table container */
 .audit-table-container {
   max-height: calc(100vh - 310px);
-  overflow-y: auto;
-  overflow-x: auto;
+  overflow: auto;
   position: relative;
   scrollbar-gutter: stable;
 }
@@ -2141,7 +2502,6 @@ table.records tr:last-child td {
   background: var(--brass);
 }
 
-/* Sticky header when scrolling table container vertically */
 .audit-table-container table.records thead th {
   position: sticky;
   top: 0;
@@ -2150,149 +2510,6 @@ table.records tr:last-child td {
   box-shadow: inset 0 -1px 0 var(--border);
 }
 
-/* ---------- pt2: settings action row (Reset/Save layout) ---------- */
-.vscode-form-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 14px;
-  width: 100%;
-  margin-top: 28px;
-}
-
-.vscode-form-actions button {
-  margin: 0;
-}
-
-.vscode-confirm-group {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.vscode-confirm-text {
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-@media (max-width: 600px) {
-  .vscode-form-actions {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-  .vscode-form-actions button {
-    width: 100%;
-  }
-  .vscode-confirm-group {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-}
-
-@media print {
-  /* Hide interactive chrome and navigation */
-  .rail,
-  .topbar,
-  .filter-bar,
-  .no-print,
-  .cam-lightbox-backdrop,
-  .toast,
-  .theme-toggle,
-  .logout-btn {
-    display: none !important;
-  }
-
-  body,
-  .shell {
-    background: #ffffff !important;
-    color: #111111 !important;
-    min-height: auto !important;
-    display: block !important;
-  }
-
-  .main {
-    display: block !important;
-    width: 100% !important;
-  }
-
-  .content {
-    padding: 0 !important;
-    overflow: visible !important;
-    background: #ffffff !important;
-  }
-
-  .page-head {
-    margin-bottom: 18px !important;
-    border-bottom: 2px solid #333333 !important;
-    padding-bottom: 10px !important;
-  }
-
-  .page-head h1 {
-    font-size: 20pt !important;
-    color: #000000 !important;
-  }
-
-  .page-head p {
-    color: #444444 !important;
-    font-size: 9pt !important;
-  }
-
-  .panel {
-    border: 1px solid #cccccc !important;
-    box-shadow: none !important;
-    background: #ffffff !important;
-    padding: 0 !important;
-    border-radius: 0 !important;
-  }
-
-  table.records {
-    width: 100% !important;
-    border-collapse: collapse !important;
-    font-size: 8.5pt !important;
-  }
-
-  table.records th {
-    background: #f0f0f0 !important;
-    color: #000000 !important;
-    border-bottom: 2px solid #333333 !important;
-    padding: 6px 8px !important;
-  }
-
-  table.records td {
-    color: #111111 !important;
-    border-bottom: 1px solid #dddddd !important;
-    padding: 6px 8px !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-
-  .audit-pill {
-    border: 1px solid #888888 !important;
-    color: #000000 !important;
-    background: none !important;
-  }
-
-  .audit-table-container {
-    max-height: none !important;
-    overflow: visible !important;
-  }
-
-  .audit-table-container table.records thead th {
-    position: static !important;
-    box-shadow: none !important;
-  }
-
-  /* Prevent icon SVGs from expanding arbitrarily in print while preserving charts */
-  svg:not(.ad-donut-svg):not(.chart-svg) {
-    max-width: 24px !important;
-    max-height: 24px !important;
-  }
-}
-
-/* ---------- feedback banners / loading states (Records page etc.) ---------- */
 .banner {
   display: flex;
   align-items: center;
@@ -2338,7 +2555,9 @@ table.records tr:last-child td {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .table-empty-state {
@@ -2348,101 +2567,155 @@ table.records tr:last-child td {
   padding: 24px 0;
 }
 
-/* ---------- settings polish ---------- */
-.vscode-settings {
-  max-width: 1100px;
-  margin: 0 auto;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  box-shadow: 0 1px 2px rgba(60, 45, 20, .06), 0 8px 24px rgba(60, 45, 20, .05);
+.skeleton {
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--bg-soft) 25%, var(--surface-2) 50%, var(--bg-soft) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
 }
 
-.vscode-settings-topbar {
-  padding: 0 12px;
-  background: var(--surface);
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
 }
 
-.vscode-settings-content {
-  flex: 1;
-  width: auto;
-  min-width: 0;
-  padding: 40px 48px;
-}
-.vscode-settings-content form,
-.vscode-settings-content > div {
-  max-width: 640px;
-}
-
-.vscode-saved {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 60;
-  margin: 0;
-  padding: 10px 14px;
-  background: var(--surface);
-  border: 1px solid var(--sage);
-  font-size: 13px;
-  font-weight: 600;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
-}
-.vscode-saved.is-error {
-  color: var(--brick);
-  border-color: var(--brick);
+/* =====================================================
+   12. DARK THEME REFINEMENTS
+   ===================================================== */
+[data-theme="dark"] .field input,
+[data-theme="dark"] .field select,
+[data-theme="dark"] .filter-bar input,
+[data-theme="dark"] .filter-bar select,
+[data-theme="dark"] .vscode-field input,
+[data-theme="dark"] .vscode-field select,
+[data-theme="dark"] .vscode-search {
+  background: var(--surface-2);
 }
 
-.vscode-settings-sidebar button:focus-visible,
-.vscode-primary-btn:focus-visible,
-.vscode-outline-btn:focus-visible,
-.vscode-danger-btn:focus-visible {
-  outline: 2px solid var(--brass);
-  outline-offset: 2px;
-}
-.vscode-primary-btn:disabled {
-  opacity: .5;
-  cursor: not-allowed;
+[data-theme="dark"] .pill.clear {
+  background: rgba(95, 191, 134, .14);
 }
 
-/* full-screen settings: remove the floating card look */
-.content:has(.vscode-settings) {
-  padding: 0;
+[data-theme="dark"] .pill.flag {
+  background: rgba(229, 96, 75, .14);
 }
 
-.vscode-settings {
-  max-width: none;
-  width: 100%;
-  min-height: calc(100vh - 60px); /* 60px = topbar height */
-  margin: 0;
-  background: var(--surface);
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  overflow: visible;
+[data-theme="dark"] .pill.review {
+  background: rgba(217, 138, 90, .16);
 }
 
-.vscode-settings-topbar {
-  padding: 0 24px;
-  border-bottom: 1px solid var(--border);
+/* =====================================================
+   13. REDUCED MOTION
+   ===================================================== */
+@media (prefers-reduced-motion: reduce) {
+
+  .cam-live .rec-dot,
+  .alert-sev,
+  .skeleton,
+  .spinner {
+    animation: none;
+  }
 }
 
-.vscode-settings-body {
-  flex: 1;
-  min-height: 0;
-}
+/* =====================================================
+   14. PRINT (keep last)
+   ===================================================== */
+@media print {
 
-.vscode-settings-sidebar {
-  width: 260px;
-  padding: 24px 16px;
-}
+  .rail,
+  .topbar,
+  .filter-bar,
+  .no-print,
+  .cam-lightbox-backdrop,
+  .toast,
+  .theme-toggle,
+  .logout-btn {
+    display: none !important;
+  }
 
-.vscode-settings-content {
-  padding: 40px 56px;
-  overflow-y: auto;
-}
+  body,
+  .shell {
+    background: #fff !important;
+    color: #111 !important;
+    min-height: auto !important;
+    display: block !important;
+  }
 
-.vscode-settings-content form,
-.vscode-settings-content > div {
-  max-width: 720px;
+  .main {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  .content {
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  .page-head {
+    margin-bottom: 18px !important;
+    border-bottom: 2px solid #333 !important;
+    padding-bottom: 10px !important;
+  }
+
+  .page-head h1 {
+    font-size: 20pt !important;
+    color: #000 !important;
+  }
+
+  .page-head p {
+    color: #444 !important;
+    font-size: 9pt !important;
+  }
+
+  .panel {
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  table.records {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 8.5pt !important;
+  }
+
+  table.records th {
+    background: #f0f0f0 !important;
+    color: #000 !important;
+    border-bottom: 2px solid #333 !important;
+    padding: 6px 8px !important;
+  }
+
+  table.records td {
+    color: #111 !important;
+    border-bottom: 1px solid #ddd !important;
+    padding: 6px 8px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .audit-pill {
+    border: 1px solid #888 !important;
+    color: #000 !important;
+    background: none !important;
+  }
+
+  .audit-table-container {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .audit-table-container table.records thead th {
+    position: static !important;
+    box-shadow: none !important;
+  }
+
+  svg:not(.ad-donut-svg):not(.chart-svg) {
+    max-width: 24px !important;
+    max-height: 24px !important;
+  }
 }

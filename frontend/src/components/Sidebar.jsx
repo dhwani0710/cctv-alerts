@@ -27,7 +27,7 @@ export const Sidebar = () => {
   if (isCeoOrAdmin) dashboardPath = '/admin-dashboard';
   else if (isGuard) dashboardPath = '/guard-dashboard';
   else if (isHr) dashboardPath = '/hr-dashboard';
-  
+
   if (user) {
     links.push({ path: dashboardPath, label: 'Dashboard', icon: 'dashboard' });
   }
@@ -52,22 +52,24 @@ export const Sidebar = () => {
   }
 
   return (
-    <nav className="w-[76px] shrink-0 bg-[var(--bg-page)] border-r border-[var(--border-color)] flex flex-col items-center py-5 gap-2">
-      <div className="w-11 h-11 rounded-full border-2 border-[var(--accent)] flex items-center justify-center text-xl mb-4 font-serif text-[var(--accent)]">◆</div>
-      {links.map(l => (
+    <nav className="rail">
+      <div className="rail-brand">
+        <div className="stamp">◆</div>
+      </div>
+
+      {links.map((l) => (
         <NavLink
           key={l.path}
           to={l.path}
-          className={({ isActive }) =>
-            `w-12 h-12 rounded-lg flex items-center justify-center transition ${
-              isActive ? 'bg-[var(--bg-panel-3)] text-[var(--accent)]' : 'text-[var(--text-muted)] hover:bg-[var(--bg-panel-3)] hover:text-[var(--text-primary)]'
-            }`
-          }
-          title={l.label}
+          aria-label={l.label}
+          className={({ isActive }) => `rail-link${isActive ? ' active' : ''}`}
         >
-          <span className="w-5 h-5">{ICONS[l.icon]}</span>
+          {ICONS[l.icon]}
+          <span className="tip">{l.label}</span>
         </NavLink>
       ))}
+
+      <div className="rail-spacer" />
     </nav>
   );
 };
