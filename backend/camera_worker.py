@@ -209,16 +209,13 @@ def _process_frame(frame, camera_id, camera_name):
             print(f"[camera_worker] Error processing detected person '{name}': {e}")
 
     if any_unknown:
-        if not is_within_store_hours(now):
-            streak = get_unknown_streak(camera_id) + 1
-            set_unknown_streak(camera_id, streak)
-            if streak >= config.UNKNOWN_STREAK_THRESHOLD:
-                location = _get_camera_location(camera_id)
-                location_key = f"Unknown@{location}"
-                current = get_current_frame(camera_id)
-                snapshot_frame = current if current is not None else frame
-                msg = f"[{camera_name}] Unknown person detected outside store hours"
-                log_alert(location_key, "stranger", "high", msg, frame=snapshot_frame, camera_name=camera_name, zone_name=zone_name)
+        streak = get_unknown_streak(camera_id) + 1
+        set_unknown_streak(camera_id, streak)
+        if streak >= config.UNKNOWN_STREAK_THRESHOLD and not is_within_store_hours(now):
+            current = get_current_frame(camera_id)
+            snapshot_frame = current if current is not None else frame
+            msg = f"[{camera_name}] Unknown person detected outside store hours"
+            log_alert("Unknown", "stranger", "high", msg, frame=snapshot_frame, camera_name=camera_name, zone_name=zone_name)
     else:
         set_unknown_streak(camera_id, 0)
 
