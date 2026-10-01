@@ -59,13 +59,11 @@ export default function CamerasAlerts() {
         const incoming = (data.currently_detected || []).filter(
           (d) => d.name && d.name.toLowerCase() !== 'unknown'
         );
-        setDetected((prev) => {
-          const next = { ...prev };
-          incoming.forEach((d) => {
-            next[`${d.name}|${d.camera}`] = d;
-          });
-          return next;
+        const next = {};
+        incoming.forEach((d) => {
+          next[d.name] = d;
         });
+        setDetected(next);
       }
     }
     loadStatus();
@@ -170,7 +168,7 @@ export default function CamerasAlerts() {
             <div style={{ overflowY: 'auto', maxHeight: 114, paddingRight: 4 }}>
               {detectedList.map((d, i) => (
                 <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid var(--border, #2a2a2a)' }}>
-                  {d.name}
+                  {d.name} <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>· {d.camera}</span>
                 </div>
               ))}
               {detectedList.length === 0 && (

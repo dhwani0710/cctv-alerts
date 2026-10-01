@@ -1191,11 +1191,17 @@ def get_status():
     cutoff = now - timedelta(seconds=config.CURRENTLY_DETECTED_TIMEOUT_SEC)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(
-            "SELECT person_name, camera_name, last_seen FROM currently_detected WHERE last_seen >= %s",
-            (cutoff.isoformat(),)
-        )
+        cur.execute("""
+            SELECT person_name,
+                   MAX(last_seen) AS last_seen,
+                   STRING_AGG(camera_name, ', ') AS camera_name
+            FROM currently_detected
+            WHERE last_seen > %s
+            GROUP BY person_name
+            ORDER BY MAX(last_seen) DESC
+        """, (cutoff.isoformat(),))
         detected_rows = cur.fetchall()
+
         cur.execute(
             "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, status, acknowledged_by, acknowledged_at, ack_proof_image, ack_notes FROM alerts ORDER BY timestamp DESC LIMIT 20"
         )
