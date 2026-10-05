@@ -52,7 +52,7 @@ def _get_known_faces_info():
     return has_photos, photo_counts
 
 
-def recognize_faces(frame):
+def recognize_faces(frame, with_boxes=False):
     """Takes a webcam frame (BGR, as from OpenCV) and returns a list of names,
     one per detected face. Unmatched faces show as 'Unknown'.
     An empty list means no faces were detected at all."""
@@ -71,6 +71,12 @@ def recognize_faces(frame):
             )
             confident_faces = [f for f in faces if f.get("confidence", 1) > 0]
             print(f"[DEBUG] No employees registered - {len(confident_faces)} face(s) detected, all Unknown")
+            if with_boxes:
+                out = []
+                for f in confident_faces:
+                    fa = f.get("facial_area", {})
+                    out.append(("Unknown", (int(fa.get("x", 0)), int(fa.get("y", 0)), int(fa.get("w", 0)), int(fa.get("h", 0)))))
+                return out
             return ["Unknown"] * len(confident_faces)
         except Exception as e:
             print(f"[recognize_faces ERROR] face detection with no employees failed: {e}")
@@ -100,7 +106,14 @@ def recognize_faces(frame):
             max_distance = DEFAULT_THRESHOLDS.get(MODEL_NAME, 0.4)
 
         names = []
+        boxes = []
         for face_result in results:
+            box = None
+            if len(face_result) > 0 and "source_x" in face_result.columns:
+                r0 = face_result.iloc[0]
+                box = (int(r0["source_x"]), int(r0["source_y"]), int(r0["source_w"]), int(r0["source_h"]))
+            boxes.append(box)
+
             if len(face_result) == 0:
                 names.append("Unknown")
                 continue
@@ -114,8 +127,6 @@ def recognize_faces(frame):
                 folder_name = os.path.basename(os.path.dirname(identity_path))
                 matches_by_employee.setdefault(folder_name, []).append(row[distance_col])
 
-            min_matching = get_setting_int("min_matching_photos") or 2
-            max_distance = get_setting_float("match_distance_threshold")
             margin = get_setting_float("match_margin") or 0.05
             candidates = []
 
@@ -163,6 +174,8 @@ def recognize_faces(frame):
                     f"best distance {round(float(closest_distance), 3)}"
                 )
 
+        if with_boxes:
+            return list(zip(names, boxes))
         return names
 
     except Exception as e:
