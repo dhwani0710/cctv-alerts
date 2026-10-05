@@ -58,3 +58,18 @@ Thumbs.db
 *.swp
 *.pyc
 *.webm
+
+
+# Recorded Video
+backend/recordings/
+recordings/
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.webm
+*.flv
+*.wmv
+
+__pycache__/
+*.pyc
