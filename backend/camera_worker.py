@@ -1,5 +1,5 @@
 import os
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|stimeout;5000000"
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000|max_delay;500000"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 import cv2
@@ -154,6 +154,14 @@ def _get_camera_zone_name(camera_id):
                 return cam["zone_name"]
     return _get_camera_location(camera_id)
 
+def draw_unknown_boxes(frame, boxes):
+    annotated = frame.copy()
+    for (x, y, w, h) in boxes:
+        cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 0, 255), 3)
+        cv2.putText(annotated, "UNKNOWN", (x, max(y - 10, 20)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+    return annotated
+
 def _process_frame(frame, camera_id, camera_name):
     now = datetime.now()
     zone_name = _get_camera_zone(camera_id)
@@ -164,18 +172,23 @@ def _process_frame(frame, camera_id, camera_name):
         return
     _tampered[camera_id] = False
 
-    names = recognize_faces(frame)
+    detect_frame = frame
+    results = recognize_faces(frame, with_boxes=True)
 
-    if not names:
+    if not results:
         time.sleep(0.3)
         retry_frame = get_current_frame(camera_id)
         if retry_frame is not None:
-            names = recognize_faces(retry_frame)
-            if names:
+            results = recognize_faces(retry_frame, with_boxes=True)
+            if results:
+                detect_frame = retry_frame
                 print(f"[camera_worker] Recovered detection on retry for '{camera_name}' (first frame likely corrupted)")
 
-    if not names:
+    if not results:
         return
+
+    names = [n for n, _ in results]
+    unknown_boxes = [b for n, b in results if n == "Unknown" and b is not None]
 
     any_unknown = False
 
@@ -221,9 +234,9 @@ def _process_frame(frame, camera_id, camera_name):
         
         streak = get_unknown_streak(camera_id) + 1
         set_unknown_streak(camera_id, streak)
+        print(f"[DEBUG] unknown streak={streak}, threshold={config.UNKNOWN_STREAK_THRESHOLD}, in_store_hours={is_within_store_hours(now)}")
         if streak >= config.UNKNOWN_STREAK_THRESHOLD and not is_within_store_hours(now):
-            current = get_current_frame(camera_id)
-            snapshot_frame = current if current is not None else frame
+            snapshot_frame = draw_unknown_boxes(detect_frame, unknown_boxes)
             msg = f"[{camera_name}] Unknown person detected outside store hours"
             log_alert("Unknown", "stranger", "high", msg, frame=snapshot_frame, camera_name=camera_name, zone_name=zone_name)
     else:
@@ -268,7 +281,7 @@ def _camera_loop(camera_config, stop_event):
     last_recognition = 0
     last_heartbeat = 0
     consecutive_failures = 0
-    MAX_FAILURES_BEFORE_RECONNECT = 15
+    MAX_FAILURES_BEFORE_RECONNECT = 5
 
     while not stop_event.is_set():
         cap.grab()
