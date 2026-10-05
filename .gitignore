@@ -70,3 +70,6 @@ recordings/
 *.webm
 *.flv
 *.wmv
+
+__pycache__/
+*.pyc
