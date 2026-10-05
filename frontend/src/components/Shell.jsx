@@ -48,8 +48,8 @@ const NAV_ICONS = {
 
   recordings: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="6" width="15" height="12" rx="2" />
-      <polygon points="17 10 22 7 22 17 17 14" />
+      <circle cx="12" cy="12" r="9" />
+      <polygon points="10 8.5 16 12 10 15.5" />
     </svg>
   ),
 
