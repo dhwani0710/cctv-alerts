@@ -46,10 +46,12 @@ class VideoRecorder:
 
         os.makedirs(RECORDINGS_DIR, exist_ok=True)
 
-    def trigger_unknown(self, zone_name):
+    def trigger_unknown(self, zone_name, snapshot_frame=None):
         with self.lock:
             self.unknown_last_seen = time.time()
             self.zone_name = zone_name
+            if snapshot_frame is not None:
+                self.last_snapshot = snapshot_frame.copy()
             
             if not self.is_recording:
                 self.is_recording = True
@@ -109,10 +111,11 @@ class VideoRecorder:
             with self.lock:
                 if (time.time() - self.unknown_last_seen) < 10.0:
                     msg = f"[{self.camera_name}] Unknown person still present, seamlessly starting new 60s recording."
+                    last_snap = getattr(self, "last_snapshot", None)
                     threading.Thread(
                         target=log_alert, 
                         args=(f"Unknown@{self.zone_name}", "stranger", "high", msg), 
-                        kwargs={"camera_name": self.camera_name, "zone_name": self.zone_name}, 
+                        kwargs={"frame": last_snap, "camera_name": self.camera_name, "zone_name": self.zone_name}, 
                         daemon=True
                     ).start()
                 else:
