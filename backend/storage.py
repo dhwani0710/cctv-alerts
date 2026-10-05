@@ -1,4 +1,5 @@
 import os
+import time
 from supabase import create_client
 from dotenv import load_dotenv
 
@@ -15,8 +16,20 @@ def upload_file(local_path, remote_key):
         return local_path
     content_type = "video/webm" if remote_key.endswith(".webm") else "video/mp4" if remote_key.endswith(".mp4") else "image/jpeg"
     with open(local_path, "rb") as f:
-        supabase.storage.from_(BUCKET).upload(remote_key, f, {"upsert": "true", "content-type": content_type})
-    return supabase.storage.from_(BUCKET).get_public_url(remote_key)
+        data = f.read()
+    last_err = None
+    for attempt in range(4):
+        try:
+            client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+            client.storage.from_(BUCKET).upload(
+                remote_key, data, {"upsert": "true", "content-type": content_type}
+            )
+            return client.storage.from_(BUCKET).get_public_url(remote_key)
+        except Exception as e:
+            last_err = e
+            print(f"[storage] Upload attempt {attempt + 1} failed: {e}")
+            time.sleep(1.5 * (attempt + 1))
+    raise last_err
 
 def download_file(remote_key, local_path):
     if not supabase:

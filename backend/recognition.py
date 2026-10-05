@@ -103,6 +103,7 @@ def recognize_faces(frame):
         max_distance = get_setting_float("match_distance_threshold")
         if max_distance is None:
             max_distance = DEFAULT_THRESHOLDS.get(MODEL_NAME, 0.4)
+        max_distance = min(max_distance, 0.40)
 
         detected_faces = []
         ext_faces = None

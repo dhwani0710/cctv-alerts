@@ -4,12 +4,34 @@ import queue
 import time
 import os
 import uuid
+import subprocess
+import imageio_ffmpeg
 from datetime import datetime
 import storage
 from database import get_db
 
+def _to_h264(src):
+    dst = src.replace(".mp4", "_h264.mp4")
+    try:
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        subprocess.run(
+            [exe, "-y", "-i", src, "-vcodec", "libx264", "-pix_fmt", "yuv420p",
+             "-preset", "veryfast", "-movflags", "+faststart", dst],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        os.remove(src)
+        return dst
+    except Exception as e:
+        print(f"[video_recorder] H264 convert failed, using raw file: {e}")
+        return src
+
 def _upload_and_save(camera_id, camera_name, zone_name, filepath, filename):
     try:
+        if not os.path.exists(filepath) or os.path.getsize(filepath) < 1000:
+            print("[video_recorder] Empty clip, skipping upload")
+            return
+        filepath = _to_h264(filepath)
+        filename = os.path.basename(filepath)
         public_url = storage.upload_file(filepath, f"recordings/{filename}")
         with get_db() as conn:
             cur = conn.cursor()
@@ -81,12 +103,16 @@ class VideoRecorder:
                     self.is_recording = False
                 break
                 
-            height, width, _ = frame.shape
-            filename = f"{self.camera_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.webm"
+            h, w, _ = frame.shape
+            filename = f"{self.camera_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.mp4"
             filepath = os.path.join(RECORDINGS_DIR, filename)
             
-            fourcc = cv2.VideoWriter_fourcc(*'vp80')
-            writer = cv2.VideoWriter(filepath, fourcc, self.fps, (width, height))
+            writer = cv2.VideoWriter(filepath, cv2.VideoWriter_fourcc(*'mp4v'), self.fps, (w, h))
+            if not writer.isOpened():
+                print("[video_recorder] Could not open video writer")
+                with self.lock:
+                    self.is_recording = False
+                break
             writer.write(frame)
             
             frames_written = 1
