@@ -52,9 +52,9 @@ def _get_known_faces_info():
     return has_photos, photo_counts
 
 
-def recognize_faces(frame, with_boxes=False):
-    """Takes a webcam frame (BGR, as from OpenCV) and returns a list of names,
-    one per detected face. Unmatched faces show as 'Unknown'.
+def recognize_faces(frame):
+    """Takes a webcam frame (BGR, as from OpenCV) and returns a list of dictionaries
+    with 'name' and 'box' ((x, y, w, h) tuple), one per detected face.
     An empty list means no faces were detected at all."""
     if DeepFace is None:
         return []
@@ -69,15 +69,14 @@ def recognize_faces(frame, with_boxes=False):
                 detector_backend=DETECTOR,
                 enforce_detection=False,
             )
-            confident_faces = [f for f in faces if f.get("confidence", 1) > 0]
-            print(f"[DEBUG] No employees registered - {len(confident_faces)} face(s) detected, all Unknown")
-            if with_boxes:
-                out = []
-                for f in confident_faces:
-                    fa = f.get("facial_area", {})
-                    out.append(("Unknown", (int(fa.get("x", 0)), int(fa.get("y", 0)), int(fa.get("w", 0)), int(fa.get("h", 0)))))
-                return out
-            return ["Unknown"] * len(confident_faces)
+            detected = []
+            for f in faces:
+                if f.get("confidence", 1) > 0:
+                    area = f.get("facial_area", {})
+                    box = (area.get("x", 0), area.get("y", 0), area.get("w", 0), area.get("h", 0))
+                    detected.append({"name": "Unknown", "box": box})
+            print(f"[DEBUG] No employees registered - {len(detected)} face(s) detected, all Unknown")
+            return detected
         except Exception as e:
             print(f"[recognize_faces ERROR] face detection with no employees failed: {e}")
             return []
@@ -105,17 +104,28 @@ def recognize_faces(frame, with_boxes=False):
         if max_distance is None:
             max_distance = DEFAULT_THRESHOLDS.get(MODEL_NAME, 0.4)
 
-        names = []
-        boxes = []
-        for face_result in results:
-            box = None
-            if len(face_result) > 0 and "source_x" in face_result.columns:
-                r0 = face_result.iloc[0]
-                box = (int(r0["source_x"]), int(r0["source_y"]), int(r0["source_w"]), int(r0["source_h"]))
-            boxes.append(box)
+        detected_faces = []
+        ext_faces = None
+
+        for i, face_result in enumerate(results):
+            # Extract bounding box if available from DeepFace source_x columns
+            box = (0, 0, 0, 0)
+            if hasattr(face_result, "columns") and "source_x" in face_result.columns and len(face_result) > 0:
+                row = face_result.iloc[0]
+                box = (int(row.get("source_x", 0)), int(row.get("source_y", 0)), int(row.get("source_w", 0)), int(row.get("source_h", 0)))
+
+            if sum(box) == 0:
+                if ext_faces is None:
+                    try:
+                        ext_faces = DeepFace.extract_faces(img_path=frame, detector_backend=DETECTOR, enforce_detection=False)
+                    except Exception:
+                        ext_faces = []
+                if ext_faces and i < len(ext_faces):
+                    area = ext_faces[i].get("facial_area", {})
+                    box = (area.get("x", 0), area.get("y", 0), area.get("w", 0), area.get("h", 0))
 
             if len(face_result) == 0:
-                names.append("Unknown")
+                detected_faces.append({"name": "Unknown", "box": box})
                 continue
 
             distance_col = [c for c in face_result.columns if "distance" in c.lower()][0]
@@ -163,10 +173,9 @@ def recognize_faces(frame, with_boxes=False):
                         accepted_name = best_folder.replace("_", " ").strip()
                     else:
                         print(f"[DEBUG] Ambiguous: {best_folder} ({best_avg:.3f}) vs runner-up ({second_avg:.3f}) — margin too small, rejecting both")
-            names.append(accepted_name)
 
-            # One line per detected face — only printed for actual matches now,
-            # to cut debug noise/overhead when nobody's recognized.
+            detected_faces.append({"name": accepted_name, "box": box})
+
             if closest_folder is not None and accepted_name != "Unknown":
                 print(
                     f"[DEBUG] Face -> {accepted_name} | closest: {closest_folder}, "
@@ -174,9 +183,7 @@ def recognize_faces(frame, with_boxes=False):
                     f"best distance {round(float(closest_distance), 3)}"
                 )
 
-        if with_boxes:
-            return list(zip(names, boxes))
-        return names
+        return detected_faces
 
     except Exception as e:
         print(f"[recognize_faces ERROR] {type(e).__name__}: {e}")

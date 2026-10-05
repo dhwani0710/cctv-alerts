@@ -154,12 +154,60 @@ def _get_camera_zone_name(camera_id):
                 return cam["zone_name"]
     return _get_camera_location(camera_id)
 
-def draw_unknown_boxes(frame, boxes):
-    annotated = frame.copy()
-    for (x, y, w, h) in boxes:
-        cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 0, 255), 3)
-        cv2.putText(annotated, "UNKNOWN", (x, max(y - 10, 20)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+def draw_oriented_bbox(img, box, label="", color=(0, 0, 255), thickness=2, corner_ratio=0.3, pad_ratio=0.35):
+    """
+    Draws an oriented bounding box (OBB style corner brackets) around a detected face.
+    Expands the bounding box size so it cleanly frames the head/face with comfortable clearance.
+    box: (x, y, w, h)
+    """
+    if img is None:
+        return None
+    annotated = img.copy()
+    if not box or len(box) < 4:
+        return annotated
+    
+    orig_x, orig_y, orig_w, orig_h = box
+    if orig_w <= 0 or orig_h <= 0:
+        return annotated
+
+    img_h, img_w = annotated.shape[:2]
+
+    # Expand box size by pad_ratio (e.g. 35% padding on all sides)
+    pad_w = int(orig_w * pad_ratio)
+    pad_h = int(orig_h * pad_ratio)
+
+    x = max(0, orig_x - pad_w)
+    y = max(0, orig_y - pad_h)
+    w = min(img_w - x, orig_w + 2 * pad_w)
+    h = min(img_h - y, orig_h + 2 * pad_h)
+
+    # Calculate corner segment length (scaled to expanded box size)
+    length = max(10, int(min(w, h) * corner_ratio))
+
+    # Top-Left Corner ┌
+    cv2.line(annotated, (x, y), (x + length, y), color, thickness)
+    cv2.line(annotated, (x, y), (x, y + length), color, thickness)
+
+    # Top-Right Corner ┐
+    cv2.line(annotated, (x + w, y), (x + w - length, y), color, thickness)
+    cv2.line(annotated, (x + w, y), (x + w, y + length), color, thickness)
+
+    # Bottom-Left Corner └
+    cv2.line(annotated, (x, y + h), (x + length, y + h), color, thickness)
+    cv2.line(annotated, (x, y + h), (x, y + h - length), color, thickness)
+
+    # Bottom-Right Corner ┘
+    cv2.line(annotated, (x + w, y + h), (x + w - length, y + h), color, thickness)
+    cv2.line(annotated, (x + w, y + h), (x + w, y + h - length), color, thickness)
+
+    # Draw label text neatly above the expanded box
+    if label:
+        font_scale = 0.6
+        font_thick = 2
+        (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thick)
+        text_y = max(y - 8, text_h + 4)
+        cv2.putText(annotated, label, (x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, font_thick, cv2.LINE_AA)
+
     return annotated
 
 def _process_frame(frame, camera_id, camera_name):
@@ -172,29 +220,30 @@ def _process_frame(frame, camera_id, camera_name):
         return
     _tampered[camera_id] = False
 
-    detect_frame = frame
-    results = recognize_faces(frame, with_boxes=True)
+    detections = recognize_faces(frame)
 
-    if not results:
+    if not detections:
         time.sleep(0.3)
         retry_frame = get_current_frame(camera_id)
         if retry_frame is not None:
-            results = recognize_faces(retry_frame, with_boxes=True)
-            if results:
-                detect_frame = retry_frame
+            detections = recognize_faces(retry_frame)
+            if detections:
                 print(f"[camera_worker] Recovered detection on retry for '{camera_name}' (first frame likely corrupted)")
 
-    if not results:
+    if not detections:
         return
 
-    names = [n for n, _ in results]
-    unknown_boxes = [b for n, b in results if n == "Unknown" and b is not None]
-
     any_unknown = False
+    unknown_boxes = []
 
-    for name in names:
+    for item in detections:
+        name = item.get("name") if isinstance(item, dict) else item
+        box = item.get("box") if isinstance(item, dict) else (0, 0, 0, 0)
+
         if name == "Unknown":
             any_unknown = True
+            if box and sum(box) > 0:
+                unknown_boxes.append(box)
             continue
 
         try:
@@ -214,30 +263,32 @@ def _process_frame(frame, camera_id, camera_name):
                 elif now < shift_start_dt:
                     minutes_early = (shift_start_dt - now).total_seconds() / 60
                     priority = get_alert_priority(minutes_early)
-                    current = get_current_frame(camera_id)
-                    snapshot_frame = current if current is not None else frame
+                    snapshot_frame = draw_oriented_bbox(frame.copy(), box, label=name, color=(0, 255, 0))
                     msg = f"[{camera_name}] {name} present {format_duration(minutes_early)} before shift start"
                     log_alert(name, "early_arrival", priority, msg, frame=snapshot_frame, camera_name=camera_name, zone_name=zone_name)
                 elif now > shift_end_dt:
                     minutes_past = (now - shift_end_dt).total_seconds() / 60
                     priority = get_alert_priority(minutes_past)
-                    current = get_current_frame(camera_id)
-                    snapshot_frame = current if current is not None else frame
+                    snapshot_frame = draw_oriented_bbox(frame.copy(), box, label=name, color=(0, 165, 255))
                     msg = f"[{camera_name}] {name} still in store {format_duration(minutes_past)} after shift end"
                     log_alert(name, "overstay", priority, msg, frame=snapshot_frame, camera_name=camera_name, zone_name=zone_name)
         except Exception as e:
             print(f"[camera_worker] Error processing detected person '{name}': {e}")
 
     if any_unknown:
+        snapshot_frame = frame.copy() if frame is not None else None
+
+        if snapshot_frame is not None and unknown_boxes:
+            for box in unknown_boxes:
+                snapshot_frame = draw_oriented_bbox(snapshot_frame, box, label="", color=(0, 0, 255), thickness=2)
+
         recorder = get_recorder(camera_id, camera_name)
-        recorder.trigger_unknown(zone_name)
+        recorder.trigger_unknown(zone_name, snapshot_frame=snapshot_frame)
         
         streak = get_unknown_streak(camera_id) + 1
         set_unknown_streak(camera_id, streak)
-        print(f"[DEBUG] unknown streak={streak}, threshold={config.UNKNOWN_STREAK_THRESHOLD}, in_store_hours={is_within_store_hours(now)}")
-        if streak >= config.UNKNOWN_STREAK_THRESHOLD and not is_within_store_hours(now):
-            snapshot_frame = draw_unknown_boxes(detect_frame, unknown_boxes)
-            msg = f"[{camera_name}] Unknown person detected outside store hours"
+        if streak >= config.UNKNOWN_STREAK_THRESHOLD:
+            msg = f"[{camera_name}] Unrecognized face detected"
             log_alert("Unknown", "stranger", "high", msg, frame=snapshot_frame, camera_name=camera_name, zone_name=zone_name)
     else:
         set_unknown_streak(camera_id, 0)
