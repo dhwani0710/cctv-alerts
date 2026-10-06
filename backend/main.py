@@ -7,18 +7,17 @@ import io
 import math
 import threading
 import uuid
-import numpy as np
 import re
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Query, Header, Response
+from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from database import init_db, get_db
-from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_camera_heartbeat, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, restart_single_camera, stop_all_cameras, get_tampered_cameras
+from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, stop_all_cameras, get_tampered_cameras
 from datetime import datetime, timedelta
 import config
-from auth import verify_token, require_owner, require_admin, require_hr, require_guard, require_staff
+from auth import verify_token, require_admin, require_hr, require_guard, require_staff
 from auth_users import verify_password, create_token, hash_password, VALID_ROLES
 from app_settings import get_all_settings, set_setting
 from settings_store import load_settings, save_settings

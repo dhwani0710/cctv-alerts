@@ -2,7 +2,6 @@ import os
 import psycopg2
 import psycopg2.extras
 from contextlib import contextmanager
-from datetime import datetime
 from dotenv import load_dotenv
 from psycopg2 import pool
 

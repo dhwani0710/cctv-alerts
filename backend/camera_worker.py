@@ -204,7 +204,7 @@ def draw_oriented_bbox(img, box, label="", color=(0, 0, 255), thickness=2, corne
     if label:
         font_scale = 0.6
         font_thick = 2
-        (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thick)
+        (_, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thick)
         text_y = max(y - 8, text_h + 4)
         cv2.putText(annotated, label, (x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, font_thick, cv2.LINE_AA)
 
@@ -411,10 +411,6 @@ def stop_all_cameras():
         camera_ids = list(_camera_threads.keys())
     for camera_id in camera_ids:
         stop_single_camera(camera_id)
-
-def restart_single_camera(camera_config):
-    stop_single_camera(camera_config["id"])
-    start_single_camera(camera_config)
 
 def get_current_frame(camera_id):
     lock = frame_locks.get(camera_id)

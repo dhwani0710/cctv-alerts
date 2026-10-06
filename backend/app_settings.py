@@ -81,12 +81,8 @@ def set_setting(key, value):
         )
         conn.commit()
         _settings_cache["data"] = None
-
-        cur.execute("SELECT value FROM app_settings WHERE key = %s", (key,))
-        confirm = cur.fetchone()
+        
         cur.close()
-
-    print(f"[app_settings] SAVED {key}={value!r} -> DB now has {confirm['value']!r}")
 
 
 def get_all_settings():
