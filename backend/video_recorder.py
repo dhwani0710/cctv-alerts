@@ -161,18 +161,6 @@ class VideoRecorder:
                 else:
                     self.is_recording = False
                     break
-        else:
-            with self.lock:
-                self.is_recording = False
-
-        writer.release()
-
-        threading.Thread(
-            target=_upload_and_save,
-            args=(self.camera_id, self.camera_name, self.zone_name, filepath, filename),
-            daemon=True
-        ).start()
-
 
 _recorders = {}
 _recorders_lock = threading.Lock()
