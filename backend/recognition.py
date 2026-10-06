@@ -1,7 +1,16 @@
 import os
+import pickle
+import threading
 import time
+import logging
 import traceback
+
+import cv2
+import numpy as np
+
 from app_settings import get_setting_int, get_setting_float
+
+logger = logging.getLogger("recognition")
 
 try:
     from deepface import DeepFace
@@ -9,20 +18,19 @@ except ImportError as e:
     print(f"[recognition] DeepFace import failed: {e}")
     DeepFace = None
 
-import config  # kept from your original file
-
 KNOWN_FACES_DIR = "known_faces"
 VALID_PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
-# Better than the default VGG-Face for CCTV / webcam quality.
-# If you change this, delete the old .pkl file inside known_faces/
-# so DeepFace rebuilds the embeddings with the new model.
 MODEL_NAME = "Facenet512"
-DETECTOR = "mtcnn"
-METRIC = "cosine"
+# Gallery photos are processed rarely, so keep the accurate detector there.
+GALLERY_DETECTOR = os.getenv("RECOG_GALLERY_DETECTOR", "mtcnn")
+# Live frames: try "yunet" or "opencv" if mtcnn is too slow, then test accuracy on your own footage.
+LIVE_DETECTOR = os.getenv("RECOG_LIVE_DETECTOR", "mtcnn")
+# Frames wider than this are downscaled before detection (boxes are scaled back up).
+MAX_DETECT_WIDTH = int(os.getenv("RECOG_MAX_WIDTH", "960"))
+# 0 keeps your current behaviour. Raise to ~0.9 to cut false "Unknown" detections.
+MIN_FACE_CONFIDENCE = float(os.getenv("RECOG_MIN_CONFIDENCE", "0"))
 
-# DeepFace's default same-person cosine cutoffs, used when the
-# "match_distance_threshold" setting is not set.
 DEFAULT_THRESHOLDS = {
     "VGG-Face": 0.68,
     "Facenet": 0.40,
@@ -30,163 +38,274 @@ DEFAULT_THRESHOLDS = {
     "ArcFace": 0.68,
 }
 
-_face_cache = {"has_photos": False, "photo_counts": {}, "ts": 0}
-_FACE_CACHE_TTL = 15  # seconds
+_CACHE_FILE = os.path.join(KNOWN_FACES_DIR, "gallery_embeddings.pickle")
+
+# Only one model inference at a time: TensorFlow already uses all cores,
+# so running several cameras in parallel just thrashes the CPU.
+_infer_lock = threading.Lock()
 
 
-def _get_known_faces_info():
-    now = time.time()
-    if now - _face_cache["ts"] < _FACE_CACHE_TTL:
-        return _face_cache["has_photos"], _face_cache["photo_counts"]
-
-    has_photos = False
-    photo_counts = {}
-    for root, _dirs, files in os.walk(KNOWN_FACES_DIR):
-        image_files = [f for f in files if f.lower().endswith(VALID_PHOTO_EXTENSIONS)]
-        if image_files:
-            has_photos = True
-            folder_name = os.path.basename(root)
-            photo_counts[folder_name] = len(image_files)
-
-    _face_cache.update(has_photos=has_photos, photo_counts=photo_counts, ts=now)
-    return has_photos, photo_counts
-
-
-def recognize_faces(frame):
-    """Takes a webcam frame (BGR, as from OpenCV) and returns a list of dictionaries
-    with 'name' and 'box' ((x, y, w, h) tuple), one per detected face.
-    An empty list means no faces were detected at all."""
-    if DeepFace is None:
-        return []
-
-    has_photos, photo_counts = _get_known_faces_info()
-
-    # No employees registered: just detect faces and mark all Unknown.
-    if not has_photos:
-        try:
-            faces = DeepFace.extract_faces(
-                img_path=frame,
-                detector_backend=DETECTOR,
-                enforce_detection=False,
-            )
-            detected = []
-            for f in faces:
-                if f.get("confidence", 1) > 0:
-                    area = f.get("facial_area", {})
-                    box = (area.get("x", 0), area.get("y", 0), area.get("w", 0), area.get("h", 0))
-                    detected.append({"name": "Unknown", "box": box})
-            print(f"[DEBUG] No employees registered - {len(detected)} face(s) detected, all Unknown")
-            return detected
-        except Exception as e:
-            print(f"[recognize_faces ERROR] face detection with no employees failed: {e}")
-            return []
-
-    try:
-        results = DeepFace.find(
-            img_path=frame,
-            db_path=KNOWN_FACES_DIR,
+def _represent(img, detector):
+    with _infer_lock:
+        return DeepFace.represent(
+            img_path=img,
             model_name=MODEL_NAME,
-            detector_backend=DETECTOR,
-            distance_metric=METRIC,
+            detector_backend=detector,
             enforce_detection=False,
-            threshold=1.0,  # only controls which rows come back; real filtering is below
-            silent=True,
         )
 
-        if not results:
-            print("[DEBUG] 0 faces detected in frame")
-            return []
 
-        print(f"[DEBUG] {len(results)} face(s) detected in frame")
+def _unit(vec):
+    v = np.asarray(vec, dtype=np.float32)
+    n = np.linalg.norm(v)
+    return v / n if n > 0 else v
 
+
+# ---------------------------------------------------------------- gallery
+
+def _load_disk_cache():
+    try:
+        with open(_CACHE_FILE, "rb") as f:
+            data = pickle.load(f)
+        if data.get("model") == MODEL_NAME and data.get("detector") == GALLERY_DETECTOR:
+            return data.get("items", {})
+    except Exception:
+        pass
+    return {}
+
+
+def _save_disk_cache(items):
+    try:
+        os.makedirs(KNOWN_FACES_DIR, exist_ok=True)
+        tmp = _CACHE_FILE + ".tmp"
+        with open(tmp, "wb") as f:
+            pickle.dump({"model": MODEL_NAME, "detector": GALLERY_DETECTOR, "items": items}, f)
+        os.replace(tmp, _CACHE_FILE)
+    except Exception as e:
+        print(f"[recognition] Could not save gallery cache: {e}")
+
+
+def _build_gallery():
+    started = time.time()
+    old_items = _load_disk_cache()
+    new_items = {}
+    vecs, folders, counts = [], [], {}
+    reused = embedded = 0
+
+    for root, _dirs, files in os.walk(KNOWN_FACES_DIR):
+        images = sorted(f for f in files if f.lower().endswith(VALID_PHOTO_EXTENSIONS))
+        if not images:
+            continue
+        folder = os.path.basename(root)
+        counts[folder] = len(images)
+
+        for fn in images:
+            path = os.path.join(root, fn)
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
+            sig = (st.st_mtime_ns, st.st_size)
+
+            cached = old_items.get(path)
+            if cached and cached[0] == sig:
+                emb = cached[1]
+                reused += 1
+            else:
+                emb = None
+                try:
+                    reps = _represent(path, GALLERY_DETECTOR)
+                    if reps:
+                        best = max(reps, key=lambda r: r["facial_area"]["w"] * r["facial_area"]["h"])
+                        emb = _unit(best["embedding"])
+                except Exception as e:
+                    print(f"[recognition] Could not embed {path}: {e}")
+                embedded += 1
+
+            new_items[path] = (sig, emb)
+            if emb is not None:
+                vecs.append(emb)
+                folders.append(folder)
+
+    _save_disk_cache(new_items)
+
+    index = {}
+    for i, f in enumerate(folders):
+        index.setdefault(f, []).append(i)
+
+    print(f"[recognition] Gallery ready: {len(vecs)} embeddings, {len(counts)} people "
+          f"({reused} cached, {embedded} new) in {time.time() - started:.1f}s")
+
+    return {
+        "has_photos": bool(counts),
+        "vecs": np.vstack(vecs) if vecs else None,
+        "index": {f: np.array(ix) for f, ix in index.items()},
+        "counts": counts,
+    }
+
+
+_ver_lock = threading.Lock()
+_build_lock = threading.Lock()
+_version = 0
+_built = {"version": -1, "data": None}
+_rebuild_scheduled = threading.Event()
+
+
+def _ensure_gallery():
+    data = _built["data"]
+    if data is not None and _built["version"] == _version:
+        return data
+    with _build_lock:
+        with _ver_lock:
+            target = _version
+        if _built["data"] is not None and _built["version"] == target:
+            return _built["data"]
+        data = _build_gallery()
+        _built["data"] = data
+        _built["version"] = target
+        return data
+
+
+def _schedule_rebuild():
+    if _rebuild_scheduled.is_set():
+        return
+    _rebuild_scheduled.set()
+
+    def run():
+        try:
+            _ensure_gallery()
+        finally:
+            _rebuild_scheduled.clear()
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _get_gallery():
+    data = _built["data"]
+    if data is None:
+        return _ensure_gallery()          # first build: must wait
+    if _built["version"] != _version:
+        _schedule_rebuild()               # stale: keep serving the old one meanwhile
+    return data
+
+
+def invalidate_gallery():
+    """Call after employee photos change. Rebuilds in the background."""
+    global _version
+    with _ver_lock:
+        _version += 1
+    _schedule_rebuild()
+
+
+def warmup():
+    """Call once at startup (in a background thread) so the first frame isn't slow."""
+    if DeepFace is None:
+        return
+    try:
+        _represent(np.zeros((160, 160, 3), np.uint8), LIVE_DETECTOR)
+    except Exception:
+        pass
+    _get_gallery()
+
+
+# --------------------------------------------------------------- settings
+
+_settings_cache = {"ts": 0.0, "vals": None}
+_SETTINGS_TTL = 10  # seconds
+
+
+def invalidate_settings_cache():
+    _settings_cache["vals"] = None
+
+
+def _get_match_settings():
+    now = time.time()
+    if _settings_cache["vals"] is None or now - _settings_cache["ts"] > _SETTINGS_TTL:
         min_matching = get_setting_int("min_matching_photos") or 2
         max_distance = get_setting_float("match_distance_threshold")
         if max_distance is None:
             max_distance = DEFAULT_THRESHOLDS.get(MODEL_NAME, 0.4)
         max_distance = min(max_distance, 0.40)
+        margin = get_setting_float("match_margin") or 0.05
+        _settings_cache.update(ts=now, vals=(min_matching, max_distance, margin))
+    return _settings_cache["vals"]
 
-        detected_faces = []
-        ext_faces = None
 
-        for i, face_result in enumerate(results):
-            # Extract bounding box if available from DeepFace source_x columns
-            box = (0, 0, 0, 0)
-            if hasattr(face_result, "columns") and "source_x" in face_result.columns and len(face_result) > 0:
-                row = face_result.iloc[0]
-                box = (int(row.get("source_x", 0)), int(row.get("source_y", 0)), int(row.get("source_w", 0)), int(row.get("source_h", 0)))
+# --------------------------------------------------------------- matching
 
-            if sum(box) == 0:
-                if ext_faces is None:
-                    try:
-                        ext_faces = DeepFace.extract_faces(img_path=frame, detector_backend=DETECTOR, enforce_detection=False)
-                    except Exception:
-                        ext_faces = []
-                if ext_faces and i < len(ext_faces):
-                    area = ext_faces[i].get("facial_area", {})
-                    box = (area.get("x", 0), area.get("y", 0), area.get("w", 0), area.get("h", 0))
+def _identify(emb, gallery, min_matching, max_distance, margin):
+    dists = 1.0 - gallery["vecs"] @ emb      # both unit vectors -> cosine distance
+    candidates = []
+    closest = None
 
-            if len(face_result) == 0:
-                detected_faces.append({"name": "Unknown", "box": box})
-                continue
+    for folder, idx in gallery["index"].items():
+        raw = dists[idx]
+        close = raw[raw <= max_distance]
+        required = min(min_matching, gallery["counts"].get(folder, 1))
+        best_single = float(raw.min())
+        if closest is None or best_single < closest[1]:
+            closest = (folder, best_single, int(close.size), required)
+        if close.size and close.size >= required:
+            candidates.append((folder, float(close.mean())))
 
-            distance_col = [c for c in face_result.columns if "distance" in c.lower()][0]
+    if not candidates:
+        return "Unknown", closest
 
-            # Group distances by employee folder
-            matches_by_employee = {}
-            for _, row in face_result.iterrows():
-                identity_path = row["identity"]
-                folder_name = os.path.basename(os.path.dirname(identity_path))
-                matches_by_employee.setdefault(folder_name, []).append(row[distance_col])
+    candidates.sort(key=lambda c: c[1])
+    best_folder, best_avg = candidates[0]
+    if len(candidates) > 1 and (candidates[1][1] - best_avg) < margin:
+        logger.debug("Ambiguous: %s (%.3f) vs runner-up (%.3f), rejecting both",
+                     best_folder, best_avg, candidates[1][1])
+        return "Unknown", closest
 
-            margin = get_setting_float("match_margin") or 0.05
-            candidates = []
+    return best_folder.replace("_", " ").strip(), closest
 
-            # Closest employee by best single distance (only used for the debug line)
-            closest_folder = None
-            closest_distance = None
-            closest_matched = 0
-            closest_required = 0
 
-            for folder_name, raw_distances in matches_by_employee.items():
-                distances = [d for d in raw_distances if d <= max_distance]
-                required = min(min_matching, photo_counts.get(folder_name, 1))
+def _downscale(frame):
+    h, w = frame.shape[:2]
+    if MAX_DETECT_WIDTH and w > MAX_DETECT_WIDTH:
+        s = MAX_DETECT_WIDTH / w
+        return cv2.resize(frame, (MAX_DETECT_WIDTH, int(h * s)), interpolation=cv2.INTER_AREA), s
+    return frame, 1.0
 
-                best_single = min(raw_distances)
-                if closest_distance is None or best_single < closest_distance:
-                    closest_folder = folder_name
-                    closest_distance = best_single
-                    closest_matched = len(distances)
-                    closest_required = required
 
-                if len(distances) >= required:
-                    avg_distance = sum(distances) / len(distances)
-                    candidates.append((folder_name, avg_distance))
+def recognize_faces(frame, with_boxes=False):
+    """Takes a BGR frame (OpenCV) and returns a list of
+    {"name": <employee name or "Unknown">, "box": (x, y, w, h)} dicts,
+    one per detected face, with boxes in the original frame's coordinates.
+    An empty list means no faces were detected.
+    (with_boxes is kept for backwards compatibility and ignored.)"""
+    if DeepFace is None or frame is None:
+        return []
 
-            accepted_name = "Unknown"
-            if candidates:
-                candidates.sort(key=lambda c: c[1])
-                best_folder, best_avg = candidates[0]
-                if len(candidates) == 1:
-                    accepted_name = best_folder.replace("_", " ").strip()
-                else:
-                    _, second_avg = candidates[1]
-                    if (second_avg - best_avg) >= margin:
-                        accepted_name = best_folder.replace("_", " ").strip()
-                    else:
-                        print(f"[DEBUG] Ambiguous: {best_folder} ({best_avg:.3f}) vs runner-up ({second_avg:.3f}) — margin too small, rejecting both")
-
-            detected_faces.append({"name": accepted_name, "box": box})
-
-            if closest_folder is not None and accepted_name != "Unknown":
-                print(
-                    f"[DEBUG] Face -> {accepted_name} | closest: {closest_folder}, "
-                    f"{closest_matched}/{closest_required} photo(s) within {max_distance}, "
-                    f"best distance {round(float(closest_distance), 3)}"
-                )
-
-        return detected_faces
-
+    work, scale = _downscale(frame)
+    try:
+        reps = _represent(work, LIVE_DETECTOR)
     except Exception as e:
         print(f"[recognize_faces ERROR] {type(e).__name__}: {e}")
         traceback.print_exc()
         return []
+
+    faces = [r for r in reps if r.get("face_confidence", 1.0) > MIN_FACE_CONFIDENCE]
+    if not faces:
+        return []
+
+    gallery = _get_gallery()
+    settings = _get_match_settings()
+    results = []
+
+    for r in faces:
+        a = r["facial_area"]
+        box = (int(a["x"] / scale), int(a["y"] / scale), int(a["w"] / scale), int(a["h"] / scale))
+
+        if gallery["vecs"] is None:
+            name = "Unknown"
+        else:
+            name, closest = _identify(_unit(r["embedding"]), gallery, *settings)
+            if closest is not None and name != "Unknown":
+                logger.debug("Face -> %s | closest: %s, %d/%d photo(s) within %.2f, best %.3f",
+                             name, closest[0], closest[2], closest[3], settings[1], closest[1])
+
+        results.append({"name": name, "box": box})
+
+    return results
