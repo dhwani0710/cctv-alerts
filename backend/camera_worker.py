@@ -511,7 +511,7 @@ def stop_all_cameras():
     for camera_id in camera_ids:
         stop_single_camera(camera_id)
 
-def get_current_frame(camera_id):
+def get_current_frame(camera_id, copy=True):
     lock = frame_locks.get(camera_id)
     if lock is None:
         return None

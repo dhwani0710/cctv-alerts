@@ -1,8 +1,9 @@
 import json
 import os
 import threading
-
 import config
+
+SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "store_settings.json")
 
 KEYS = ("store_open_time", "store_close_time")
 
