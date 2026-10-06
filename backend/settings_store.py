@@ -1,20 +1,16 @@
-import json
-import os
+from app_settings import get_setting, set_setting
 
-SETTINGS_FILE = "settings.json"
+KEYS = ("store_open_time", "store_close_time")
 
-DEFAULTS = {
-    "store_open_time": "10:00",
-    "store_close_time": "21:00"
-}
 
 def load_settings():
-    if not os.path.exists(SETTINGS_FILE):
-        save_settings(DEFAULTS)
-        return DEFAULTS
-    with open(SETTINGS_FILE, "r") as f:
-        return json.load(f)
+    return {
+        "store_open_time": get_setting("store_open_time") or "10:00",
+        "store_close_time": get_setting("store_close_time") or "21:00",
+    }
+
 
 def save_settings(settings):
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(settings, f)
+    for key in KEYS:
+        if key in settings:
+            set_setting(key, settings[key])

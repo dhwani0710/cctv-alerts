@@ -15,6 +15,10 @@ DEFAULTS = {
     "alert_dedupe_window_sec": "60",
     "escalation_low_to_medium_sec": "1800",
     "escalation_medium_to_high_sec": "3600",
+
+    # Store hours
+    "store_open_time": "10:00",
+    "store_close_time": "21:00",
 }
 
 import time
@@ -66,7 +70,6 @@ def get_setting_int(key):
 def set_setting(key, value):
     with get_db() as conn:
         cur = conn.cursor()
-
         cur.execute(
             """
             INSERT INTO app_settings (key, value)
@@ -76,18 +79,14 @@ def set_setting(key, value):
             """,
             (key, str(value))
         )
-
         conn.commit()
         _settings_cache["data"] = None
 
-        # Read it straight back within the same connection to confirm the
-        # write actually landed, and log it. If this print ever shows a
-        # different value than what you just saved, the write itself is
-        # not persisting (check DATABASE_URL / DB permissions).
         cur.execute("SELECT value FROM app_settings WHERE key = %s", (key,))
         confirm = cur.fetchone()
-
         cur.close()
+
+    print(f"[app_settings] SAVED {key}={value!r} -> DB now has {confirm['value']!r}")
 
 
 def get_all_settings():

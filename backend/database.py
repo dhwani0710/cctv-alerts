@@ -7,8 +7,9 @@ from dotenv import load_dotenv
 from psycopg2 import pool
 
 load_dotenv()
-
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+print("[db] using:", DATABASE_URL.split("@")[-1] if DATABASE_URL else "NOT SET")
 
 _pg_pool = None
 def _get_pg_pool():

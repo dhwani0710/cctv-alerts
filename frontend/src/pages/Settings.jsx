@@ -125,7 +125,7 @@ export default function Settings() {
       setSettingsError(false);
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       try {
         const res = await fetch(`${API_URL}/app-settings`, {
@@ -183,7 +183,7 @@ export default function Settings() {
       setStoreHoursError(false);
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       try {
         const res = await fetch(`${API_URL}/settings`, {
