@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 VALID_ROLES = {"ceo", "owner", "guard", "hr"}
-ADMIN_ROLES = {"ceo", "owner"}
 
 JWT_SECRET = os.getenv("JWT_SECRET")
 if not JWT_SECRET:

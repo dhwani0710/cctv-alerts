@@ -3,7 +3,7 @@ import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function Recordings() {
-  const { session, apiFetch } = useAuth();
+  const { apiFetch } = useAuth();
   const [recordings, setRecordings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
