@@ -51,6 +51,16 @@ def _get_known_faces_info():
     _face_cache.update(has_photos=has_photos, photo_counts=photo_counts, ts=now)
     return has_photos, photo_counts
 
+def _is_bogus_box(box, frame):
+    """True when box covers most of the frame (no real face found)."""
+    try:
+        bx, by, bw, bh = box
+        if bw <= 0 or bh <= 0:
+            return False
+        fh, fw = frame.shape[:2]
+        return (bw * bh) / float(fw * fh) > 0.5
+    except Exception:
+        return False
 
 def recognize_faces(frame):
     """Takes a webcam frame (BGR, as from OpenCV) and returns a list of dictionaries
@@ -74,6 +84,8 @@ def recognize_faces(frame):
                 if f.get("confidence", 1) > 0:
                     area = f.get("facial_area", {})
                     box = (area.get("x", 0), area.get("y", 0), area.get("w", 0), area.get("h", 0))
+                    if _is_bogus_box(box, frame):
+                        continue
                     detected.append({"name": "Unknown", "box": box})
             print(f"[DEBUG] No employees registered - {len(detected)} face(s) detected, all Unknown")
             return detected
@@ -124,7 +136,8 @@ def recognize_faces(frame):
                 if ext_faces and i < len(ext_faces):
                     area = ext_faces[i].get("facial_area", {})
                     box = (area.get("x", 0), area.get("y", 0), area.get("w", 0), area.get("h", 0))
-
+            if _is_bogus_box(box, frame):
+                continue
             if len(face_result) == 0:
                 detected_faces.append({"name": "Unknown", "box": box})
                 continue

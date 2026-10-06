@@ -86,6 +86,9 @@ export default function Settings() {
   // Account
   const [accountName, setAccountName] = useState('');
   const [savingAccount, setSavingAccount] = useState(false);
+  const [savingThresholds, setSavingThresholds] = useState(false);
+  const [savingNotifications, setSavingNotifications] = useState(false);
+  const [savingStoreHours, setSavingStoreHours] = useState(false);
 
   useEffect(() => {
     if (session?.username) setAccountName(session.username);
@@ -309,24 +312,32 @@ export default function Settings() {
   }
 
   // ---------- SAVE ----------
-  function saveNotifications(event) {
+    async function saveNotifications(event) {
     event.preventDefault();
+    if (savingNotifications) return;
 
-    runSave(
-      Promise.all([
+    setSavingNotifications(true);
+    try {
+      await Promise.all([
         saveSetting('notify_motion', notifyMotion),
         saveSetting('notify_person', notifyPerson),
-      ]),
-      'Notification preferences saved successfully.',
-      'Failed to save notification preferences.'
-    );
+      ]);
+      showMessage('Notification preferences saved successfully.');
+    } catch (err) {
+      console.error(err);
+      showMessage(err.message || 'Failed to save notification preferences.', true);
+    } finally {
+      setSavingNotifications(false);
+    }
   }
 
-  function saveThresholds(event) {
+  async function saveThresholds(event) {
     event.preventDefault();
+    if (savingThresholds) return;
 
-    runSave(
-      Promise.all(
+    setSavingThresholds(true);
+    try {
+      await Promise.all(
         thresholdPairs({
           minMatchingPhotos,
           matchDistanceThreshold,
@@ -336,20 +347,30 @@ export default function Settings() {
           escalationLowToMedium,
           escalationMediumToHigh,
         }).map(([k, v]) => saveSetting(k, v))
-      ),
-      'Alert thresholds saved successfully.',
-      'Failed to save alert thresholds.'
-    );
+      );
+      showMessage('Alert thresholds saved successfully.');
+    } catch (err) {
+      console.error(err);
+      showMessage(err.message || 'Failed to save alert thresholds.', true);
+    } finally {
+      setSavingThresholds(false);
+    }
   }
 
-  function saveStoreHours(event) {
+  async function saveStoreHours(event) {
     event.preventDefault();
+    if (savingStoreHours) return;
 
-    runSave(
-      postStoreHours(storeOpenTime, storeCloseTime),
-      'Store hours saved successfully.',
-      'Failed to save store hours.'
-    );
+    setSavingStoreHours(true);
+    try {
+      await postStoreHours(storeOpenTime, storeCloseTime);
+      showMessage('Store hours saved successfully.');
+    } catch (err) {
+      console.error(err);
+      showMessage(err.message || 'Failed to save store hours.', true);
+    } finally {
+      setSavingStoreHours(false);
+    }
   }
 
   // ---------- PASSWORD / ACCOUNT / CLEAR RECORDS ----------
@@ -649,8 +670,8 @@ export default function Settings() {
                       </div>
                     )}
 
-                    <button type="submit" className="vscode-primary-btn" disabled={settingsLocked}>
-                      Save notifications
+                    <button type="submit" className="vscode-primary-btn" disabled={settingsLocked || savingNotifications}>
+                      {savingNotifications ? 'Saving...' : 'Save notifications'}
                     </button>
                   </div>
                 </form>
@@ -776,8 +797,8 @@ export default function Settings() {
                       </div>
                     )}
 
-                    <button type="submit" className="vscode-primary-btn" disabled={settingsLocked}>
-                      Save thresholds
+                    <button type="submit" className="vscode-primary-btn" disabled={settingsLocked || savingThresholds}>
+                      {savingThresholds ? 'Saving...' : 'Save thresholds'}
                     </button>
                   </div>
                 </form>
@@ -855,8 +876,8 @@ export default function Settings() {
                       </div>
                     )}
 
-                    <button type="submit" className="vscode-primary-btn" disabled={storeHoursLocked}>
-                      Save store hours
+                    <button type="submit" className="vscode-primary-btn" disabled={storeHoursLocked || savingStoreHours}>
+                      {savingStoreHours ? 'Saving...' : 'Save store hours'}
                     </button>
                   </div>
                 </form>

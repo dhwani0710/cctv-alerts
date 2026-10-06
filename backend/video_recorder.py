@@ -57,6 +57,8 @@ class VideoRecorder:
         self.fps = fps
         self.duration = duration
         self.frames_per_clip = int(fps * duration)
+        self.max_duration = 300   # max seconds per clip (5 min)
+        self.grace_sec = 20       # keep recording this long after last unknown sighting
         
         self.frame_queue = queue.Queue(maxsize=1000)
         self.lock = threading.Lock()
@@ -94,59 +96,52 @@ class VideoRecorder:
                 pass
 
     def _record_loop(self):
-        from alerts import log_alert
-        while True:
-            try:
-                frame = self.frame_queue.get(timeout=5.0)
-            except queue.Empty:
-                with self.lock:
-                    self.is_recording = False
-                break
-                
-            h, w, _ = frame.shape
-            filename = f"{self.camera_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.mp4"
-            filepath = os.path.join(RECORDINGS_DIR, filename)
-            
-            writer = cv2.VideoWriter(filepath, cv2.VideoWriter_fourcc(*'mp4v'), self.fps, (w, h))
-            if not writer.isOpened():
-                print("[video_recorder] Could not open video writer")
-                with self.lock:
-                    self.is_recording = False
-                break
-            writer.write(frame)
-            
-            frames_written = 1
-            
-            while frames_written < self.frames_per_clip:
-                try:
-                    frame = self.frame_queue.get(timeout=2.0)
-                    writer.write(frame)
-                    frames_written += 1
-                except queue.Empty:
-                    break
-                    
-            writer.release()
-            
-            # Asynchronously upload to Supabase and save URL to Neon DB
-            threading.Thread(
-                target=_upload_and_save,
-                args=(self.camera_id, self.camera_name, self.zone_name, filepath, filename),
-                daemon=True
-            ).start()
-            
+        # One clip per incident: keeps recording while unknown person is still seen.
+        try:
+            frame = self.frame_queue.get(timeout=5.0)
+        except queue.Empty:
             with self.lock:
-                if (time.time() - self.unknown_last_seen) < 10.0:
-                    msg = f"[{self.camera_name}] Unknown person still present, seamlessly starting new 60s recording."
-                    last_snap = getattr(self, "last_snapshot", None)
-                    threading.Thread(
-                        target=log_alert, 
-                        args=(f"Unknown@{self.zone_name}", "stranger", "high", msg), 
-                        kwargs={"frame": last_snap, "camera_name": self.camera_name, "zone_name": self.zone_name}, 
-                        daemon=True
-                    ).start()
-                else:
+                self.is_recording = False
+            return
+
+        h, w, _ = frame.shape
+        filename = f"{self.camera_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.mp4"
+        filepath = os.path.join(RECORDINGS_DIR, filename)
+
+        writer = cv2.VideoWriter(filepath, cv2.VideoWriter_fourcc(*'mp4v'), self.fps, (w, h))
+        if not writer.isOpened():
+            print("[video_recorder] Could not open video writer")
+            with self.lock:
+                self.is_recording = False
+            return
+
+        writer.write(frame)
+        frames_written = 1
+        max_frames = int(self.fps * self.max_duration)
+
+        while frames_written < max_frames:
+            try:
+                frame = self.frame_queue.get(timeout=2.0)
+                writer.write(frame)
+                frames_written += 1
+            except queue.Empty:
+                pass
+
+            with self.lock:
+                if (time.time() - self.unknown_last_seen) >= self.grace_sec:
                     self.is_recording = False
                     break
+        else:
+            with self.lock:
+                self.is_recording = False
+
+        writer.release()
+
+        threading.Thread(
+            target=_upload_and_save,
+            args=(self.camera_id, self.camera_name, self.zone_name, filepath, filename),
+            daemon=True
+        ).start()
 
 _recorders = {}
 _recorders_lock = threading.Lock()
