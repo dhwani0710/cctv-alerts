@@ -9,8 +9,6 @@ except ImportError as e:
     print(f"[recognition] DeepFace import failed: {e}")
     DeepFace = None
 
-import config  # kept from your original file
-
 KNOWN_FACES_DIR = "known_faces"
 VALID_PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
