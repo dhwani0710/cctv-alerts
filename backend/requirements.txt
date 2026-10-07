@@ -1,17 +1,18 @@
-fastapi
-uvicorn
-python-multipart
-deepface; python_version < "3.13"
-tf-keras; python_version < "3.13"
-mtcnn; python_version < "3.13"
-opencv-python
+fastapi==0.142.2
+uvicorn==0.54.0
+python-multipart==0.0.32
+deepface==0.0.101; python_version < "3.13"
+tf-keras==2.21.0; python_version < "3.13"
+mtcnn==1.0.0; python_version < "3.13"
+opencv-python-headless
 requests
 python-dotenv
-apscheduler
-psycopg2-binary
-supabase
-passlib[bcrypt]
+apscheduler==3.11.3
+psycopg2-binary==2.9.13
+supabase==2.32.0
+passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
-pyjwt
+pyjwt==2.15.1
 numpy
 Pillow
+imageio-ffmpeg

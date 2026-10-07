@@ -26,6 +26,9 @@ import storage
 from PIL import Image, ImageOps
 from retention import start_retention_thread, start_daily_reset_thread
 
+# Set RUN_CAMERAS=false on cloud hosts (e.g. Render) where the cameras can't be reached
+RUN_CAMERAS = os.getenv("RUN_CAMERAS", "true").strip().lower() == "true"
+
 app = FastAPI(title="Jewellery Store Alert System")
 
 app.add_middleware(
@@ -58,9 +61,12 @@ def startup():
     os.makedirs(KNOWN_FACES_DIR, exist_ok=True)
     os.makedirs("snapshots/acknowledgments", exist_ok=True)
     storage.sync_known_faces_from_storage(KNOWN_FACES_DIR)
-    start_camera_threads()
-    start_health_check_thread()
-    start_escalation_thread()
+    if RUN_CAMERAS:
+        start_camera_threads()
+        start_health_check_thread()
+        start_escalation_thread()
+    else:
+        print("[startup] RUN_CAMERAS=false - camera threads not started")
     start_retention_thread()
     start_daily_reset_thread()
 
@@ -375,7 +381,7 @@ def _upload_photo_async(local_path, remote_path):
 _SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_\-]")
 ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/jpg"}
 ALLOWED_PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png"}
-MAX_PHOTO_BYTES = 5 * 1024 * 1024  # 8MB
+MAX_PHOTO_BYTES = 5 * 1024 * 1024  # 5MB
 
 def _safe_folder_name(name: str) -> str:
     cleaned = _SAFE_NAME_RE.sub("_", name.strip().replace(" ", "_"))
@@ -544,7 +550,7 @@ def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
         cur.close()
 
     try:
-        folder_name = emp["name"].replace(" ", "_")
+        folder_name = _safe_folder_name(emp["name"])
         employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
         if os.path.exists(employee_folder):
             shutil.rmtree(employee_folder)
@@ -563,6 +569,7 @@ def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
     )
 
     return {"message": "Employee deleted"}
+
 # ============================================================
 # APPLICATION SETTINGS (granular thresholds/notifications — Owner/CEO)
 # ============================================================
@@ -1153,7 +1160,7 @@ def override_attendance(req: AttendanceOverrideRequest):
         else:
             cur.execute(
                 "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, zone_name, status, override_reason, is_override) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)",
                 (req.employee_id, req.date, first_seen, last_seen, zone, status, reason)
             )
 
@@ -1521,9 +1528,10 @@ def _mjpeg_generator(camera_id):
 
 @app.get("/snapshots/{filename:path}")
 def get_snapshot(filename: str):
-    filepath = os.path.join("snapshots", filename)
-    if not os.path.exists(filepath):
-        return {"error": "Snapshot not found"}
+    base_dir = os.path.realpath("snapshots")
+    filepath = os.path.realpath(os.path.join(base_dir, filename))
+    if not filepath.startswith(base_dir + os.sep) or not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="Snapshot not found")
     return FileResponse(filepath, media_type="image/jpeg")
 
 @app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_token)])
