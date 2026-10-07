@@ -16,6 +16,7 @@
 
   --chrome: #16171B;
   --chrome-hover: #1E1F24;
+  --chrome-active: #26272D;
   --chrome-line: #2E3038;
   --text-on-chrome: #F1EEE8;
   --text-on-chrome-muted: #9A9AA3;
@@ -34,6 +35,8 @@
   --font-display: var(--font-body);
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 
+  --gold-1: #F0C36B;
+  --gold-2: #C89A4A;
   --gold-grad: linear-gradient(135deg, #D9895A, #B8622F);
   --on-gold: #FFFFFF;
 
@@ -60,6 +63,7 @@
   --text-muted: #9A9AA3;
   --chrome: #101114;
   --chrome-hover: #17181D;
+  --chrome-active: #202127;
   --chrome-line: #2A2C33;
   --brass: #D98A5A;
   --brass-dim: #E9A277;
@@ -97,6 +101,7 @@ select,
 .stat-card,
 .cam-tile,
 .rail-link,
+.alert-item,
 table.records td {
   transition: background-color .15s ease, border-color .15s ease,
     color .15s ease, box-shadow .15s ease, filter .15s ease;
@@ -219,6 +224,33 @@ button {
 }
 
 /* dashboard brand mark (the "e" tile) */
+.brandmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.brandmark__tile {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 22%;
+  background: var(--gold-grad);
+  color: var(--on-gold);
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 4px 14px var(--brass-glow);
+  user-select: none;
+}
+
+.brandmark__name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -.01em;
+  color: var(--text);
+}
 
 .field {
   margin-bottom: 16px;
@@ -584,6 +616,21 @@ button {
   display: block;
 }
 
+.demo-note {
+  margin-top: 18px;
+  padding: 11px 13px;
+  border: 1px dashed var(--night-line-2);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--night-text-muted);
+  line-height: 1.7;
+}
+
+.demo-note b {
+  color: #fff;
+}
+
 .login-card-foot {
   display: flex;
   align-items: center;
@@ -785,6 +832,11 @@ button {
 }
 
 /* settings popup keeps a fixed width now that the rail changes size */
+.rail .settings-menu {
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: 208px;
+}
 
 @media (prefers-reduced-motion: reduce) {
 
@@ -945,6 +997,11 @@ button {
 }
 
 /* dashboard header with the "e" logo beside the heading */
+.page-head--brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
 
 /* =====================================================
    6. STAT CARDS, PANELS, ALERTS, LOG
@@ -1023,6 +1080,13 @@ button {
   color: var(--brick);
 }
 
+.two-col {
+  display: grid;
+  grid-template-columns: 1.1fr .9fr;
+  gap: 18px;
+  align-items: start;
+}
+
 .alerts-activity-grid,
 .cam-alerts-layout {
   display: grid;
@@ -1035,6 +1099,14 @@ button {
 .alerts-activity-grid .panel,
 .cam-alerts-col {
   min-width: 0;
+}
+
+@media (max-width: 900px) {
+
+  .two-col,
+  .cam-alerts-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
@@ -1077,6 +1149,67 @@ button {
 }
 
 /* alerts */
+.alert-item {
+  display: flex;
+  gap: 12px;
+  margin: 0 -10px;
+  padding: 12px 10px;
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.alert-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.alert-item:first-of-type {
+  border-top: none;
+}
+
+.alert-item:hover {
+  background: var(--bg-soft);
+}
+
+.alert-sev {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brick);
+  margin-top: 6px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px var(--brick-glow);
+}
+
+.alert-sev.low {
+  background: var(--brass);
+  box-shadow: 0 0 0 3px var(--brass-glow);
+}
+
+.alert-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.alert-body .t {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.alert-body .d {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.alert-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
 
 .alert-time {
   font-size: 11px;
@@ -1090,6 +1223,18 @@ button {
   font-size: 12px;
   font-weight: 600;
   text-transform: capitalize;
+}
+
+.sev-high {
+  color: var(--brick);
+}
+
+.sev-medium {
+  color: var(--brass);
+}
+
+.sev-low {
+  color: var(--text-muted);
 }
 
 /* activity log */
@@ -1214,6 +1359,11 @@ button {
 /* =====================================================
    7. CAMERAS
    ===================================================== */
+.cam-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
 
 .cam-tile {
   background: var(--surface);
@@ -1236,6 +1386,12 @@ button {
   align-items: center;
   justify-content: center;
   color: var(--chrome-line);
+}
+
+.noise-icon svg {
+  width: 34px;
+  height: 34px;
+  opacity: .5;
 }
 
 .cam-live {
@@ -1321,6 +1477,11 @@ button {
   cursor: default;
 }
 
+.cam-lightbox .noise-icon svg {
+  width: 54px;
+  height: 54px;
+}
+
 .cam-lightbox-head {
   display: flex;
   align-items: center;
@@ -1394,7 +1555,8 @@ button {
 }
 
 .btn-brass,
-.vscode-primary-btn {
+.vscode-primary-btn,
+.vscode-backup-btn {
   background: var(--gold-grad);
   border-color: transparent;
   color: var(--on-gold);
@@ -1402,7 +1564,8 @@ button {
 }
 
 .btn-brass:hover,
-.vscode-primary-btn:hover {
+.vscode-primary-btn:hover,
+.vscode-backup-btn:hover {
   background: var(--gold-grad);
   filter: brightness(1.07);
 }
@@ -1562,8 +1725,200 @@ table.records tbody tr:hover td {
 /* =====================================================
    10. SETTINGS
    ===================================================== */
+.settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 620px;
+}
+
+.settings-panel {
+  margin-bottom: 0;
+}
+
+.settings-panel .panel-head {
+  justify-content: space-between;
+}
+
+.settings-flash {
+  background: rgba(87, 121, 95, .1);
+  border: 1px solid var(--sage);
+  color: var(--sage);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+}
+
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.settings-toggle-t {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.settings-toggle-d {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.settings-toggle-row input[type="checkbox"] {
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+  appearance: none;
+  background: var(--border-strong);
+  border-radius: 20px;
+  position: relative;
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.settings-toggle-row input[type="checkbox"]::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform .15s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+}
+
+.settings-toggle-row input[type="checkbox"]:checked {
+  background: var(--brass);
+}
+
+.settings-toggle-row input[type="checkbox"]:checked::before {
+  transform: translateX(16px);
+}
+
+.settings-toggle-row input[type="checkbox"]:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.settings-two-field {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 500px) {
+  .settings-two-field {
+    grid-template-columns: 1fr;
+  }
+}
+
+.settings-note {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+
+.settings-danger {
+  border-color: var(--brick);
+}
+
+.settings-danger .panel-head h2 {
+  color: var(--brick);
+}
+
+.settings-danger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
 
 /* popup menu (opens above the settings link, inside the wide sidebar) */
+.settings-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: 100%;
+  background: var(--chrome-hover);
+  border: 1px solid var(--chrome-line);
+  border-radius: var(--radius-md);
+  padding: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .4);
+  z-index: 40;
+}
+
+.settings-menu-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-on-chrome);
+  cursor: pointer;
+}
+
+.settings-menu-item:hover {
+  background: var(--chrome-active);
+}
+
+.settings-menu-item-danger {
+  color: #E5604B;
+}
+
+.settings-menu-divider {
+  height: 1px;
+  background: var(--chrome-line);
+  margin: 6px 4px;
+}
+
+.settings-menu-item-foot {
+  gap: 9px;
+}
+
+.settings-menu-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--brass);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 
 /* full-screen settings layout */
 .vscode-settings {
@@ -1617,12 +1972,47 @@ table.records tbody tr:hover td {
   color: var(--text-muted);
 }
 
+.vscode-search-shortcut {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .vscode-search:focus-within {
   border-color: var(--brass);
 }
 
+.vscode-scope-tabs {
+  display: flex;
+  height: 34px;
+}
+
+.vscode-scope-tabs button {
+  border: none;
+  padding: 0 16px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.vscode-scope-tabs button.active {
+  color: var(--text);
+  background: var(--bg-soft);
+  border-radius: var(--radius-md);
+}
+
 .vscode-topbar-space {
   flex: 1;
+}
+
+.vscode-backup-btn {
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .vscode-settings-body {
@@ -1639,6 +2029,13 @@ table.records tbody tr:hover td {
   border-right: 1px solid var(--border);
   background: var(--bg-soft);
   overflow-y: auto;
+}
+
+.vscode-sidebar-title {
+  padding: 0 12px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .vscode-settings-sidebar button {
@@ -1905,6 +2302,11 @@ table.records tbody tr:hover td {
   border-color: var(--brick);
 }
 
+.vscode-section {
+  padding-bottom: 30px;
+  border-bottom: 1px solid var(--border);
+}
+
 .vscode-section h2,
 .vscode-danger-section h2 {
   font-size: 18px;
@@ -2014,6 +2416,9 @@ table.records tbody tr:hover td {
     grid-template-columns: 1fr;
   }
 
+  .vscode-backup-btn {
+    display: none;
+  }
 }
 
 @media (max-width: 600px) {
@@ -2033,6 +2438,77 @@ table.records tbody tr:hover td {
 /* =====================================================
    11. AUDIT LOG, BANNERS, LOADING
    ===================================================== */
+.audit-pill {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.audit-pill.owner {
+  background: rgba(194, 112, 61, .18);
+  border-color: var(--brass);
+  color: var(--brass-dim);
+}
+
+.audit-pill.ceo,
+.audit-pill.admin {
+  background: rgba(194, 112, 61, .12);
+  border-color: var(--border-strong);
+  color: var(--brass-dim);
+}
+
+.audit-pill.hr,
+.audit-pill.manager {
+  background: rgba(87, 121, 95, .14);
+  border-color: var(--sage);
+  color: var(--sage);
+}
+
+.audit-pill.guard {
+  background: rgba(62, 207, 126, .14);
+  border-color: rgba(62, 207, 126, .35);
+  color: #279455;
+}
+
+.audit-table-container {
+  max-height: calc(100vh - 310px);
+  overflow: auto;
+  position: relative;
+  scrollbar-gutter: stable;
+}
+
+.audit-table-container::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.audit-table-container::-webkit-scrollbar-track {
+  background: var(--bg-soft);
+  border-radius: 4px;
+}
+
+.audit-table-container::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+
+.audit-table-container::-webkit-scrollbar-thumb:hover {
+  background: var(--brass);
+}
+
+.audit-table-container table.records thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--border);
+}
 
 .banner {
   display: flex;
@@ -2089,6 +2565,19 @@ table.records tbody tr:hover td {
   color: var(--text-muted);
   font-size: 13.5px;
   padding: 24px 0;
+}
+
+.skeleton {
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--bg-soft) 25%, var(--surface-2) 50%, var(--bg-soft) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
 }
 
 /* =====================================================
@@ -2207,6 +2696,22 @@ table.records tbody tr:hover td {
     padding: 6px 8px !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
+  }
+
+  .audit-pill {
+    border: 1px solid #888 !important;
+    color: #000 !important;
+    background: none !important;
+  }
+
+  .audit-table-container {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .audit-table-container table.records thead th {
+    position: static !important;
+    box-shadow: none !important;
   }
 
   svg:not(.ad-donut-svg):not(.chart-svg) {
