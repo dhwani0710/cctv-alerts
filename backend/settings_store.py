@@ -1,9 +1,12 @@
 import json
 import os
 import threading
-import config
 
-SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "store_settings.json")
+import config
+from app_settings import get_setting, set_setting
+
+# Old file-based storage. Only read once, to import existing values into the database.
+LEGACY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "store_settings.json")
 
 KEYS = ("store_open_time", "store_close_time")
 
@@ -12,51 +15,49 @@ DEFAULTS = {
     "store_close_time": config.STORE_CLOSE_TIME,
 }
 
-_lock = threading.Lock()
-_cache = {"data": None, "mtime": None}
+_migrate_lock = threading.Lock()
+_migrated = False
 
 
-def _file_mtime():
-    try:
-        return os.stat(SETTINGS_FILE).st_mtime_ns
-    except OSError:
-        return None
+def _import_legacy_file():
+    """One-time: copy values from store_settings.json into the DB if the DB has none yet."""
+    global _migrated
+    if _migrated:
+        return
+    with _migrate_lock:
+        if _migrated:
+            return
+        try:
+            if os.path.exists(LEGACY_FILE):
+                with open(LEGACY_FILE, "r") as f:
+                    stored = json.load(f)
+                if isinstance(stored, dict):
+                    for key in KEYS:
+                        if key in stored and get_setting(key) is None:
+                            set_setting(key, stored[key])
+                            print(f"[settings_store] Imported {key} from store_settings.json into DB")
+            _migrated = True
+        except Exception as e:
+            # Don't set _migrated, so it retries next call (e.g. DB was briefly down)
+            print(f"[settings_store] Legacy import skipped for now: {e}")
 
 
 def load_settings():
-    """Returns a fresh dict each call. The file is re-read only if it changed on disk."""
-    mtime = _file_mtime()
-    with _lock:
-        if mtime is not None and _cache["data"] is not None and _cache["mtime"] == mtime:
-            return dict(_cache["data"])
-
-    if mtime is None:
-        save_settings(DEFAULTS)
-        with _lock:
-            return dict(_cache["data"])
-
+    """Returns a fresh dict with store_open_time and store_close_time."""
     try:
-        with open(SETTINGS_FILE, "r") as f:
-            stored = json.load(f)
-        if not isinstance(stored, dict):
-            stored = {}
-    except (OSError, ValueError) as e:
-        print(f"[settings_store] Could not read {SETTINGS_FILE}, using defaults: {e}")
-        stored = {}
-
-    data = {**DEFAULTS, **stored}
-    with _lock:
-        _cache["data"] = data
-        _cache["mtime"] = mtime
-    return dict(data)
+        _import_legacy_file()
+        result = {}
+        for key in KEYS:
+            value = get_setting(key)
+            result[key] = str(value) if value not in (None, "") else DEFAULTS[key]
+        return result
+    except Exception as e:
+        print(f"[settings_store] Could not read settings from DB, using defaults: {e}")
+        return dict(DEFAULTS)
 
 
 def save_settings(settings):
-    data = {**DEFAULTS, **settings}
-    tmp = SETTINGS_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(data, f)
-    os.replace(tmp, SETTINGS_FILE)       # atomic: a crash can't leave a half-written file
-    with _lock:
-        _cache["data"] = data
-        _cache["mtime"] = _file_mtime()
+    """Saves store hours to the database so they survive restarts and redeploys."""
+    for key in KEYS:
+        if key in settings and settings[key] not in (None, ""):
+            set_setting(key, settings[key])
