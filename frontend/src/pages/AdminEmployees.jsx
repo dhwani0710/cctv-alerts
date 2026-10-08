@@ -264,8 +264,7 @@ export default function AdminEmployees() {
         {/* HR, CEO and Owner can add employees */}
         {canManageEmployees && (
           <button
-            className="btn btn-brass"
-            style={{ marginLeft: 'auto' }}
+            className="btn btn-brass filter-end"
             onClick={() => setShowAdd((value) => !value)}
           >
             + Add employee
@@ -283,14 +282,7 @@ export default function AdminEmployees() {
             <h2>New employee</h2>
           </div>
 
-          <form
-            onSubmit={handleSubmit}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 14,
-            }}
-          >
+          <form onSubmit={handleSubmit} className="form-grid">
             <div className="field">
               <label>Full name</label>
 
@@ -334,10 +326,7 @@ export default function AdminEmployees() {
               />
             </div>
 
-            <div
-              className="field"
-              style={{ gridColumn: '1/-1' }}
-            >
+            <div className="field span-all">
               <label>Photo for face match</label>
 
               <input
@@ -351,13 +340,7 @@ export default function AdminEmployees() {
               />
             </div>
 
-            <div
-              style={{
-                gridColumn: '1/-1',
-                display: 'flex',
-                gap: 10,
-              }}
-            >
+            <div className="span-all form-actions">
               <button
                 type="submit"
                 className="btn btn-brass"
@@ -451,13 +434,7 @@ export default function AdminEmployees() {
             }
           }}
         >
-          <div
-            className="panel"
-            style={{
-              maxWidth: 420,
-              width: '100%',
-            }}
-          >
+          <div className="panel modal-panel">
             <div className="panel-head">
               <h2>Edit employee</h2>
             </div>
@@ -479,13 +456,7 @@ export default function AdminEmployees() {
                 />
               </div>
 
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: 14,
-                }}
-              >
+              <div className="pair-grid">
                 <div className="field">
                   <label>Shift start</label>
 
@@ -525,13 +496,7 @@ export default function AdminEmployees() {
                 />
               </div>
 
-              <div
-                style={{
-                  display: 'flex',
-                  gap: 10,
-                  justifyContent: 'flex-end',
-                }}
-              >
+              <div className="modal-actions">
                 <button
                   type="button"
                   className="btn btn-outline"

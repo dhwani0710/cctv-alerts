@@ -175,9 +175,9 @@ export default function Records() {
         <p>Every entry, exit and flagged event, in order.</p>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
+      <div className="pager">
         <button className="btn btn-outline btn-sm" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>Prev</button>
-        <span style={{ alignSelf: 'center', fontSize: 13.5 }}>Page {page} of {totalPages}</span>
+        <span className="pager-label">Page {page} of {totalPages}</span>
         <button className="btn btn-outline btn-sm" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
       </div>
 
@@ -212,8 +212,8 @@ export default function Records() {
           <option value="review">Needs review</option>
         </select>
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5 }}>
+        <div className="filter-actions">
+          <label className="select-all">
             <input
               type="checkbox"
               checked={records.length > 0 && records.every((r) => selectedIds.includes(r.id))}
@@ -237,7 +237,7 @@ export default function Records() {
 
       <div className="panel">
         <div className="table-wrap">
-          <table className="records" style={{ tableLayout: 'fixed', width: '100%', textAlign: 'center' }}>
+          <table className="records records-grid stack">
             <thead>
               <tr>
                 <th style={{ width: 40, textAlign: 'center' }}>
@@ -278,21 +278,22 @@ export default function Records() {
               )}
               {!loadingRecords && !recordsError && records.map((r) => (
                 <tr key={r.id}>
-                  <td>
+                  <td className="td-select">
                     <input
                       type="checkbox"
+                      aria-label="Select record"
                       checked={selectedIds.includes(r.id)}
                       onChange={() => toggleSelectOne(r.id)}
                     />
                   </td>
-                  <td className="mono">{new Date(r.timestamp).toLocaleDateString()}</td>
-                  <td className="mono">{new Date(r.timestamp).toLocaleTimeString()}</td>
-                  <td>{r.camera_name}</td>
-                  <td>{r.zone_name || '-'}</td>
-                  <td>{(r.person_name || '').startsWith('Unknown@') ? 'Unknown' : (r.person_name || '')}</td>
-                  <td>{(r.person_name || '').startsWith('Unknown@') ? 'Detect outside the store' : (r.message || '').replace(/^\[.*?\]\s*/, '').replace(/^\S+\s*present\s*/i, '')}</td>
-                  <td className="mono">{r.occurrences}</td>
-                  <td><span className={`pill ${STATUS_PILL[r.priority]}`}>{STATUS_LABEL[r.priority]}</span></td>
+                  <td className="mono" data-label="Date">{new Date(r.timestamp).toLocaleDateString()}</td>
+                  <td className="mono" data-label="Time">{new Date(r.timestamp).toLocaleTimeString()}</td>
+                  <td data-label="Camera">{r.camera_name}</td>
+                  <td data-label="Zone">{r.zone_name || '-'}</td>
+                  <td data-label="Person">{(r.person_name || '').startsWith('Unknown@') ? 'Unknown' : (r.person_name || '')}</td>
+                  <td data-label="Event">{(r.person_name || '').startsWith('Unknown@') ? 'Detect outside the store' : (r.message || '').replace(/^\[.*?\]\s*/, '').replace(/^\S+\s*present\s*/i, '')}</td>
+                  <td className="mono" data-label="Count">{r.occurrences}</td>
+                  <td data-label="Status"><span className={`pill ${STATUS_PILL[r.priority]}`}>{STATUS_LABEL[r.priority]}</span></td>
                 </tr>
               ))}
               {!loadingRecords && !recordsError && records.length === 0 && (

@@ -131,7 +131,7 @@ export default function AdminUsers() {
         </select>
 
         {isAdmin && (
-          <button className="btn btn-brass" style={{ marginLeft: 'auto' }} onClick={() => setShowAdd((v) => !v)}>+ Create user</button>
+          <button className="btn btn-brass filter-end" onClick={() => setShowAdd((v) => !v)}>+ Create user</button>
         )}
       </div>
 
@@ -139,8 +139,8 @@ export default function AdminUsers() {
         <div className="panel" style={{ marginBottom: 22 }}>
           <div className="panel-head"><h2>New user</h2></div>
           {addError && <div className="form-error show">{addError}</div>}
-          <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div className="field"><label>Username</label><input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" required /></div>
+          <form onSubmit={handleSubmit} className="form-grid">
+            <div className="field"><label>Username</label><input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} required /></div>
             <div className="field">
               <label>Role</label>
               <select value={role} onChange={(e) => setRole(e.target.value)}>
@@ -149,7 +149,7 @@ export default function AdminUsers() {
             </div>
             <div className="field"><label>Password</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required /></div>
             <div className="field"><label>Confirm password</label><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" required /></div>
-            <div style={{ gridColumn: '1/-1', display: 'flex', gap: 10 }}>
+            <div className="span-all form-actions">
               <button type="submit" className="btn btn-brass">Create user</button>
               <button type="button" className="btn btn-outline" onClick={() => setShowAdd(false)}>Cancel</button>
             </div>
@@ -185,7 +185,7 @@ export default function AdminUsers() {
 
       {editTarget && (
         <div className="cam-lightbox-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setEditTarget(null); }}>
-          <div className="panel" style={{ maxWidth: 420, width: '100%' }}>
+          <div className="panel modal-panel">
             <div className="panel-head"><h2>Edit user</h2></div>
             {editError && <div className="form-error show">{editError}</div>}
             <div style={{ display: 'grid', gap: 14 }}>
@@ -195,8 +195,8 @@ export default function AdminUsers() {
                   {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
-              <div className="field"><label>New password (optional)</label><input type="password" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Leave blank to keep current password" /></div>
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <div className="field"><label>New password (optional)</label><input type="password" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Leave blank to keep current password" autoComplete="new-password" /></div>
+              <div className="modal-actions">
                 <button className="btn btn-outline" onClick={() => setEditTarget(null)}>Cancel</button>
                 <button className="btn btn-brass" onClick={confirmEdit}>Save changes</button>
               </div>

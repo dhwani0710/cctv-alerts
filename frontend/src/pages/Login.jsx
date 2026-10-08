@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth, dashboardFor } from '../context/AuthContext.jsx';
 
+const MSG_BAD_LOGIN = 'Incorrect Security ID or password. Try again.';
+const MSG_NO_SERVER = "Can't reach the server. Check your network connection and try again.";
+
 export default function Login() {
   const { login, session } = useAuth();
   const navigate = useNavigate();
@@ -9,29 +12,40 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(() => localStorage.getItem('vaultwatch_remember_device') === 'true' || Boolean(localStorage.getItem('vaultwatch_remembered_username')));
-  const [error, setError] = useState(false);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  // If already authenticated, redirect immediately without rendering the form
   if (session) {
     return <Navigate to={dashboardFor(session.role)} replace />;
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
-    setError(false);
-    const result = await login(username, password, remember);
-    if (!result.ok) {
-      setError(true);
-      return;
+    if (submitting) return;
+    setError('');
+    setSubmitting(true);
+
+    try {
+      const result = await login(username, password, remember);
+
+      if (!result.ok) {
+        setError(result.network ? MSG_NO_SERVER : MSG_BAD_LOGIN);
+        return;
+      }
+
+      if (remember) {
+        localStorage.setItem('vaultwatch_remembered_username', username.trim());
+        localStorage.setItem('vaultwatch_remember_device', 'true');
+      } else {
+        localStorage.removeItem('vaultwatch_remembered_username');
+        localStorage.removeItem('vaultwatch_remember_device');
+      }
+      navigate(dashboardFor(result.session.role), { replace: true });
+    } catch {
+      setError(MSG_NO_SERVER);
+    } finally {
+      setSubmitting(false);
     }
-    if (remember) {
-      localStorage.setItem('vaultwatch_remembered_username', username.trim());
-      localStorage.setItem('vaultwatch_remember_device', 'true');
-    } else {
-      localStorage.removeItem('vaultwatch_remembered_username');
-      localStorage.removeItem('vaultwatch_remember_device');
-    }
-    navigate(dashboardFor(result.session.role), { replace: true });
   }
 
   return (
@@ -96,7 +110,7 @@ export default function Login() {
           <h2>Sign in</h2>
           <p className="sub">Access your security command center.</p>
 
-          {error && <div className="form-error show">Incorrect Security ID or password. Try again.</div>}
+          {error && <div className="form-error show" role="alert">{error}</div>}
 
           <form onSubmit={handleSubmit} noValidate>
             <div className="field">
@@ -107,6 +121,11 @@ export default function Login() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="admin@esamyak.com"
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                inputMode="email"
+                enterKeyHint="next"
                 required
               />
             </div>
@@ -125,6 +144,9 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter password"
                 autoComplete="current-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                enterKeyHint="go"
                 required
               />
             </div>
@@ -137,11 +159,13 @@ export default function Login() {
               <a href="#" className="forgot-link" onClick={(e) => e.preventDefault()}>Forgot password?</a>
             </div>
 
-            <button type="submit" className="login-submit">
-              Enter Command Center
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M7 17 17 7M9 7h8v8" />
-              </svg>
+            <button type="submit" className="login-submit" disabled={submitting}>
+              {submitting ? 'Signing in…' : 'Enter Command Center'}
+              {!submitting && (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M7 17 17 7M9 7h8v8" />
+                </svg>
+              )}
             </button>
           </form>
 
