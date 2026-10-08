@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useStatus } from '../context/StatusContext.jsx';
 import { GuardAckModal } from '../components/GuardAckModal';
 
-const API_BASE = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8000`;
+const API_BASE = import.meta.env.VITE_API_BASE || (window.location.protocol === 'https:' ? `https://${window.location.hostname}:8443` : `http://${window.location.hostname}:8000`);
 
 const ALERT_TYPE_LABELS = {
   stranger: 'Unrecognized face',

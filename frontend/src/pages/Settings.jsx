@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
-const API_URL = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8000`;
+const API_BASE = import.meta.env.VITE_API_BASE || (window.location.protocol === 'https:' ? `https://${window.location.hostname}:8443` : `http://${window.location.hostname}:8000`);
 
 const DEFAULT_NOTIFICATIONS = { notifyMotion: true, notifyPerson: true };
 
@@ -131,7 +131,7 @@ export default function Settings() {
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       try {
-        const res = await fetch(`${API_URL}/app-settings`, {
+        const res = await fetch(`${API_BASE}/app-settings`, {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         });
@@ -189,7 +189,7 @@ export default function Settings() {
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       try {
-        const res = await fetch(`${API_URL}/settings`, {
+        const res = await fetch(`${API_BASE}/settings`, {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         });
@@ -222,7 +222,7 @@ export default function Settings() {
 
   // ---------- API HELPERS ----------
   async function saveSetting(key, value) {
-    const res = await fetch(`${API_URL}/app-settings`, {
+    const res = await fetch(`${API_BASE}/app-settings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -244,7 +244,7 @@ export default function Settings() {
     body.append('store_open_time', open);
     body.append('store_close_time', close);
 
-    const res = await fetch(`${API_URL}/settings`, {
+    const res = await fetch(`${API_BASE}/settings`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body,
@@ -393,7 +393,7 @@ export default function Settings() {
     setChangingPassword(true);
 
     try {
-      const res = await fetch(`${API_URL}/auth/change-password`, {
+      const res = await fetch(`${API_BASE}/auth/change-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -433,7 +433,7 @@ export default function Settings() {
     setSavingAccount(true);
 
     try {
-      const res = await fetch(`${API_URL}/auth/me`, {
+      const res = await fetch(`${API_BASE}/auth/me`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -462,7 +462,7 @@ export default function Settings() {
     setClearingRecords(true);
 
     try {
-      const res = await fetch(`${API_URL}/records`, {
+      const res = await fetch(`${API_BASE}/records`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
