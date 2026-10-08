@@ -1218,6 +1218,14 @@ def get_status():
     alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
 
+@app.get("/media/signed-url", dependencies=[Depends(require_staff)])
+def get_media_signed_url(key: str):
+    try:
+        return {"url": storage.get_signed_url(key)}
+    except Exception as e:
+        print(f"[media] signed-url failed for {key}: {e}")
+        raise HTTPException(status_code=404, detail="File not found in storage")
+
 # --- Camera Streaming & Management ---
 
 @app.get("/cameras", dependencies=[Depends(require_guard)])
@@ -1350,6 +1358,8 @@ def _seed_cameras_from_config():
             conn.commit()
         cur.close()
 
+
+    
 # --- Zones ---
 
 class ZoneRequest(BaseModel):
