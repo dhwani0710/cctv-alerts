@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth, dashboardFor } from '../context/AuthContext.jsx';
 import { initials } from '../data/mockData.js';
@@ -143,7 +143,6 @@ export default function Shell({
   const isHr = role === 'hr';
   const isOwner = role === 'owner';
 
-  // These permission values can also be used in other components.
   const canManageEmployees =
     role === 'ceo' ||
     role === 'owner' ||

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { buildEmployeeCsv, downloadCsv } from '../utils/attendanceCsv.js';
 
 function monthRange(monthStr) {
   const [year, month] = monthStr.split('-').map(Number);
@@ -28,6 +29,7 @@ export default function Attendance() {
   const [records, setRecords] = useState([]);
   const [search, setSearch] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   const load = useCallback(async () => {
     const { start, end } = monthRange(month);
@@ -40,33 +42,43 @@ export default function Attendance() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function handleExport() {
-    const { start, end } = monthRange(month);
-    const res = await apiFetch(`/attendance/export?start_date=${start}&end_date=${end}`);
-    if (res.ok) {
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `attendance-${month}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    }
-  }
+  // old export error goes away when the filter changes
+  useEffect(() => { setExportError(''); }, [search, month]);
+
+  const query = search.toLowerCase();
 
   const filteredRecords = records.filter((r) =>
-    r.name.toLowerCase().includes(search.toLowerCase())
+    (r.name || '').toLowerCase().includes(query)
   );
 
   const suggestions = search
     ? records
-        .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()))
+        .filter((r) => (r.name || '').toLowerCase().includes(query))
         .map((r) => r.name)
         .filter((name, idx, arr) => arr.indexOf(name) === idx)
         .slice(0, 5)
     : [];
+
+  function handleExport() {
+    if (!search.trim()) {
+      setExportError('Search one employee first. Each file holds one person.');
+      return;
+    }
+    // an exact name wins over partial matches (Ram vs Ramesh)
+    const exact = filteredRecords.filter(
+      (r) => (r.name || '').trim().toLowerCase() === search.trim().toLowerCase()
+    );
+    const result = buildEmployeeCsv({
+      records: exact.length ? exact : filteredRecords,
+      month,
+    });
+    if (!result.ok) {
+      setExportError(result.error);
+      return;
+    }
+    setExportError('');
+    downloadCsv(result.csv, result.filename);
+  }
 
   return (
     <Shell active="attendance" title="Attendance">
@@ -101,8 +113,22 @@ export default function Attendance() {
           )}
         </div>
 
-        <button className="btn btn-brass filter-export" onClick={handleExport}>Export CSV</button>
+        <button
+          type="button"
+          className="btn btn-brass filter-export"
+          onClick={handleExport}
+          title="Exports the searched employee for this month"
+        >
+          Export CSV
+        </button>
       </div>
+
+      {exportError && (
+        <div className="banner banner-error" role="alert">
+          <span>{exportError}</span>
+          <button type="button" onClick={() => setExportError('')}>Dismiss</button>
+        </div>
+      )}
 
       <div className="table-wrap">
         <table className="records stack">

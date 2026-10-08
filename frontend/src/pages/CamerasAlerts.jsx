@@ -20,8 +20,8 @@ const ZONE_COLORS = ['#C2703D', '#4F8FBF', '#57795F', '#9B6BC2', '#B8902F', '#BF
 const STATUS_LABEL = { online: 'LIVE', offline: 'OFFLINE', tampered: 'TAMPERED' };
 
 const GRID_GAP = 12;
-const MIN_TILE = 150;       // narrowest a tile may get when the user picks a column count
-const AUTO_MIN_TILE = 300;  // preferred tile width for "Auto"
+const AUTO_MIN_TILE = 300; // preferred tile width for "Auto"
+const COL_CHOICES = [1, 2, 3, 4]; // always shown, never hidden
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
@@ -46,7 +46,7 @@ function fmtTime(v) {
   return new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-/* measures the real width of an element, so the grid adapts to the space
+/* measures the real width of an element, so Auto adapts to the space
    it actually has (phone, iPad portrait/landscape, desktop) */
 function useElementWidth() {
   const ref = useRef(null);
@@ -178,19 +178,14 @@ export default function CamerasAlerts() {
     [incidents]
   );
 
-  /* how many columns physically fit in the space we have */
-  const maxCols = gridWidth
-    ? clamp(Math.floor((gridWidth + GRID_GAP) / (MIN_TILE + GRID_GAP)), 1, 4)
-    : 4;
+  /* Auto: pick by camera count, capped by width.
+     1x / 2x / 3x / 4x: always exactly what the user picked. */
   const autoCap = gridWidth
     ? clamp(Math.floor((gridWidth + GRID_GAP) / (AUTO_MIN_TILE + GRID_GAP)), 1, 4)
     : 4;
-
   const countCols = filtered.length <= 1 ? 1 : filtered.length <= 4 ? 2 : filtered.length <= 9 ? 3 : 4;
   const autoCols = Math.min(countCols, autoCap);
-  const gridCols = cols === 'auto' ? autoCols : Math.min(cols, maxCols);
-
-  const colChoices = [1, 2, 3, 4].filter((n) => n <= maxCols);
+  const gridCols = cols === 'auto' ? autoCols : cols;
 
   const setRatio = useCallback((id, r) => {
     setRatios((p) => (Math.abs((p[id] || 0) - r) < 0.01 ? p : { ...p, [id]: r }));
@@ -265,7 +260,7 @@ export default function CamerasAlerts() {
               >
                 Auto
               </button>
-              {colChoices.map((n) => (
+              {COL_CHOICES.map((n) => (
                 <button
                   key={n}
                   className={`cag-chip ${cols === n ? 'active' : ''}`}
@@ -415,28 +410,37 @@ export default function CamerasAlerts() {
       </div>
 
       {/* ---------- LIGHTBOX ---------- */}
+            {/* ---------- LIGHTBOX ---------- */}
       {selected && (
         <div
           className="cam-lightbox-backdrop"
           onClick={(e) => { if (e.target === e.currentTarget) setSelected(null); }}
         >
           <div className="cam-lightbox">
-            <div className="cam-feed" style={{ aspectRatio: ratios[selected.id] || 16 / 9 }}>
-              {camStatus(selected) !== 'offline' && (
-                <img
-                  src={feedSrc(selected)}
-                  alt={selected.name}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                />
-              )}
-              <StatusOverlay status={camStatus(selected)} />
-              <StatusBadge status={camStatus(selected)} />
-              {selected.zone_name && (
-                <div className="cag-zone-badge" style={{ background: zoneColor(selected.zone_name) }}>
-                  {selected.zone_name}
-                </div>
-              )}
-              <div className="cam-time mono">{selected.id}</div>
+            <div className="cam-lightbox-stage">
+              <div
+                className="cam-feed"
+                style={{
+                  aspectRatio: ratios[selected.id] || 16 / 9,
+                  '--r': ratios[selected.id] || 16 / 9,
+                }}
+              >
+                {camStatus(selected) !== 'offline' && (
+                  <img
+                    src={feedSrc(selected)}
+                    alt={selected.name}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  />
+                )}
+                <StatusOverlay status={camStatus(selected)} />
+                <StatusBadge status={camStatus(selected)} />
+                {selected.zone_name && (
+                  <div className="cag-zone-badge" style={{ background: zoneColor(selected.zone_name) }}>
+                    {selected.zone_name}
+                  </div>
+                )}
+                <div className="cam-time mono">{selected.id}</div>
+              </div>
             </div>
             <div className="cam-lightbox-head">
               <div>
@@ -444,29 +448,6 @@ export default function CamerasAlerts() {
                 <div className="zone">{selected.zone_name}</div>
               </div>
               <button className="cam-lightbox-close" onClick={() => setSelected(null)} aria-label="Close">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M6 6l12 12M18 6 6 18" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {snapshotView && (
-        <div
-          className="cam-lightbox-backdrop"
-          onClick={(e) => { if (e.target === e.currentTarget) setSnapshotView(null); }}
-        >
-          <div className="cam-lightbox">
-            <img
-              src={snapSrc(snapshotView)}
-              alt="Alert snapshot"
-              style={{ width: '100%', height: 'auto', display: 'block' }}
-            />
-            <div className="cam-lightbox-head">
-              <div><div className="name">{alertTitle(snapshotView)}</div></div>
-              <button className="cam-lightbox-close" onClick={() => setSnapshotView(null)} aria-label="Close">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path d="M6 6l12 12M18 6 6 18" />
                 </svg>
