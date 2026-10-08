@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
+const API_BASE = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8000`;
+
 /* ------------------------------------------------------------------ */
 /*  Config: edit these lists to change filters and colours             */
 /* ------------------------------------------------------------------ */
@@ -42,7 +44,8 @@ const actionTone = (action = '') => {
   return 'muted';
 };
 
-const controlStyle = { height: 34, padding: '0 10px' };
+// height comes from CSS (34px on desktop, 42px on touch screens)
+const controlStyle = { padding: '0 10px' };
 const pad = (n) => String(n).padStart(2, '0');
 const dayKey = (d) => d.toLocaleDateString('en-CA'); // YYYY-MM-DD, local time
 
@@ -345,6 +348,58 @@ const AD_CSS = `
 }
 @media (prefers-reduced-motion: reduce) {
   .ad-hour-bar, .ad-loading { transition: none; }
+}
+
+/* ================================================================== */
+/*  Responsive: filters, iPad table, touch targets, phone cards        */
+/* ================================================================== */
+.ad-root .filter-bar select,
+.ad-root .filter-bar input,
+.ad-root .filter-bar .btn { height: 34px; }
+
+@media (min-width: 768px) {
+  .ad-table { min-width: 760px; }
+}
+
+@media (pointer: coarse) {
+  .ad-root .filter-bar select,
+  .ad-root .filter-bar input,
+  .ad-root .filter-bar .btn { height: 42px; }
+  .ad-page-btn { min-width: 40px; height: 40px; }
+  .ad-proof { width: 44px; height: 44px; }
+}
+
+@media screen and (max-width: 767px) {
+  .ad-stat { padding: 12px 14px; }
+  .ad-stat-value { font-size: 22px; }
+  .ad-card { padding: 14px; }
+  .ad-ledger-head, .ad-pager { padding-left: 14px; padding-right: 14px; }
+  .ad-pager-left, .ad-pager-right { width: 100%; justify-content: center; }
+
+  /* the page scrolls, not a box inside the page */
+  .ad-scroll { max-height: none; overflow: visible; }
+
+  /* every ledger row becomes a card */
+  .ad-table { min-width: 0; }
+  .ad-table, .ad-table tbody, .ad-table tr, .ad-table td { display: block; width: 100%; }
+  .ad-table thead { display: none; }
+
+  .ad-day td { position: static; padding: 8px 14px; }
+
+  .ad-item { padding: 12px 14px; border-bottom: 1px solid var(--ad-border); }
+  .ad-item td {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 4px 0; border-bottom: none; text-align: right;
+  }
+  .ad-item td::before {
+    content: attr(data-label);
+    flex-shrink: 0; text-align: left;
+    font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--ad-muted);
+  }
+  .ad-item td.ad-details { display: block; text-align: left; }
+  .ad-item td.ad-details::before { display: block; margin-bottom: 2px; }
+  .ad-item:hover td { background: none; }
 }
 
 /* ================================================================== */
@@ -1044,29 +1099,31 @@ export const AuditLogPage = () => {
                         const proofUrl = log.proof_image
                           ? (log.proof_image.startsWith('http')
                               ? log.proof_image
-                              : `http://localhost:8000${log.proof_image}?token=${encodeURIComponent(token)}`)
+                              : `${API_BASE}${log.proof_image}?token=${encodeURIComponent(token)}`)
                           : null;
                         const role = (log.user_role || 'system').toLowerCase();
                         const name = log.username || 'system';
 
                         return (
                           <tr className="ad-item" key={log.id}>
-                            <td className="ad-time mono" title={fullDate}>{timeStr}</td>
+                            <td className="ad-time mono" data-label="Time" title={fullDate}>{timeStr}</td>
 
-                            <td>
-                              <div className="ad-actor-name">{name}</div>
-                              <div className="ad-role">{ROLE_LABEL[role] || log.user_role}</div>
+                            <td data-label="Actor">
+                              <div>
+                                <div className="ad-actor-name">{name}</div>
+                                <div className="ad-role">{ROLE_LABEL[role] || log.user_role}</div>
+                              </div>
                             </td>
 
-                            <td>
+                            <td data-label="Action">
                               <span className={`ad-tag mono tone-${actionTone(log.action)}`}>{log.action}</span>
                             </td>
 
-                            <td className="ad-module">{log.target_module}</td>
+                            <td className="ad-module" data-label="Module">{log.target_module}</td>
 
-                            <td className="ad-details">{log.details}</td>
+                            <td className="ad-details" data-label="Details">{log.details}</td>
 
-                            <td style={{ textAlign: 'center' }}>
+                            <td data-label="Proof" style={{ textAlign: 'center' }}>
                               {proofUrl ? (
                                 <button
                                   type="button"

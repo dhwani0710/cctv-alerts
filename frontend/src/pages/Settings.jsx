@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -52,6 +52,15 @@ export default function Settings() {
 
   const [activeCategory, setActiveCategory] = useState(isHRorGuard ? 'security' : 'notifications');
   const [search, setSearch] = useState('');
+  const tabsRef = useRef(null);
+
+  // keep the active category visible in the swipeable tab strip (phone)
+  useEffect(() => {
+    const el = tabsRef.current?.querySelector('button.active');
+    if (el && el.scrollIntoView) {
+      el.scrollIntoView({ inline: 'center', block: 'nearest' });
+    }
+  }, [activeCategory, search]);
 
   // Notifications
   const [notifyMotion, setNotifyMotion] = useState(true);
@@ -312,7 +321,7 @@ export default function Settings() {
   }
 
   // ---------- SAVE ----------
-    async function saveNotifications(event) {
+  async function saveNotifications(event) {
     event.preventDefault();
     if (savingNotifications) return;
 
@@ -559,9 +568,7 @@ export default function Settings() {
               >
                 <div>
                   <span>{result.title}</span>
-                  <div style={{ marginTop: '4px', color: '#858b95', fontSize: '11px' }}>
-                    {result.description}
-                  </div>
+                  <div className="vscode-search-desc">{result.description}</div>
                 </div>
                 <small>{CATEGORIES.find((c) => c.key === result.category)?.label}</small>
               </button>
@@ -569,13 +576,18 @@ export default function Settings() {
           </div>
         ) : (
           <div className="vscode-settings-body">
-            {/* SIDEBAR */}
-            <aside className="vscode-settings-sidebar">
+            {/* SIDEBAR (tabs on phones) */}
+            <aside
+              className="vscode-settings-sidebar"
+              ref={tabsRef}
+              aria-label="Settings categories"
+            >
               {CATEGORIES.map((category) => (
                 <button
                   key={category.key}
                   type="button"
                   className={activeCategory === category.key ? 'active' : ''}
+                  aria-current={activeCategory === category.key ? 'page' : undefined}
                   onClick={() => setActiveCategory(category.key)}
                 >
                   {category.label}

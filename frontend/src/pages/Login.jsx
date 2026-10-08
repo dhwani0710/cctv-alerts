@@ -107,6 +107,9 @@ export default function Login() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="admin@esamyak.com"
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 required
               />
             </div>

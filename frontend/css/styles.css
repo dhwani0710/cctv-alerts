@@ -2799,3 +2799,1073 @@ table.records tbody tr:hover td {
   .cag-main { max-height: 70vh; }
   .cag-side { height: 560px; }
 }
+
+/* =====================================================
+   15. RESPONSIVE  (phone / iPad / desktop)
+   Paste at the END of styles.css
+   ===================================================== */
+
+:root {
+  --rail-w: 68px;
+  --rail-w-open: 232px;
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  -webkit-text-size-adjust: 100%;
+}
+
+img,
+video,
+canvas {
+  max-width: 100%;
+}
+
+/* use the real visible height on phones (address bar aware) */
+@media screen {
+  .shell,
+  .main {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .login-wrap {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+}
+
+/* ---------- topbar pieces ---------- */
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.topbar-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hamburger {
+  display: none;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.hamburger svg {
+  width: 20px;
+  height: 20px;
+}
+
+.hamburger:hover {
+  border-color: var(--brass);
+  color: var(--brass);
+}
+
+.rail-backdrop {
+  display: none;
+}
+
+/* ---------- "open" state: used by the hamburger on phone, tablet, touch ---------- */
+.rail.open {
+  width: var(--rail-w-open);
+  box-shadow: 8px 0 28px rgba(0, 0, 0, .35);
+}
+
+.rail.open .rail-link .tip,
+.rail.open .rail-brand::after {
+  max-width: 160px;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/* ---------- anything smaller than a laptop, or any touch screen ---------- */
+@media (max-width: 1023px), (hover: none) {
+  .hamburger {
+    display: inline-flex;
+  }
+
+  .rail-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    background: rgba(0, 0, 0, .5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+  }
+
+  .rail-backdrop.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* ---------- touch tablets (iPad): a tap must not leave the rail stuck open ---------- */
+@media (hover: none) and (min-width: 768px) {
+  .rail:hover:not(.open),
+  .rail:focus-within:not(.open) {
+    width: var(--rail-w);
+    box-shadow: none;
+  }
+
+  .rail:hover:not(.open) .rail-link .tip,
+  .rail:focus-within:not(.open) .rail-link .tip,
+  .rail:hover:not(.open) .rail-brand::after,
+  .rail:focus-within:not(.open) .rail-brand::after {
+    max-width: 0;
+    opacity: 0;
+    transform: translateX(-6px);
+    pointer-events: none;
+  }
+}
+
+/* ---------- iPad / small laptop: 768px to 1023px ---------- */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .topbar {
+    padding: 0 16px;
+  }
+
+  .content {
+    padding: 24px 22px 40px;
+  }
+
+  .alerts-activity-grid {
+    grid-template-columns: 1fr;
+  }
+
+    .cag-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .staff-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+
+  .login-wrap {
+    padding: 50px 40px 90px;
+  }
+}
+
+/* ---------- phone: under 768px ---------- */
+@media (max-width: 767px) {
+
+  /* sidebar becomes an off-canvas drawer with full labels */
+  .main {
+    margin-left: 0;
+  }
+
+  .rail,
+  .rail:hover,
+  .rail:focus-within,
+  .rail.open {
+    width: 272px;
+    max-width: 84vw;
+  }
+
+  .rail {
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+    box-shadow: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-top: calc(18px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .rail.open {
+    transform: none;
+    box-shadow: 8px 0 28px rgba(0, 0, 0, .45);
+  }
+
+  .rail .rail-link .tip,
+  .rail .rail-brand::after {
+    max-width: 160px;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  .rail-spacer {
+    min-height: 12px;
+  }
+
+  /* topbar */
+  .topbar {
+    height: calc(56px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 10px 0;
+  }
+
+  .topbar-title {
+    font-size: 15px;
+  }
+
+  .topbar-right {
+    gap: 8px;
+  }
+
+  .topbar-clock,
+  .role-badge,
+  .user-chip .name {
+    display: none;
+  }
+
+  .logout-btn {
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  /* page area */
+  .content {
+    padding: 16px 14px calc(32px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .page-head {
+    margin-bottom: 18px;
+  }
+
+  .page-head h1 {
+    font-size: 22px;
+  }
+
+  .page-head--brand {
+    gap: 12px;
+  }
+
+  /* stat cards: 2 per row */
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-card:has(.stat-icon) {
+    gap: 10px;
+  }
+
+  .stat-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .stat-card .value {
+    font-size: 24px;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+
+  .alerts-activity-grid,
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .alert-item {
+    flex-wrap: wrap;
+  }
+
+  .log-row {
+    grid-template-columns: 10px 56px minmax(0, 1fr);
+  }
+
+  .log-tag {
+    display: none;
+  }
+
+  /* cameras */
+  .cam-grid,
+  .staff-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cag-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cag-side {
+    height: 480px;
+  }
+
+  .cag-toolbar {
+    gap: 6px;
+  }
+
+  .cag-stats {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .cam-lightbox-backdrop {
+    padding: 12px;
+  }
+
+  /* filters and tables */
+  .filter-bar {
+    gap: 8px;
+  }
+
+  .filter-bar select,
+  .filter-bar input {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+
+  .table-wrap table.records,
+  .audit-table-container table.records {
+    min-width: 600px;
+  }
+
+  .audit-table-container {
+    max-height: calc(100dvh - 260px);
+  }
+
+  .cell-ellipsis {
+    max-width: 200px;
+  }
+
+  /* settings */
+  .settings-stack {
+    max-width: 100%;
+  }
+
+  .vscode-settings-content {
+    padding: 22px 16px;
+  }
+
+  .vscode-setting-row {
+    gap: 16px;
+  }
+
+  .vscode-danger-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .vscode-saved {
+    left: 14px;
+    right: 14px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    text-align: center;
+  }
+
+  .toast {
+    max-width: calc(100vw - 24px);
+    text-align: center;
+  }
+
+  /* login */
+  .login-wrap {
+    padding: 28px 16px 40px;
+    gap: 28px;
+  }
+
+  .login-hero {
+    gap: 28px;
+  }
+
+  .login-hero-mid h1 {
+    font-size: 32px;
+  }
+
+  .login-features {
+    display: none;
+  }
+
+  .login-card {
+    padding: 22px 18px 18px;
+  }
+
+  .login-footer {
+    position: static;
+    transform: none;
+    grid-column: 1;
+  }
+}
+
+/* very small phones: stat cards go one per row */
+@media (max-width: 380px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- touch screens: finger-sized targets, no iOS zoom on focus ---------- */
+@media (pointer: coarse) {
+  .rail-link {
+    height: 46px;
+  }
+
+  .btn,
+  .btn-sm,
+  .logout-btn,
+  .theme-toggle,
+  .cam-lightbox-close,
+  .vscode-outline-btn,
+  .vscode-danger-btn,
+  .vscode-primary-btn {
+    min-height: 40px;
+  }
+
+  .theme-toggle,
+  .cam-lightbox-close {
+    min-width: 40px;
+  }
+
+  .cag-chip {
+    padding: 8px 13px;
+  }
+
+  input,
+  select,
+  textarea,
+  .field input,
+  .field select,
+  .filter-bar input,
+  .filter-bar select,
+  .vscode-field input,
+  .vscode-field select,
+  .vscode-search input {
+    font-size: 16px;
+  }
+
+  .vscode-field input,
+  .vscode-field select {
+    min-height: 40px;
+  }
+}
+
+/* ---------- print: hide the new controls ---------- */
+@media print {
+  .hamburger,
+  .rail-backdrop {
+    display: none !important;
+  }
+}
+
+/* =====================================================
+   16. RESPONSIVE: Dashboard + Cameras & Alerts
+   Paste at the END of styles.css
+   ===================================================== */
+
+/* ---------- dashboard alerts table ---------- */
+.alert-sub {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .col-hide-sm {
+    display: none;
+  }
+
+  .alert-sub {
+    display: block;
+    margin-top: 2px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    white-space: normal;
+  }
+
+  .table-wrap table.records.compact {
+    min-width: 0;
+  }
+
+  table.records.compact .cell-ellipsis {
+    white-space: normal;
+    max-width: none;
+  }
+
+  table.records.compact td,
+  table.records.compact th {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+}
+
+/* ---------- cameras & alerts ---------- */
+.cag-cols {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.cam-meta {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cam-meta > div:first-child {
+  flex: 1 1 110px;
+  min-width: 0;
+}
+
+.cam-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.cag-inc-actions {
+  flex-wrap: wrap;
+}
+
+/* stacked layout (phone, iPad portrait): let the page scroll, not nested boxes */
+@media (max-width: 1000px) {
+  .cag-layout {
+    height: auto;
+    min-height: 0;
+  }
+
+  .cag-main {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .cag-grid-scroll {
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .cag-side {
+    height: auto;
+    overflow: visible;
+  }
+
+  .cag-alerts {
+    flex: none;
+    max-height: 60vh;
+    max-height: 60dvh;
+  }
+}
+
+/* popups can never be taller than the screen */
+.cam-lightbox {
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+
+.cam-lightbox .cam-feed {
+  max-height: calc(100vh - 130px);
+  max-height: calc(100dvh - 130px);
+}
+
+.cam-lightbox > img {
+  max-height: calc(100vh - 130px);
+  max-height: calc(100dvh - 130px);
+  object-fit: contain;
+  background: #000;
+}
+
+@media (max-width: 767px) {
+  .cag-toolbar {
+    gap: 6px;
+  }
+
+  .cag-sep {
+    flex-basis: 100%;
+    height: 0;
+  }
+
+  .cam-meta {
+    padding: 10px;
+  }
+}
+
+/* =====================================================
+   17. RESPONSIVE: Records + Attendance
+   (also a reusable "stack" table: rows become cards on phones)
+   Paste at the END of styles.css
+   ===================================================== */
+
+/* ---------- pager (Records) ---------- */
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pager-label {
+  font-size: 13.5px;
+}
+
+/* ---------- filter bar pieces ---------- */
+.filter-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.select-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+}
+
+.search-wrap {
+  position: relative;
+}
+
+.filter-export {
+  margin-left: auto;
+}
+
+/* Attendance search suggestions: now follows light / dark theme */
+.suggest-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .18);
+}
+
+.suggest-list li {
+  padding: 9px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.suggest-list li:hover {
+  background: var(--bg-soft);
+  color: var(--brass);
+}
+
+/* ---------- tablet + desktop: real tables ---------- */
+@media (min-width: 768px) {
+  /* Records: 9 fixed columns, scrolls sideways on iPad if it must */
+  table.records.records-grid {
+    table-layout: fixed;
+    width: 100%;
+    min-width: 820px;
+    text-align: center;
+  }
+
+  /* Attendance: slim date / time columns */
+  table.records th.tight,
+  table.records td.tight {
+    padding: 11px 6px;
+  }
+}
+
+/* ---------- phone: every table row becomes a card ---------- */
+@media (max-width: 767px) {
+  .pager {
+    justify-content: space-between;
+  }
+
+  .filter-actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .filter-export {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .search-wrap {
+    flex: 1 1 100%;
+  }
+
+  .search-wrap input {
+    width: 100%;
+  }
+
+  /* the earlier "stretch inputs" rule must not stretch checkboxes */
+  .filter-bar input[type="checkbox"] {
+    flex: none;
+    width: auto;
+    min-width: 0;
+  }
+
+  .table-wrap table.records.stack {
+    min-width: 0;
+  }
+
+  table.records.stack,
+  table.records.stack tbody,
+  table.records.stack tr,
+  table.records.stack td {
+    display: block;
+    width: 100%;
+  }
+
+  table.records.stack thead {
+    display: none;
+  }
+
+  table.records.stack tr {
+    position: relative;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+  }
+
+  table.records.stack td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 0;
+    border-bottom: none;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  table.records.stack td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  table.records.stack tbody tr:hover td {
+    background: none;
+  }
+
+  /* Records: the row checkbox floats in the card's top-right corner */
+  table.records.stack td.td-select {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    width: auto;
+    padding: 0;
+  }
+
+  table.records.stack td.td-select::before {
+    content: none;
+  }
+
+  table.records.stack td.td-select input {
+    width: 20px;
+    height: 20px;
+  }
+
+  table.records.stack td.td-select + td {
+    padding-right: 32px;
+  }
+
+  /* loading / empty / error rows are not cards */
+  table.records.stack tr:has(> td.table-empty-state) {
+    padding: 0;
+    border: none;
+    background: none;
+  }
+
+  table.records.stack td.table-empty-state {
+    display: block;
+    text-align: center;
+  }
+
+  table.records.stack td.table-empty-state::before {
+    content: none;
+  }
+}
+
+/* =====================================================
+   18. RESPONSIVE: Settings
+   Paste at the END of styles.css
+   ===================================================== */
+
+.vscode-search-desc {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ---------- iPad portrait (801px to 1023px): narrower sidebar ---------- */
+@media (min-width: 801px) and (max-width: 1023px) {
+  .vscode-settings-sidebar {
+    width: 200px;
+    padding: 20px 12px;
+  }
+
+  .vscode-settings-content {
+    padding: 30px 28px;
+  }
+
+  .vscode-search {
+    width: min(390px, 100%);
+  }
+}
+
+/* ---------- phone + small tablet (800px and below): category pills ---------- */
+@media (max-width: 800px) {
+  .vscode-settings {
+    min-height: calc(100vh - 56px);
+    min-height: calc(100dvh - 56px);
+  }
+
+  .vscode-settings-body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* the vertical category list becomes a swipeable strip pinned to the top */
+  .vscode-settings-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    gap: 6px;
+    width: 100%;
+    flex-shrink: 0;
+    padding: 10px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    scrollbar-width: none;
+  }
+
+  .vscode-settings-sidebar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .vscode-settings-sidebar button {
+    width: auto;
+    flex-shrink: 0;
+    margin: 0;
+    padding: 9px 14px;
+    white-space: nowrap;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface);
+  }
+
+  .vscode-settings-sidebar button.active {
+    background: var(--brass);
+    border-color: var(--brass);
+    color: #fff;
+    box-shadow: none;
+  }
+
+  .vscode-settings-content {
+    padding: 20px 16px 40px;
+  }
+
+  .vscode-settings-content h1 {
+    margin-bottom: 20px;
+    font-size: 22px;
+  }
+
+  .vscode-setting-row {
+    min-height: 0;
+    gap: 16px;
+    padding: 14px 0;
+  }
+
+  .vscode-confirm {
+    flex-wrap: wrap;
+  }
+
+  /* search results */
+  .vscode-search-results {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    margin: 16px auto;
+    padding: 0 12px;
+  }
+
+  .vscode-search-result {
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 6px;
+  }
+
+  .vscode-search-result small {
+    flex-shrink: 0;
+  }
+}
+
+/* ---------- touch screens: finger-sized on/off switches ---------- */
+@media (pointer: coarse) {
+  .vscode-setting-row input[type="checkbox"] {
+    width: 46px;
+    height: 28px;
+  }
+
+  .vscode-setting-row input[type="checkbox"]::after {
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+  }
+
+  .vscode-setting-row input[type="checkbox"]:checked::after {
+    left: 21px;
+  }
+}
+
+
+/* =====================================================
+   19. RESPONSIVE: Employees, Users, Login
+   Paste at the END of styles.css
+   ===================================================== */
+
+/* ---------- shared form + popup pieces ---------- */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.form-grid .span-all {
+  grid-column: 1 / -1;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pair-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.modal-panel {
+  width: 100%;
+  max-width: 420px;
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.filter-end {
+  margin-left: auto;
+}
+
+@media (max-width: 767px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-actions .btn,
+  .modal-actions .btn {
+    flex: 1 1 0;
+  }
+
+  .filter-end {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+@media (max-width: 360px) {
+  .pair-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- login ---------- */
+@media (max-width: 900px) {
+  .login-wrap {
+    align-items: start;
+    gap: 32px;
+  }
+
+  .login-hero {
+    gap: 32px;
+  }
+
+  .login-card {
+    margin: 0 auto;
+  }
+}
+
+/* phone: brand, a short headline, then the sign-in card straight away */
+@media (max-width: 767px) {
+  .login-hero {
+    gap: 18px;
+  }
+
+  .login-hero-mid .eyebrow,
+  .login-hero-mid p {
+    display: none;
+  }
+
+  .login-hero-mid h1 {
+    margin: 0;
+    font-size: 28px;
+  }
+}
+
+/* landscape phone: not enough height for the pitch, show the card only */
+@media (max-height: 520px) and (orientation: landscape) {
+  .login-hero {
+    gap: 12px;
+  }
+
+  .login-hero-mid {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .show-toggle {
+    margin: -10px -6px;
+    padding: 10px 6px;
+  }
+
+  .checkbox input {
+    width: 20px;
+    height: 20px;
+  }
+
+  .forgot-link {
+    padding: 10px 0;
+  }
+}

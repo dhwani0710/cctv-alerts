@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Shell from '../components/Shell.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import AddCameraModal from '../components/AddCameraModal.jsx';
@@ -19,6 +19,12 @@ const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
 const ZONE_COLORS = ['#C2703D', '#4F8FBF', '#57795F', '#9B6BC2', '#B8902F', '#BF4F7A'];
 const STATUS_LABEL = { online: 'LIVE', offline: 'OFFLINE', tampered: 'TAMPERED' };
 
+const GRID_GAP = 12;
+const MIN_TILE = 150;       // narrowest a tile may get when the user picks a column count
+const AUTO_MIN_TILE = 300;  // preferred tile width for "Auto"
+
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
 function alertTitle(a) {
   if (a.person_name && a.person_name.startsWith('Unknown@')) {
     return `Stranger - ${a.person_name.split('@')[1]}`;
@@ -38,6 +44,27 @@ function camStatus(c) {
 
 function fmtTime(v) {
   return new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/* measures the real width of an element, so the grid adapts to the space
+   it actually has (phone, iPad portrait/landscape, desktop) */
+function useElementWidth() {
+  const ref = useRef(null);
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+
+    const ro = new ResizeObserver(([entry]) => {
+      setWidth(Math.round(entry.contentRect.width));
+    });
+
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return [ref, width];
 }
 
 function StatusBadge({ status }) {
@@ -86,6 +113,8 @@ export default function CamerasAlerts() {
   const [zoneFilter, setZoneFilter] = useState('all');
   const [cols, setCols] = useState('auto');
   const [ratios, setRatios] = useState({});
+
+  const [gridRef, gridWidth] = useElementWidth();
 
   const loadIncidents = useCallback(async () => {
     const res = await apiFetch('/incidents?status=new');
@@ -149,8 +178,19 @@ export default function CamerasAlerts() {
     [incidents]
   );
 
-  const autoCols = filtered.length <= 1 ? 1 : filtered.length <= 4 ? 2 : filtered.length <= 9 ? 3 : 4;
-  const gridCols = cols === 'auto' ? autoCols : cols;
+  /* how many columns physically fit in the space we have */
+  const maxCols = gridWidth
+    ? clamp(Math.floor((gridWidth + GRID_GAP) / (MIN_TILE + GRID_GAP)), 1, 4)
+    : 4;
+  const autoCap = gridWidth
+    ? clamp(Math.floor((gridWidth + GRID_GAP) / (AUTO_MIN_TILE + GRID_GAP)), 1, 4)
+    : 4;
+
+  const countCols = filtered.length <= 1 ? 1 : filtered.length <= 4 ? 2 : filtered.length <= 9 ? 3 : 4;
+  const autoCols = Math.min(countCols, autoCap);
+  const gridCols = cols === 'auto' ? autoCols : Math.min(cols, maxCols);
+
+  const colChoices = [1, 2, 3, 4].filter((n) => n <= maxCols);
 
   const setRatio = useCallback((id, r) => {
     setRatios((p) => (Math.abs((p[id] || 0) - r) < 0.01 ? p : { ...p, [id]: r }));
@@ -188,7 +228,7 @@ export default function CamerasAlerts() {
       <div className="page-head">
         <span className="eyebrow">Live Monitoring</span>
         <h1>Cameras & alerts</h1>
-        <p>{cameras.length} camera{cameras.length === 1 ? '' : 's'}, monitored continuously. Click a camera to enlarge it.</p>
+        <p>{cameras.length} camera{cameras.length === 1 ? '' : 's'}, monitored continuously. Tap a camera to enlarge it.</p>
       </div>
 
       <div className="cag-layout">
@@ -217,16 +257,25 @@ export default function CamerasAlerts() {
               </button>
             ))}
             <span className="cag-sep" />
-            {['auto', 1, 2, 3, 4].map((n) => (
+            <span className="cag-cols">
               <button
-                key={n}
-                className={`cag-chip ${cols === n ? 'active' : ''}`}
-                onClick={() => setCols(n)}
+                className={`cag-chip ${cols === 'auto' ? 'active' : ''}`}
+                onClick={() => setCols('auto')}
                 title="Grid columns"
               >
-                {n === 'auto' ? 'Auto' : `${n}×`}
+                Auto
               </button>
-            ))}
+              {colChoices.map((n) => (
+                <button
+                  key={n}
+                  className={`cag-chip ${cols === n ? 'active' : ''}`}
+                  onClick={() => setCols(n)}
+                  title="Grid columns"
+                >
+                  {n}×
+                </button>
+              ))}
+            </span>
           </div>
 
           <div className="cag-stats" style={{ marginBottom: 10, flexShrink: 0 }}>
@@ -235,7 +284,7 @@ export default function CamerasAlerts() {
             <span className="tam"><b>{counts.tampered}</b> tampered</span>
           </div>
 
-          <div className="cag-grid-scroll">
+          <div className="cag-grid-scroll" ref={gridRef}>
             <div className="cag-grid" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
               {filtered.map((c) => {
                 const st = camStatus(c);
@@ -272,7 +321,7 @@ export default function CamerasAlerts() {
                         <div className="zone">{c.zone_name}</div>
                       </div>
                       {isAdmin && (
-                        <div style={{ display: 'flex', gap: 6 }}>
+                        <div className="cam-actions">
                           <button
                             className="btn btn-outline btn-sm"
                             onClick={(e) => { e.stopPropagation(); setEditCamTarget(c); }}

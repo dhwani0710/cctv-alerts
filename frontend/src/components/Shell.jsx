@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth, dashboardFor } from '../context/AuthContext.jsx';
 import { initials } from '../data/mockData.js';
 import { useStatus } from '../context/StatusContext.jsx';
@@ -84,6 +84,12 @@ const NAV_ICONS = {
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   ),
+
+  menu: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </svg>
+  ),
 };
 
 function useClock() {
@@ -121,9 +127,11 @@ export default function Shell({
 }) {
   const { session, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const clock = useClock();
   const [toast, setToast] = useState(false);
+  const [navOpen, setNavOpen] = useState(false); // drawer (phone) / expanded rail (tablet, touch)
 
   const { hasHighAlert } = useStatus();
 
@@ -163,6 +171,23 @@ export default function Shell({
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // close the menu whenever the page changes
+  useEffect(() => {
+    setNavOpen(false);
+  }, [location.pathname]);
+
+  // close the menu with the Escape key
+  useEffect(() => {
+    if (!navOpen) return undefined;
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') setNavOpen(false);
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navOpen]);
 
   function handleLogout() {
     logout();
@@ -250,7 +275,10 @@ export default function Shell({
         </div>
       )}
 
-      <nav className="rail">
+      <nav
+        className={`rail ${navOpen ? 'open' : ''}`}
+        aria-label="Main navigation"
+      >
         <div className="rail-brand">
           <HallmarkStamp alert={hasHighAlert} />
         </div>
@@ -259,6 +287,7 @@ export default function Shell({
           <Link
             key={item.key}
             to={item.to}
+            onClick={() => setNavOpen(false)}
             className={`rail-link ${
               active === item.key ? 'active' : ''
             }`}
@@ -270,6 +299,7 @@ export default function Shell({
 
         <Link
           to="/settings"
+          onClick={() => setNavOpen(false)}
           className={`rail-link ${
             active === 'settings' ? 'active' : ''
           }`}
@@ -281,10 +311,29 @@ export default function Shell({
         <div className="rail-spacer" />
       </nav>
 
+      {/* dim layer behind the drawer (phone / tablet / touch only) */}
+      <div
+        className={`rail-backdrop ${navOpen ? 'show' : ''}`}
+        onClick={() => setNavOpen(false)}
+        aria-hidden="true"
+      />
+
       <div className="main">
         <header className="topbar">
-          <div className="topbar-title">
-            {title}
+          <div className="topbar-left">
+            <button
+              type="button"
+              className="hamburger"
+              aria-label={navOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={navOpen}
+              onClick={() => setNavOpen((o) => !o)}
+            >
+              {NAV_ICONS.menu}
+            </button>
+
+            <div className="topbar-title">
+              {title}
+            </div>
           </div>
 
           <div className="topbar-right">
