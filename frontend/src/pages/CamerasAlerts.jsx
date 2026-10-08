@@ -86,6 +86,7 @@ export default function CamerasAlerts() {
   const [zoneFilter, setZoneFilter] = useState('all');
   const [cols, setCols] = useState('auto');
   const [ratios, setRatios] = useState({});
+  const [signedUrls, setSignedUrls] = useState({});
 
   const loadIncidents = useCallback(async () => {
     const res = await apiFetch('/incidents?status=new');
@@ -157,10 +158,23 @@ export default function CamerasAlerts() {
   }, []);
 
   const feedSrc = (c) => `${API_BASE}/video_feed/${c.id}?token=${encodeURIComponent(session.token)}`;
-  const snapSrc = (a) =>
-    a.snapshot_filename.startsWith('http')
-      ? a.snapshot_filename
-      : `${API_BASE}${a.snapshot_filename}?token=${encodeURIComponent(session.token)}`;
+
+  const resolveSnapUrl = useCallback(async (key) => {
+    if (!key) return null;
+    if (key.startsWith('http')) return key;
+    if (signedUrls[key]) return signedUrls[key];
+    const res = await apiFetch(`/media/signed-url?key=${encodeURIComponent(key)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    setSignedUrls((p) => ({ ...p, [key]: data.url }));
+    return data.url;
+  }, [apiFetch, signedUrls]);
+
+  useEffect(() => {
+    incidents.forEach((a) => {
+      if (a.snapshot_filename) resolveSnapUrl(a.snapshot_filename);
+    });
+  }, [incidents, resolveSnapUrl]);
 
   async function confirmDismiss() {
     await apiFetch(`/incidents/${dismissTarget.id}`, {
@@ -323,40 +337,45 @@ export default function CamerasAlerts() {
               <span className="cag-live-tag"><span className="rec-dot" />LIVE · {incidents.length}</span>
             </div>
             <div className="cag-alerts-list">
-              {sortedIncidents.map((a) => (
-                <div className={`cag-inc p-${a.priority}`} key={a.id}>
-                  {a.snapshot_filename && (
-                    <img
-                      className="cag-inc-thumb"
-                      src={snapSrc(a)}
-                      alt="snapshot"
-                      onClick={() => setSnapshotView(a)}
-                    />
-                  )}
-                  <div className="cag-inc-body">
-                    <div className="cag-inc-top">
-                      <span className={`pill p-${a.priority}`}>{a.priority}</span>
-                      <span className="mono cag-inc-time">{fmtTime(a.last_seen)}</span>
-                    </div>
-                    <div className="cag-inc-title">{alertTitle(a)}</div>
-                    <div className="cag-inc-meta">
-                      {a.camera_name || '-'} · {a.zone_name || '-'} · ×{a.alert_count}
-                    </div>
-                    <div className="cag-inc-actions">
-                      {canAckAlerts && (
-                        <button className="btn btn-outline btn-sm" onClick={() => setAckModalAlert(a)}>
-                          Acknowledge
-                        </button>
-                      )}
-                      {isAdmin && (
-                        <button className="btn btn-danger btn-sm" onClick={() => setDismissTarget(a)}>
-                          Dismiss
-                        </button>
-                      )}
+              {sortedIncidents.map((a) => {
+                const thumbSrc = a.snapshot_filename
+                  ? (a.snapshot_filename.startsWith('http') ? a.snapshot_filename : signedUrls[a.snapshot_filename])
+                  : null;
+                return (
+                  <div className={`cag-inc p-${a.priority}`} key={a.id}>
+                    {a.snapshot_filename && thumbSrc && (
+                      <img
+                        className="cag-inc-thumb"
+                        src={thumbSrc}
+                        alt="snapshot"
+                        onClick={() => setSnapshotView(a)}
+                      />
+                    )}
+                    <div className="cag-inc-body">
+                      <div className="cag-inc-top">
+                        <span className={`pill p-${a.priority}`}>{a.priority}</span>
+                        <span className="mono cag-inc-time">{fmtTime(a.last_seen)}</span>
+                      </div>
+                      <div className="cag-inc-title">{alertTitle(a)}</div>
+                      <div className="cag-inc-meta">
+                        {a.camera_name || '-'} · {a.zone_name || '-'} · ×{a.alert_count}
+                      </div>
+                      <div className="cag-inc-actions">
+                        {canAckAlerts && (
+                          <button className="btn btn-outline btn-sm" onClick={() => setAckModalAlert(a)}>
+                            Acknowledge
+                          </button>
+                        )}
+                        {isAdmin && (
+                          <button className="btn btn-danger btn-sm" onClick={() => setDismissTarget(a)}>
+                            Dismiss
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {incidents.length === 0 && (
                 <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No active alerts.</p>
               )}
@@ -411,7 +430,7 @@ export default function CamerasAlerts() {
         >
           <div className="cam-lightbox">
             <img
-              src={snapSrc(snapshotView)}
+              src={snapshotView.snapshot_filename.startsWith('http') ? snapshotView.snapshot_filename : signedUrls[snapshotView.snapshot_filename]}
               alt="Alert snapshot"
               style={{ width: '100%', height: 'auto', display: 'block' }}
             />

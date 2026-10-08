@@ -8,6 +8,7 @@ export default function Recordings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedVideo, setSelectedVideo] = useState(null);
+  const [playUrl, setPlayUrl] = useState(null);
 
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -44,6 +45,26 @@ export default function Recordings() {
       dateStyle: 'medium',
       timeStyle: 'short',
     });
+  }
+
+  async function openVideo(rec) {
+    setSelectedVideo(rec);
+    setPlayUrl(null);
+    if (!rec.video_url) return;
+    if (rec.video_url.startsWith('http')) {
+      setPlayUrl(rec.video_url);
+      return;
+    }
+    const res = await apiFetch(`/media/signed-url?key=${encodeURIComponent(rec.video_url)}`);
+    if (res.ok) {
+      const data = await res.json();
+      setPlayUrl(data.url);
+    }
+  }
+
+  function closeVideo() {
+    setSelectedVideo(null);
+    setPlayUrl(null);
   }
 
   return (
@@ -97,7 +118,7 @@ export default function Recordings() {
                     <td style={{ padding: '12px', textAlign: 'right' }}>
                       <button
                         className="btn btn-outline btn-sm"
-                        onClick={() => setSelectedVideo(rec)}
+                        onClick={() => openVideo(rec)}
                       >
                         Play Video
                       </button>
@@ -111,23 +132,27 @@ export default function Recordings() {
       </div>
 
       {selectedVideo && (
-        <div className="cam-lightbox-backdrop" onClick={() => setSelectedVideo(null)}>
+        <div className="cam-lightbox-backdrop" onClick={closeVideo}>
           <div className="panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', width: '90%' }}>
             <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2>Recording - {selectedVideo.camera_name} ({formatDateTime(selectedVideo.timestamp)})</h2>
-              <button className="btn btn-outline btn-sm" onClick={() => setSelectedVideo(null)}>
+              <button className="btn btn-outline btn-sm" onClick={closeVideo}>
                 Close
               </button>
             </div>
             <div style={{ padding: '16px', background: '#000', borderBottomLeftRadius: 6, borderBottomRightRadius: 6 }}>
-              <video
-                src={selectedVideo.video_url}
-                controls
-                autoPlay
-                style={{ width: '100%', maxHeight: '70vh', display: 'block' }}
-              >
-                Your browser does not support the video tag.
-              </video>
+              {playUrl ? (
+                <video
+                  src={playUrl}
+                  controls
+                  autoPlay
+                  style={{ width: '100%', maxHeight: '70vh', display: 'block' }}
+                >
+                  Your browser does not support the video tag.
+                </video>
+              ) : (
+                <p style={{ color: '#ccc', textAlign: 'center', padding: '24px' }}>Loading video…</p>
+              )}
             </div>
           </div>
         </div>

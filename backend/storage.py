@@ -24,12 +24,19 @@ def upload_file(local_path, remote_key):
             client.storage.from_(BUCKET).upload(
                 remote_key, data, {"upsert": "true", "content-type": content_type}
             )
-            return client.storage.from_(BUCKET).get_public_url(remote_key)
+            return remote_key
         except Exception as e:
             last_err = e
             print(f"[storage] Upload attempt {attempt + 1} failed: {e}")
             time.sleep(1.5 * (attempt + 1))
     raise last_err
+
+def get_signed_url(remote_key, expires_in=3600):
+    if not supabase:
+        return remote_key
+    remote_key = remote_key.lstrip("/")
+    res = supabase.storage.from_(BUCKET).create_signed_url(remote_key, expires_in)
+    return res.get("signedURL") or res.get("signed_url")
 
 def download_file(remote_key, local_path):
     if not supabase:
