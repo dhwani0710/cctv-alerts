@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 /* ------------------------------------------------------------------ */
 /*  Config: edit these lists to change filters and colours             */
@@ -1043,8 +1044,8 @@ export const AuditLogPage = () => {
                         const fullDate = valid ? d.toLocaleString('en-IN') : '';
                         const proofUrl = log.proof_image
                           ? (log.proof_image.startsWith('http')
-                              ? log.proof_image
-                              : `http://localhost:8000${log.proof_image}?token=${encodeURIComponent(token)}`)
+                              ? `${API_BASE}/media?u=${encodeURIComponent(log.proof_image)}&token=${encodeURIComponent(token)}`
+                              : `${API_BASE}${log.proof_image}?token=${encodeURIComponent(token)}`)
                           : null;
                         const role = (log.user_role || 'system').toLowerCase();
                         const name = log.username || 'system';

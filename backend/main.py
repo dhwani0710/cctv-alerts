@@ -11,13 +11,13 @@ import re
 from typing import List, Optional
 from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel
 from database import init_db, get_db
 from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, stop_all_cameras, get_tampered_cameras
 from datetime import datetime, timedelta
 import config
-from auth import verify_token, require_admin, require_hr, require_guard, require_staff
+from auth import verify_token, require_admin, require_hr, require_guard, require_staff, require_owner
 from auth_users import verify_password, create_token, hash_password, VALID_ROLES
 from app_settings import get_all_settings, set_setting
 from settings_store import load_settings, save_settings
@@ -182,7 +182,7 @@ def login(payload: LoginRequest):
 
 # --- System Audit Log (Owner Exclusive) ---
 
-@app.get("/audit-logs", dependencies=[Depends(require_admin)])
+@app.get("/audit-logs", dependencies=[Depends(require_owner)])
 def get_audit_logs(
     role: Optional[str] = None,
     module: Optional[str] = None,
@@ -405,9 +405,9 @@ async def add_employee(
     current_user: dict = Depends(require_hr)
 ):
     if shift_start == shift_end:
-        return {"error": "Shift start and end time cannot be the same."}
+        raise HTTPException(status_code=400, detail="Shift start and end time cannot be the same.")
     if len(photos) == 0:
-        return {"error": "At least one photo is required."}
+        raise HTTPException(status_code=400, detail="At least one photo is required.")
 
     with get_db() as conn:
         cur = conn.cursor()
@@ -415,7 +415,7 @@ async def add_employee(
         existing = cur.fetchone()
         cur.close()
     if existing:
-        return {"error": f"An employee named '{name.strip()}' already exists."}
+        raise HTTPException(status_code=409, detail=f"An employee named '{name.strip()}' already exists.")
 
     folder_name = _safe_folder_name(name)
     for photo in photos:
@@ -477,7 +477,18 @@ async def update_employee(
     current_user: dict = Depends(require_hr)
 ):
     if shift_start == shift_end:
-        return {"error": "Shift start and end time cannot be the same."}
+        raise HTTPException(status_code=400, detail="Shift start and end time cannot be the same.")
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM employees WHERE LOWER(name) = LOWER(%s) AND id != %s",
+            (name.strip(), employee_id),
+        )
+        clash = cur.fetchone()
+        cur.close()
+    if clash:
+        raise HTTPException(status_code=409, detail=f"An employee named '{name.strip()}' already exists.")
 
     with get_db() as conn:
         cur = conn.cursor()
@@ -1519,12 +1530,20 @@ def _mjpeg_generator(camera_id):
             yield offline_bytes
             time.sleep(1.0)
 
-@app.get("/snapshots/{filename:path}")
+@app.get("/snapshots/{filename:path}", dependencies=[Depends(verify_token)])
 def get_snapshot(filename: str):
-    filepath = os.path.join("snapshots", filename)
-    if not os.path.exists(filepath):
-        return {"error": "Snapshot not found"}
-    return FileResponse(filepath, media_type="image/jpeg")
+    base = os.path.realpath("snapshots")
+    target = os.path.realpath(os.path.join(base, filename))
+    if not target.startswith(base + os.sep) or not os.path.isfile(target):
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    return FileResponse(target, media_type="image/jpeg")
+
+@app.get("/media", dependencies=[Depends(verify_token)])
+def get_media(u: str):
+    signed = storage.signed_url_for(u)
+    if not signed:
+        raise HTTPException(status_code=404, detail="Media not found")
+    return RedirectResponse(signed, status_code=302)
 
 @app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_token)])
 def video_feed(camera_id: str):

@@ -44,3 +44,9 @@ def require_staff(authorization: Optional[str] = Header(None)):
     if payload.get("role") not in ("owner", "ceo", "hr", "guard"):
         raise HTTPException(status_code=403, detail="Staff access required")
     return payload
+
+def require_owner(authorization: Optional[str] = Header(None)):
+    payload = verify_token(authorization)
+    if payload.get("role") != "owner":
+        raise HTTPException(status_code=403, detail="Owner access required")
+    return payload

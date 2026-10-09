@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 export default function Recordings() {
-  const { apiFetch } = useAuth();
+  const { apiFetch, session } = useAuth();
   const [recordings, setRecordings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -121,7 +122,7 @@ export default function Recordings() {
             </div>
             <div style={{ padding: '16px', background: '#000', borderBottomLeftRadius: 6, borderBottomRightRadius: 6 }}>
               <video
-                src={selectedVideo.video_url}
+                src={`${API_BASE}/media?u=${encodeURIComponent(selectedVideo.video_url)}&token=${encodeURIComponent(session?.token || '')}`}
                 controls
                 autoPlay
                 style={{ width: '100%', maxHeight: '70vh', display: 'block' }}

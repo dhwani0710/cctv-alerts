@@ -65,11 +65,12 @@ Routes are protected in the frontend via the React router and in the backend via
 
 
 ## Default Login
-On first database initialization, the app seeds a default admin account:
-- username: admin
-- password: ceo123
-You can then create additional users from the admin user management flow.
+## First Admin Login
 
+On first startup (empty database), one admin account is created.
+Set DEFAULT_ADMIN_USERNAME and DEFAULT_ADMIN_PASSWORD in backend/.env.
+If no password is set, a random one is printed once in the backend console.
+After logging in, create other accounts from the Users page.
 
 ## Project Structure
 cctv-alerts/

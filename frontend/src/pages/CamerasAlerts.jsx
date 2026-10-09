@@ -159,7 +159,7 @@ export default function CamerasAlerts() {
   const feedSrc = (c) => `${API_BASE}/video_feed/${c.id}?token=${encodeURIComponent(session.token)}`;
   const snapSrc = (a) =>
     a.snapshot_filename.startsWith('http')
-      ? a.snapshot_filename
+      ? `${API_BASE}/media?u=${encodeURIComponent(a.snapshot_filename)}&token=${encodeURIComponent(session.token)}`
       : `${API_BASE}${a.snapshot_filename}?token=${encodeURIComponent(session.token)}`;
 
   async function confirmDismiss() {
