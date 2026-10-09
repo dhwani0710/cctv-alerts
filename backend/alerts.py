@@ -166,15 +166,19 @@ def get_or_create_incident(person_name, alert_type, priority, camera_name, zone_
 # ---------------------------------------------------------------- snapshots
 
 def _upload_snapshot_async(alert_id, filepath, filename):
+    # Without cloud storage configured there is nothing to upload: keep the
+    # "/snapshots/<file>" path that was saved when the alert was created.
+    if not storage.supabase:
+        return
     try:
-        public_url = storage.upload_file(filepath, f"snapshots/{filename}")
+        remote_key = storage.upload_file(filepath, f"snapshots/{filename}")
         with get_db() as conn:
             cur = conn.cursor()
-            cur.execute("UPDATE alerts SET snapshot_filename = %s WHERE id = %s", (public_url, alert_id))
+            cur.execute("UPDATE alerts SET snapshot_filename = %s WHERE id = %s", (remote_key, alert_id))
             conn.commit()
             cur.close()
     except Exception as e:
-        print(f"[alerts] Snapshot upload failed, continuing without cloud URL: {e}")
+        print(f"[alerts] Snapshot upload failed, keeping local snapshot path: {e}")
 
 
 def save_snapshot(frame):

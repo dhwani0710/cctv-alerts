@@ -27,7 +27,7 @@ def _delete_snapshot_files(filename):
     except OSError as e:
         print(f"[retention] Local delete failed for {local_name}: {e}")
     try:
-        storage.delete_prefix(f"snapshots/{local_name}")
+        storage.delete_file(f"snapshots/{local_name}")
     except Exception as e:
         print(f"[retention] Cloud delete failed for {local_name}: {e}")
 

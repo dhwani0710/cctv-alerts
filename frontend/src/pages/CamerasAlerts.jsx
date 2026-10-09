@@ -46,6 +46,15 @@ function fmtTime(v) {
   return new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+const SNAP_URL_TTL_MS = 50 * 60 * 1000;   // signed URLs last 1h; refresh a bit early
+const SNAP_RETRY_MS = 10 * 60 * 1000;     // don't re-ask for a missing snapshot more than once per 10 min
+
+function toAbsoluteUrl(u) {
+  if (!u) return null;
+  if (/^https?:\/\//i.test(u)) return u;
+  return `${API_BASE}${u.startsWith('/') ? '' : '/'}${u}`;
+}
+
 /* measures the real width of an element, so Auto adapts to the space
    it actually has (phone, iPad portrait/landscape, desktop) */
 function useElementWidth() {
@@ -113,7 +122,9 @@ export default function CamerasAlerts() {
   const [zoneFilter, setZoneFilter] = useState('all');
   const [cols, setCols] = useState('auto');
   const [ratios, setRatios] = useState({});
-  const [signedUrls, setSignedUrls] = useState({});
+  const [signedUrls, setSignedUrls] = useState({});     // key -> url, for rendering
+  const [missingSnaps, setMissingSnaps] = useState({}); // key -> true when no image is available
+  const snapCache = useRef(new Map());                  // key -> { promise | url+at | failedAt }
 
   const [gridRef, gridWidth] = useElementWidth();
 
@@ -194,16 +205,38 @@ export default function CamerasAlerts() {
 
   const feedSrc = (c) => `${API_BASE}/video_feed/${c.id}?token=${encodeURIComponent(session.token)}`;
 
-  const resolveSnapUrl = useCallback(async (key) => {
-    if (!key) return null;
-    if (key.startsWith('http')) return key;
-    if (signedUrls[key]) return signedUrls[key];
-    const res = await apiFetch(`/media/signed-url?key=${encodeURIComponent(key)}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    setSignedUrls((p) => ({ ...p, [key]: data.url }));
-    return data.url;
-  }, [apiFetch, signedUrls]);
+  const resolveSnapUrl = useCallback((key) => {
+    if (!key) return Promise.resolve(null);
+    if (/^https?:\/\//i.test(key)) return Promise.resolve(key);
+
+    const cached = snapCache.current.get(key);
+    if (cached) {
+      if (cached.promise) return cached.promise; // request already in flight
+      if (cached.url && Date.now() - cached.at < SNAP_URL_TTL_MS) return Promise.resolve(cached.url);
+      if (cached.failedAt && Date.now() - cached.failedAt < SNAP_RETRY_MS) return Promise.resolve(null);
+    }
+
+    const promise = (async () => {
+      try {
+        const res = await apiFetch(`/media/signed-url?key=${encodeURIComponent(key)}`);
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data = await res.json();
+        const url = toAbsoluteUrl(data.url);
+        if (!url) throw new Error('empty url');
+        snapCache.current.set(key, { url, at: Date.now() });
+        setSignedUrls((p) => ({ ...p, [key]: url }));
+        setMissingSnaps((p) => (p[key] ? { ...p, [key]: false } : p));
+        return url;
+      } catch {
+        snapCache.current.set(key, { failedAt: Date.now() });
+        setMissingSnaps((p) => (p[key] ? p : { ...p, [key]: true }));
+        return null;
+      }
+    })();
+
+    snapCache.current.set(key, { promise });
+    return promise;
+  }, [apiFetch]);
 
   useEffect(() => {
     incidents.forEach((a) => {
@@ -382,18 +415,29 @@ export default function CamerasAlerts() {
             </div>
             <div className="cag-alerts-list">
               {sortedIncidents.map((a) => {
-                const thumbSrc = a.snapshot_filename
-                  ? (a.snapshot_filename.startsWith('http') ? a.snapshot_filename : signedUrls[a.snapshot_filename])
+                const key = a.snapshot_filename;
+                const thumbSrc = key
+                  ? (/^https?:\/\//i.test(key) ? key : signedUrls[key])
                   : null;
+                const snapMissing = key && missingSnaps[key];
                 return (
                   <div className={`cag-inc p-${a.priority}`} key={a.id}>
-                    {a.snapshot_filename && thumbSrc && (
+                    {key && thumbSrc && !snapMissing && (
                       <img
                         className="cag-inc-thumb"
                         src={thumbSrc}
                         alt="snapshot"
-                        onClick={() => setSnapshotView(a)}
+                        onClick={() => setSnapshotView({ ...a, snapUrl: thumbSrc })}
+                        onError={() => {
+                          snapCache.current.set(key, { failedAt: Date.now() });
+                          setMissingSnaps((p) => ({ ...p, [key]: true }));
+                        }}
                       />
+                    )}
+                    {key && snapMissing && (
+                      <div className="cag-inc-thumb cag-inc-thumb-missing" title="Snapshot unavailable">
+                        No image
+                      </div>
                     )}
                     <div className="cag-inc-body">
                       <div className="cag-inc-top">
@@ -429,7 +473,6 @@ export default function CamerasAlerts() {
       </div>
 
       {/* ---------- LIGHTBOX ---------- */}
-            {/* ---------- LIGHTBOX ---------- */}
       {selected && (
         <div
           className="cam-lightbox-backdrop"
@@ -467,6 +510,37 @@ export default function CamerasAlerts() {
                 <div className="zone">{selected.zone_name}</div>
               </div>
               <button className="cam-lightbox-close" onClick={() => setSelected(null)} aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- SNAPSHOT LIGHTBOX ---------- */}
+      {snapshotView && (
+        <div
+          className="cam-lightbox-backdrop"
+          onClick={(e) => { if (e.target === e.currentTarget) setSnapshotView(null); }}
+        >
+          <div className="cam-lightbox">
+            <div className="cam-lightbox-stage">
+              <div className="cam-feed" style={{ aspectRatio: 16 / 9, '--r': 16 / 9 }}>
+                <img
+                  src={snapshotView.snapUrl}
+                  alt="Snapshot"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              </div>
+            </div>
+            <div className="cam-lightbox-head">
+              <div>
+                <div className="name">{alertTitle(snapshotView)}</div>
+                <div className="zone">{snapshotView.camera_name || '-'} · {fmtTime(snapshotView.last_seen)}</div>
+              </div>
+              <button className="cam-lightbox-close" onClick={() => setSnapshotView(null)} aria-label="Close">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path d="M6 6l12 12M18 6 6 18" />
                 </svg>

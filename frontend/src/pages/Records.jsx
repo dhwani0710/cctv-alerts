@@ -222,7 +222,7 @@ export default function Records() {
             />
             Select all
           </label>
-          {selectedIds.length > 0 && (
+          {isAdmin && selectedIds.length > 0 && (
             <button className="btn btn-outline" onClick={() => setConfirmBulkDelete(true)} disabled={deleting}>
               {`Delete selected (${selectedIds.length})`}
             </button>

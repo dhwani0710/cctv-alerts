@@ -1222,18 +1222,53 @@ def get_status():
     alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
 
-@app.get("/media/signed-url", dependencies=[Depends(require_staff)])
+# --- Media (snapshot images) ---
+
+_media_cache = {}          # key -> (expires_at, url or None)
+_MEDIA_OK_TTL = 50 * 60    # signed URLs last 1 hour; reuse for 50 min
+_MEDIA_MISS_TTL = 60       # remember "missing" briefly so we don't hammer Supabase
+
+
+def _local_snapshot_exists(rel_path: str) -> bool:
+    base = os.path.realpath("snapshots")
+    path = os.path.realpath(os.path.join(base, rel_path))
+    return path.startswith(base + os.sep) and os.path.isfile(path)
+
+
+@app.get("/media/signed-url", dependencies=[Depends(verify_token)])
 def get_media_signed_url(key: str):
-    key = key.strip().lstrip("/")
-    try:
-        return {"url": storage.get_signed_url(key)}
-    except Exception as e:
-        msg = str(e)
-        if "not_found" in msg or "404" in msg:
-            print(f"[media] missing file: {key}")
+    clean = key.strip().replace("\\", "/").lstrip("/")
+    if not clean:
+        raise HTTPException(status_code=400, detail="Missing key")
+
+    # 1. File is still on this server's disk -> serve it directly
+    local_rel = clean[len("snapshots/"):] if clean.startswith("snapshots/") else clean
+    if _local_snapshot_exists(local_rel):
+        return {"url": f"/snapshots/{local_rel}"}
+
+    # 2. Cached answer (hit or miss)
+    cached = _media_cache.get(clean)
+    if cached and cached[0] > time.time():
+        if cached[1] is None:
             raise HTTPException(status_code=404, detail="File not found in storage")
-        print(f"[media] signed-url error for {key}: {e}")
-        raise HTTPException(status_code=500, detail="Storage error")
+        return {"url": cached[1]}
+
+    # 3. Cloud storage: try the key as given, then with/without the "snapshots/" prefix
+    if storage.supabase:
+        alt = local_rel if clean.startswith("snapshots/") else f"snapshots/{clean}"
+        last_err = None
+        for candidate in (clean, alt):
+            try:
+                url = storage.get_signed_url(candidate)
+                if url and storage.object_exists(url):
+                    _media_cache[clean] = (time.time() + _MEDIA_OK_TTL, url)
+                    return {"url": url}
+            except Exception as e:
+                last_err = e
+        print(f"[media] not found in storage: tried {[clean, alt]} (last error: {last_err})")
+
+    _media_cache[clean] = (time.time() + _MEDIA_MISS_TTL, None)
+    raise HTTPException(status_code=404, detail="File not found in storage")
 
 # --- Camera Streaming & Management ---
 
@@ -1428,9 +1463,14 @@ def delete_zone(zone_id: str, current_user: dict = Depends(require_admin)):
 def list_incidents(status: str = None, limit: int = 100):
     query = """
         SELECT i.*,
-            (SELECT a.snapshot_filename FROM alerts a
-             WHERE a.incident_id = i.id AND a.snapshot_filename IS NOT NULL
-             ORDER BY a.timestamp DESC LIMIT 1) AS snapshot_filename
+            COALESCE(
+                (SELECT a.snapshot_filename FROM alerts a
+                 WHERE a.incident_id = i.id AND a.snapshot_filename IS NOT NULL
+                 ORDER BY a.timestamp DESC LIMIT 1),
+                (SELECT r.snapshot_filename FROM alert_records r
+                 WHERE r.incident_id = i.id AND r.snapshot_filename IS NOT NULL
+                 ORDER BY r.timestamp DESC LIMIT 1)
+            ) AS snapshot_filename
         FROM incidents i
         WHERE 1=1
     """
