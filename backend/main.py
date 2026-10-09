@@ -8,8 +8,11 @@ import math
 import threading
 import uuid
 import re
+import anyio
+import asyncio
+from starlette.concurrency import run_in_threadpool
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Response
+from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
@@ -43,18 +46,18 @@ app.add_middleware(
 
 KNOWN_FACES_DIR = "known_faces"
 
-
 def _make_offline_frame_bytes() -> bytes:
     image = Image.new("RGB", (640, 480), color=(0, 0, 0))
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=70)
     return buffer.getvalue()
 
-
 offline_bytes = _make_offline_frame_bytes()
 
-
 @app.on_event("startup")
+async def raise_thread_limit():
+    anyio.to_thread.current_default_thread_limiter().total_tokens = 200
+
 def startup():
     init_db()
     _seed_cameras_from_config()
@@ -69,6 +72,7 @@ def startup():
         print("[startup] RUN_CAMERAS=false - camera threads not started")
     start_retention_thread()
     start_daily_reset_thread()
+    threading.Thread(target=_db_keepalive, daemon=True).start()   # <-- new
 
 @app.on_event("shutdown")
 def shutdown():
@@ -1517,8 +1521,7 @@ def mark_permanent(alert_id: int, permanent: bool = True):
     return {"message": "Updated"}
 
 # --- Streaming ---
-
-def _mjpeg_generator(camera_id):
+async def _mjpeg_generator(camera_id, request):
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, 70]
     offline_frame = cv2.imread("snapshots/offline.jpg") if os.path.exists("snapshots/offline.jpg") else None
     offline_bytes = b""
@@ -1527,14 +1530,16 @@ def _mjpeg_generator(camera_id):
         offline_bytes = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
 
     while True:
+        if await request.is_disconnected():
+            break
         frame = get_current_frame(camera_id)
         if frame is not None:
-            _, buffer = cv2.imencode(".jpg", frame, encode_params)
-            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
-            time.sleep(1/8)
+            buffer = await run_in_threadpool(lambda: cv2.imencode(".jpg", frame, encode_params)[1])
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+            await asyncio.sleep(1 / 8)
         else:
             yield offline_bytes
-            time.sleep(1.0)
+            await asyncio.sleep(1.0)
 
 @app.get("/snapshots/{filename:path}")
 def get_snapshot(filename: str):
@@ -1545,5 +1550,8 @@ def get_snapshot(filename: str):
     return FileResponse(filepath, media_type="image/jpeg")
 
 @app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_token)])
-def video_feed(camera_id: str):
-    return StreamingResponse(_mjpeg_generator(camera_id), media_type="multipart/x-mixed-replace; boundary=frame")
+async def video_feed(camera_id: str, request: Request):
+    return StreamingResponse(
+        _mjpeg_generator(camera_id, request),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
