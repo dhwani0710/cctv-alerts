@@ -12,7 +12,7 @@ import anyio
 import asyncio
 from starlette.concurrency import run_in_threadpool
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Response, BackgroundTasks
+from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException,Request, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
@@ -1224,11 +1224,16 @@ def get_status():
 
 @app.get("/media/signed-url", dependencies=[Depends(require_staff)])
 def get_media_signed_url(key: str):
+    key = key.strip().lstrip("/")
     try:
         return {"url": storage.get_signed_url(key)}
     except Exception as e:
-        print(f"[media] signed-url failed for {key}: {e}")
-        raise HTTPException(status_code=404, detail="File not found in storage")
+        msg = str(e)
+        if "not_found" in msg or "404" in msg:
+            print(f"[media] missing file: {key}")
+            raise HTTPException(status_code=404, detail="File not found in storage")
+        print(f"[media] signed-url error for {key}: {e}")
+        raise HTTPException(status_code=500, detail="Storage error")
 
 # --- Camera Streaming & Management ---
 
