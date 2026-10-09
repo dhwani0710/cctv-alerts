@@ -1,5 +1,6 @@
 import os
 import time
+import httpx
 from supabase import create_client
 from dotenv import load_dotenv
 
@@ -36,7 +37,15 @@ def get_signed_url(remote_key, expires_in=3600):
         return remote_key
     remote_key = remote_key.lstrip("/")
     res = supabase.storage.from_(BUCKET).create_signed_url(remote_key, expires_in)
-    return res.get("signedURL") or res.get("signed_url")
+    return res.get("signedURL") or res.get("signedUrl") or res.get("signed_url")
+
+def object_exists(signed_url):
+    """Signing can succeed even when the file is missing, so ask for 1 byte."""
+    try:
+        r = httpx.get(signed_url, headers={"Range": "bytes=0-0"}, timeout=5, follow_redirects=True)
+        return r.status_code in (200, 206)
+    except Exception:
+        return False
 
 def download_file(remote_key, local_path):
     if not supabase:
@@ -45,6 +54,11 @@ def download_file(remote_key, local_path):
     data = supabase.storage.from_(BUCKET).download(remote_key)
     with open(local_path, "wb") as f:
         f.write(data)
+
+def delete_file(remote_key):
+    if not supabase:
+        return
+    supabase.storage.from_(BUCKET).remove([remote_key])
 
 def delete_prefix(prefix):
     if not supabase:
