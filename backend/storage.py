@@ -82,6 +82,7 @@ def sync_known_faces_from_storage(local_dir="known_faces"):
 def signed_url_for(public_url, expires_in=3600):
     """Turn a stored public Supabase URL into a short-lived signed URL.
     Returns None if the URL isn't from our own bucket."""
+    public_url = (public_url or "").lstrip("/")
     if not supabase or not SUPABASE_URL or not public_url:
         return None
     base = SUPABASE_URL.rstrip("/")

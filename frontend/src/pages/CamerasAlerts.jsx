@@ -94,6 +94,28 @@ function StatusOverlay({ status }) {
 }
 
 export default function CamerasAlerts() {
+  function AlertThumb({ src, onClick }) {
+  const [shown, setShown] = useState(null);
+
+  useEffect(() => {
+    let dead = false;
+    let tries = 0;
+    let timer;
+    function load() {
+      const im = new Image();
+      im.onload = () => { if (!dead) setShown(src); };
+      im.onerror = () => {
+        if (!dead && tries++ < 5) timer = setTimeout(load, 1500);
+      };
+      im.src = src;
+    }
+    load();
+    return () => { dead = true; clearTimeout(timer); };
+  }, [src]);
+
+  if (!shown) return <div className="cag-inc-thumb" />;
+  return <img className="cag-inc-thumb" src={shown} alt="snapshot" onClick={onClick} />;
+}
   const { session, apiFetch } = useAuth();
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const canAckAlerts = ['owner', 'ceo', 'admin', 'guard'].includes(session.role);
@@ -372,12 +394,7 @@ export default function CamerasAlerts() {
                 return (
                   <div className={`cag-inc p-${a.priority}`} key={a.id}>
                     {a.snapshot_filename && thumbSrc && (
-                      <img
-                        className="cag-inc-thumb"
-                        src={thumbSrc}
-                        alt="snapshot"
-                        onClick={() => setSnapshotView(a)}
-                      />
+                      <AlertThumb src={thumbSrc} onClick={() => setSnapshotView(a)} />
                     )}
                     <div className="cag-inc-body">
                       <div className="cag-inc-top">
