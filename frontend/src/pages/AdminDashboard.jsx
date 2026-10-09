@@ -126,13 +126,13 @@ export default function AdminDashboard() {
 
         {incidents.length > 0 ? (
           <div className="table-wrap">
-            <table className="records">
+            <table className="records compact">
               <thead>
                 <tr>
                   <th>Time</th>
                   <th>Alert</th>
-                  <th>Camera</th>
-                  <th>Zone</th>
+                  <th className="col-hide-sm">Camera</th>
+                  <th className="col-hide-sm">Zone</th>
                   <th style={{ textAlign: 'right' }}>Priority</th>
                 </tr>
               </thead>
@@ -146,9 +146,13 @@ export default function AdminDashboard() {
                     <td className="cell-ellipsis">
                       {formatIncident(a)}
                       <span className="alert-count">×{a.alert_count}</span>
+                      {/* phone only: camera and zone move under the title */}
+                      <span className="alert-sub">
+                        {a.camera_name || '-'} · {a.zone_name || '-'}
+                      </span>
                     </td>
-                    <td>{a.camera_name || '-'}</td>
-                    <td>{a.zone_name || '-'}</td>
+                    <td className="col-hide-sm">{a.camera_name || '-'}</td>
+                    <td className="col-hide-sm">{a.zone_name || '-'}</td>
                     <td style={{ textAlign: 'right' }}>
                       <span className={`pill p-${a.priority}`}>{a.priority}</span>
                     </td>

@@ -16,17 +16,19 @@ RECORDINGS_DIR = "recordings"
 _encode_slot = threading.Semaphore(1)
 
 
-def _to_h264(src):
+def _to_h264(src, fps=None):
     dst = src.replace(".mp4", "_h264.mp4")
     try:
         exe = imageio_ffmpeg.get_ffmpeg_exe()
+        cmd = [exe, "-y", "-i", src, "-an"]
+        if fps:
+            cmd += ["-r", f"{fps:.3f}"]
+        cmd += ["-vcodec", "libx264", "-pix_fmt", "yuv420p",
+                "-preset", "veryfast", "-crf", "26", "-threads", "2",
+                "-movflags", "+faststart", dst]
         with _encode_slot:
             subprocess.run(
-                [exe, "-y", "-i", src, "-an", "-vcodec", "libx264", "-pix_fmt", "yuv420p",
-                 "-preset", "veryfast", "-crf", "26", "-threads", "2",
-                 "-movflags", "+faststart", dst],
-                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                # lower priority on Windows; 0 (no-op) elsewhere
+                cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 creationflags=getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0),
             )
         os.remove(src)
@@ -36,12 +38,12 @@ def _to_h264(src):
         return src
 
 
-def _upload_and_save(camera_id, camera_name, zone_name, filepath, filename):
+def _upload_and_save(camera_id, camera_name, zone_name, filepath, filename, actual_fps=None):
     try:
         if not os.path.exists(filepath) or os.path.getsize(filepath) < 1000:
             print("[video_recorder] Empty clip, skipping upload")
             return
-        filepath = _to_h264(filepath)
+        filepath = _to_h264(filepath, fps=actual_fps)
         filename = os.path.basename(filepath)
         public_url = storage.upload_file(filepath, f"recordings/{filename}")
         with get_db() as conn:
@@ -128,8 +130,8 @@ class VideoRecorder:
                     self.is_recording = False
                 break
             writer.write(frame)
-
             frames_written = 1
+            clip_start = time.monotonic()
 
             while frames_written < self.frames_per_clip:
                 try:
@@ -140,11 +142,13 @@ class VideoRecorder:
                     break
 
             writer.release()
+            elapsed = time.monotonic() - clip_start
+            actual_fps = (frames_written - 1) / elapsed if elapsed > 0 and frames_written > 1 else self.fps
 
-            # Upload to cloud storage and save the URL to the DB in the background
             threading.Thread(
                 target=_upload_and_save,
                 args=(self.camera_id, self.camera_name, self.zone_name, filepath, filename),
+                kwargs={"actual_fps": actual_fps},
                 daemon=True
             ).start()
 

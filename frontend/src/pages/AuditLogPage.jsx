@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8000`;
 
 /* ------------------------------------------------------------------ */
 /*  Config: edit these lists to change filters and colours             */
@@ -43,7 +43,8 @@ const actionTone = (action = '') => {
   return 'muted';
 };
 
-const controlStyle = { height: 34, padding: '0 10px' };
+// height comes from CSS (34px on desktop, 42px on touch screens)
+const controlStyle = { padding: '0 10px' };
 const pad = (n) => String(n).padStart(2, '0');
 const dayKey = (d) => d.toLocaleDateString('en-CA'); // YYYY-MM-DD, local time
 
@@ -67,13 +68,6 @@ const buildPages = (current, totalPages) => {
 /* ------------------------------------------------------------------ */
 
 const ICONS = {
-  print: (
-    <>
-      <path d="M6 9V3h12v6" />
-      <rect x="6" y="14" width="12" height="7" />
-      <path d="M6 18H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2" />
-    </>
-  ),
   refresh: (
     <>
       <path d="M20 11a8 8 0 0 0-14.9-3M4 4v4h4" />
@@ -157,6 +151,14 @@ const AD_CSS = `
 .ad-root .tone-muted  { --tone: var(--ad-muted); }
 
 .ad-ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* Filter row: refresh sits in line with the other buttons */
+.ad-search { flex: 1 1 220px; min-width: 0; }
+.ad-btn-row { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.ad-btn-row .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  white-space: nowrap;
+}
 
 /* Summary strip: one connected panel, hairline dividers */
 .ad-stats {
@@ -251,18 +253,6 @@ const AD_CSS = `
 .ad-legend-item { display: flex; align-items: center; gap: 8px; }
 .ad-dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 
-.print-only { display: none; }
-.ad-print-meta {
-  margin: 0 0 16px;
-  padding: 12px 16px;
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  font-size: 8.5pt;
-  color: #334155;
-  line-height: 1.6;
-}
-
 /* Ledger table, grouped by day */
 .ad-ledger-head {
   display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
@@ -338,10 +328,25 @@ const AD_CSS = `
 }
 .ad-page-btn:disabled { opacity: .4; cursor: not-allowed; }
 .ad-page-gap { padding: 0 2px; }
+.ad-page-of { display: none; font-size: 12px; color: var(--ad-muted); }
+
+.ad-lightbox-img {
+  max-width: 100%;
+  max-height: 72vh;
+  max-height: calc(100dvh - 190px);
+  object-fit: contain;
+  border-radius: 4px;
+}
 
 @media (max-width: 1100px) {
+  .ad-charts { grid-template-columns: 1fr 1fr; }
+  .ad-charts > .ad-card:first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 899px) {
   .ad-stats { grid-template-columns: repeat(2, 1fr); }
   .ad-stat:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+@media (max-width: 767px) {
   .ad-charts { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -349,230 +354,75 @@ const AD_CSS = `
 }
 
 /* ================================================================== */
-/*  Print Report Styles                                                */
+/*  Responsive: filters, iPad table, touch targets, phone cards        */
 /* ================================================================== */
-@media print {
-  .print-only { display: block !important; }
-  .ad-root {
-    --ad-surface: #ffffff !important;
-    --ad-border: #cbd5e1 !important;
-    --ad-text: #0f172a !important;
-    --ad-muted: #475569 !important;
-    --ad-brass: #b8860b !important;
-    color: #0f172a !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
+.ad-root .filter-bar select,
+.ad-root .filter-bar input,
+.ad-root .filter-bar .btn { height: 34px; }
 
-  /* Force print colors to exact representation */
-  .ad-root * {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
+@media (min-width: 768px) {
+  .ad-table { min-width: 760px; }
+}
 
-  /* Fix SVG sizes */
-  .ad-root svg.ad-donut-svg {
-    width: 96px !important;
-    height: 96px !important;
-    max-width: none !important;
-    max-height: none !important;
-    transform: rotate(-90deg) !important;
-    display: block !important;
-  }
+@media (pointer: coarse) {
+  .ad-root .filter-bar select,
+  .ad-root .filter-bar input,
+  .ad-root .filter-bar .btn { height: 42px; }
+  .ad-page-btn { min-width: 40px; height: 40px; }
+  .ad-proof { width: 44px; height: 44px; }
+}
 
-  /* Summary strip */
-  .ad-stats {
-    display: grid !important;
-    grid-template-columns: repeat(5, 1fr) !important;
-    gap: 1px !important;
-    background: #cbd5e1 !important;
-    border: 1px solid #cbd5e1 !important;
-    border-radius: 6px !important;
-    margin-bottom: 14px !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-  .ad-stat {
-    background: #ffffff !important;
-    padding: 10px 12px !important;
-  }
-  .ad-stat-top {
-    color: #475569 !important;
-    font-size: 8pt !important;
-    font-weight: 600 !important;
-  }
-  .ad-stat-value {
-    color: #0f172a !important;
-    font-size: 15pt !important;
-  }
-  .ad-stat-hint {
-    color: #64748b !important;
-    font-size: 7.5pt !important;
-  }
+/* phone portrait */
+@media screen and (max-width: 767px) {
+  .ad-date, .ad-search, .ad-btn-row { flex: 1 1 100%; margin-left: 0; }
+  .ad-btn-row .btn { flex: 1 1 0; padding-left: 8px; padding-right: 8px; }
 
-  /* Charts Container */
-  .ad-charts {
-    display: grid !important;
-    grid-template-columns: 1.35fr 1fr 1fr !important;
-    gap: 10px !important;
-    margin-bottom: 14px !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-  .ad-card {
-    background: #ffffff !important;
-    border: 1px solid #cbd5e1 !important;
-    box-shadow: none !important;
-    border-radius: 6px !important;
-    padding: 10px 12px !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-  .ad-card h3 {
-    color: #0f172a !important;
-    font-size: 9.5pt !important;
-    font-weight: 700 !important;
-  }
-  .ad-sub {
-    color: #475569 !important;
-    font-size: 7.5pt !important;
-    margin: 2px 0 8px !important;
-  }
+  .ad-stat { padding: 12px 14px; }
+  .ad-stat-value { font-size: 22px; }
+  .ad-card { padding: 14px; }
+  .ad-ledger-head, .ad-pager { padding-left: 14px; padding-right: 14px; }
+  .ad-pager-left, .ad-pager-right { width: 100%; justify-content: center; }
+  .ad-page-num, .ad-page-gap { display: none; }
+  .ad-page-of { display: inline; padding: 0 6px; }
+  .ad-pager-right { justify-content: space-between; }
 
-  /* 1. Activity by hour */
-  .ad-hours {
-    height: 75px !important;
-    gap: 2px !important;
-  }
-  .ad-hour-bar {
-    background: #c9a36b !important;
-    border: 1px solid #9c7336 !important;
-    min-height: 4px !important;
-  }
-  .ad-hour.peak .ad-hour-bar {
-    background: #78350f !important;
-    border: 1px solid #451a03 !important;
-  }
-  .ad-hour.empty .ad-hour-bar {
-    background: #f1f5f9 !important;
-    border: 1px solid #e2e8f0 !important;
-    height: 3px !important;
-  }
-  .ad-hour-axis {
-    margin-top: 4px !important;
-    font-size: 7pt !important;
-    color: #475569 !important;
-    font-weight: 600 !important;
-  }
+  /* the page scrolls, not a box inside the page */
+  .ad-scroll { max-height: none; overflow: visible; }
 
-  /* 2. Events by module */
-  .ad-rows {
-    gap: 6px !important;
-  }
-  .ad-row {
-    font-size: 8pt !important;
-    color: #0f172a !important;
-    font-weight: 600 !important;
-    grid-template-columns: minmax(0, 90px) 1fr auto !important;
-    gap: 6px !important;
-  }
-  .ad-track {
-    height: 8px !important;
-    background: #e2e8f0 !important;
-    border: 1px solid #cbd5e1 !important;
-  }
-  .ad-fill {
-    background: #b8860b !important;
-  }
-  .ad-count {
-    color: #334155 !important;
-    font-size: 8pt !important;
-    font-weight: 600 !important;
-  }
+  /* every ledger row becomes a card */
+  .ad-table { min-width: 0; }
+  .ad-table, .ad-table tbody, .ad-table tr, .ad-table td { display: block; width: 100%; }
+  .ad-table thead { display: none; }
 
-  /* 3. Events by role */
-  .ad-donut-wrap {
-    gap: 10px !important;
-  }
-  .ad-donut {
-    width: 90px !important;
-    height: 90px !important;
-  }
-  .ad-donut-total {
-    font-size: 13pt !important;
-    color: #0f172a !important;
-  }
-  .ad-donut-cap {
-    font-size: 7pt !important;
-    color: #475569 !important;
-  }
-  .ad-legend {
-    gap: 4px !important;
-  }
-  .ad-legend-item {
-    font-size: 8pt !important;
-    color: #0f172a !important;
-    gap: 6px !important;
-  }
-  .ad-dot {
-    width: 8px !important;
-    height: 8px !important;
-    border-radius: 2px !important;
-    border: 1px solid rgba(0,0,0,0.2) !important;
-  }
+  .ad-day td { position: static; padding: 8px 14px; }
 
-  /* Ledger Table */
-  .ad-scroll {
-    max-height: none !important;
-    overflow: visible !important;
+  .ad-item { padding: 12px 14px; border-bottom: 1px solid var(--ad-border); }
+  .ad-item td {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 4px 0; border-bottom: none; text-align: right;
   }
-  .ad-table {
-    width: 100% !important;
-    border-collapse: collapse !important;
-    font-size: 8pt !important;
+  .ad-item td::before {
+    content: attr(data-label);
+    flex-shrink: 0; text-align: left;
+    font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--ad-muted);
   }
-  .ad-table th {
-    position: static !important;
-    background: #f1f5f9 !important;
-    color: #1e293b !important;
-    border-bottom: 2px solid #64748b !important;
-    padding: 6px 8px !important;
-    font-size: 8pt !important;
-  }
-  .ad-table td {
-    color: #0f172a !important;
-    border-bottom: 1px solid #e2e8f0 !important;
-    padding: 6px 8px !important;
-  }
-  .ad-day td {
-    position: static !important;
-    background: #e2e8f0 !important;
-    color: #0f172a !important;
-    padding: 5px 8px !important;
-    font-weight: 700 !important;
-    border-bottom: 1px solid #cbd5e1 !important;
-  }
-  .ad-day-inner {
-    color: #0f172a !important;
-    font-size: 8pt !important;
-  }
-  .ad-tag {
-    background: #f1f5f9 !important;
-    border: 1px solid #94a3b8 !important;
-    color: #0f172a !important;
-  }
-  .ad-ledger-head {
-    background: #ffffff !important;
-    border-bottom: 1px solid #cbd5e1 !important;
-    padding: 8px 12px !important;
-  }
-  .ad-ledger-head h3 {
-    color: #0f172a !important;
-    font-size: 10pt !important;
-  }
-  .ad-pager {
-    display: none !important;
-  }
+  .ad-item td.ad-details { display: block; text-align: left; }
+  .ad-item td.ad-details::before { display: block; margin-bottom: 2px; }
+  .ad-item:hover td { background: none; }
+}
+
+/* phone / small tablet in landscape: little height, so use the width */
+@media (orientation: landscape) and (max-height: 500px) and (min-width: 640px) {
+  .ad-stats { grid-template-columns: repeat(5, 1fr); }
+  .ad-stat:last-child:nth-child(odd) { grid-column: auto; }
+  .ad-stat { padding: 10px 12px; }
+  .ad-stat-value { font-size: 20px; margin-top: 4px; }
+  .ad-charts { grid-template-columns: repeat(3, 1fr); }
+  .ad-charts > .ad-card:first-child { grid-column: auto; }
+}
+@media (orientation: landscape) and (max-height: 500px) and (min-width: 768px) {
+  .ad-scroll { max-height: calc(100dvh - 110px); }
 }
 `;
 
@@ -587,15 +437,25 @@ export const AuditLogPage = () => {
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedModule, setSelectedModule] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');     // what the server is asked for
+  const [searchInput, setSearchInput] = useState('');   // what the person is typing
   const [lightboxImg, setLightboxImg] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const scrollRef = useRef(null);
+  const ledgerRef = useRef(null);
+  const reqId = useRef(0);
 
   const token = session?.token || '';
 
+  // wait until typing pauses before asking the server
+  useEffect(() => {
+    const id = setTimeout(() => setSearchTerm(searchInput), 350);
+    return () => clearTimeout(id);
+  }, [searchInput]);
+
   const loadAuditLogs = useCallback(async () => {
+    const id = ++reqId.current;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -607,12 +467,12 @@ export const AuditLogPage = () => {
       const res = await apiFetch(`/audit-logs?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setLogs(data || []);
+        if (id === reqId.current) setLogs(data || []); // only the newest request wins
       }
     } catch (err) {
       console.error('Error fetching audit logs:', err);
     } finally {
-      setLoading(false);
+      if (id === reqId.current) setLoading(false);
     }
   }, [apiFetch, selectedRole, selectedModule, selectedDate, searchTerm]);
 
@@ -620,14 +480,25 @@ export const AuditLogPage = () => {
     loadAuditLogs();
   }, [loadAuditLogs]);
 
+  // Escape closes the proof popup
+  useEffect(() => {
+    if (!lightboxImg) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setLightboxImg(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxImg]);
+
   const handleClearFilters = () => {
     setSelectedRole('');
     setSelectedModule('');
     setSelectedDate('');
+    setSearchInput('');
     setSearchTerm('');
   };
 
-  const hasFilters = Boolean(selectedRole || selectedModule || selectedDate || searchTerm);
+  const hasFilters = Boolean(selectedRole || selectedModule || selectedDate || searchInput);
 
   /* ---- dashboard numbers, computed from the loaded (filtered) logs ---- */
   const stats = useMemo(() => {
@@ -688,9 +559,18 @@ export const AuditLogPage = () => {
     setPage(1);
   }, [selectedRole, selectedModule, selectedDate, searchTerm, pageSize]);
 
+  // on page change: reset the table scroll, and on a phone bring the ledger top into view
+  const pageKey = `${safePage}-${pageSize}`;
+  const prevPageKey = useRef(pageKey);
+
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [safePage, pageSize]);
+    if (prevPageKey.current === pageKey) return; // first render: don't scroll
+    prevPageKey.current = pageKey;
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      ledgerRef.current?.scrollIntoView({ block: 'start' });
+    }
+  }, [pageKey]);
 
   /* ---- group current page rows by day (keeps server order) ---- */
   const groups = useMemo(() => {
@@ -754,58 +634,16 @@ export const AuditLogPage = () => {
 
       <div className="ad-root">
         {/* ---------- Header ---------- */}
-        <div className="page-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 14 }}>
-          <div>
-            <span className="eyebrow">Owner Security Console</span>
-            <h1>System Audit Log</h1>
-            <p>
-              Immutable audit trail tracking all modifications, security events, Guard alert acknowledgments, and operational entries across CEO, HR, and Guard roles.
-            </p>
-          </div>
-
-          <div className="no-print" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="btn btn-outline"
-              title="Print or export PDF report"
-              style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-            >
-              <Icon name="print" />
-              <span>Print report</span>
-            </button>
-            <button
-              type="button"
-              onClick={loadAuditLogs}
-              disabled={loading}
-              className="btn btn-outline"
-              title="Refresh audit trail"
-              style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-            >
-              <Icon name="refresh" />
-              <span>{loading ? 'Refreshing...' : 'Refresh'}</span>
-            </button>
-          </div>
+        <div className="page-head">
+          <span className="eyebrow">Owner Security Console</span>
+          <h1>System Audit Log</h1>
+          <p>
+            Immutable audit trail tracking all modifications, security events, Guard alert acknowledgments, and operational entries across CEO, HR, and Guard roles.
+          </p>
         </div>
 
-        {/* ---------- Print-only Report Metadata Header ---------- */}
-        <div className="print-only ad-print-meta">
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span><strong>Report:</strong> System Audit Log & Security Intelligence</span>
-            <span><strong>Generated:</strong> {new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'medium' })}</span>
-          </div>
-          <div>
-            <strong>Filter Parameters:</strong>{' '}
-            {selectedRole ? `Role: ${ROLE_LABEL[selectedRole] || selectedRole} | ` : ''}
-            {selectedModule ? `Module: ${selectedModule} | ` : ''}
-            {selectedDate ? `Date: ${selectedDate} | ` : ''}
-            {searchTerm ? `Search: "${searchTerm}" | ` : ''}
-            {!selectedRole && !selectedModule && !selectedDate && !searchTerm ? 'All Records (Unfiltered)' : ''}
-          </div>
-        </div>
-
-        {/* ---------- Filters ---------- */}
-        <div className="filter-bar no-print" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 16px' }}>
+        {/* ---------- Filters + buttons, all in line ---------- */}
+        <div className="filter-bar" style={{ marginBottom: 16 }}>
           <select
             value={selectedRole}
             onChange={(e) => setSelectedRole(e.target.value)}
@@ -833,39 +671,52 @@ export const AuditLogPage = () => {
 
           <input
             type="date"
+            className="ad-date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
             style={controlStyle}
             aria-label="Filter by date"
           />
 
-          <button
-            type="button"
-            className="btn btn-outline btn-sm"
-            onClick={() => setSelectedDate(dayKey(new Date()))}
-            style={{ ...controlStyle, display: 'inline-flex', alignItems: 'center' }}
-          >
-            Today
-          </button>
-
           <input
             type="text"
+            className="ad-search"
             placeholder="Search user, action, details..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ ...controlStyle, minWidth: 220 }}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            style={controlStyle}
           />
 
-          {hasFilters && (
+          <div className="ad-btn-row">
             <button
               type="button"
-              className="btn btn-danger btn-sm"
-              onClick={handleClearFilters}
-              style={{ ...controlStyle, display: 'inline-flex', alignItems: 'center' }}
+              className="btn btn-outline btn-sm"
+              onClick={() => setSelectedDate(dayKey(new Date()))}
             >
-              Clear
+              Today
             </button>
-          )}
+
+            {hasFilters && (
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={handleClearFilters}
+              >
+                Clear
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={loadAuditLogs}
+              disabled={loading}
+              title="Refresh audit trail"
+            >
+              <Icon name="refresh" size={14} />
+              <span>{loading ? 'Refreshing…' : 'Refresh'}</span>
+            </button>
+          </div>
         </div>
 
         {/* ---------- Summary strip ---------- */}
@@ -989,7 +840,7 @@ export const AuditLogPage = () => {
         </div>
 
         {/* ---------- Ledger ---------- */}
-        <div className="ad-card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="ad-card" ref={ledgerRef} style={{ padding: 0, overflow: 'hidden' }}>
           <div className="ad-ledger-head">
             <div>
               <h3>Event ledger</h3>
@@ -1052,22 +903,24 @@ export const AuditLogPage = () => {
 
                         return (
                           <tr className="ad-item" key={log.id}>
-                            <td className="ad-time mono" title={fullDate}>{timeStr}</td>
+                            <td className="ad-time mono" data-label="Time" title={fullDate}>{timeStr}</td>
 
-                            <td>
-                              <div className="ad-actor-name">{name}</div>
-                              <div className="ad-role">{ROLE_LABEL[role] || log.user_role}</div>
+                            <td data-label="Actor">
+                              <div>
+                                <div className="ad-actor-name">{name}</div>
+                                <div className="ad-role">{ROLE_LABEL[role] || log.user_role}</div>
+                              </div>
                             </td>
 
-                            <td>
+                            <td data-label="Action">
                               <span className={`ad-tag mono tone-${actionTone(log.action)}`}>{log.action}</span>
                             </td>
 
-                            <td className="ad-module">{log.target_module}</td>
+                            <td className="ad-module" data-label="Module">{log.target_module}</td>
 
-                            <td className="ad-details">{log.details}</td>
+                            <td className="ad-details" data-label="Details">{log.details}</td>
 
-                            <td style={{ textAlign: 'center' }}>
+                            <td data-label="Proof" style={{ textAlign: 'center' }}>
                               {proofUrl ? (
                                 <button
                                   type="button"
@@ -1100,7 +953,7 @@ export const AuditLogPage = () => {
           </div>
 
           {total > 0 && (
-            <div className="ad-pager no-print">
+            <div className="ad-pager">
               <div className="ad-pager-left">
                 <span>
                   Showing {pageStart + 1} to {Math.min(pageStart + pageSize, total)} of {total}
@@ -1129,6 +982,9 @@ export const AuditLogPage = () => {
                 >
                   Previous
                 </button>
+
+                <span className="ad-page-of">Page {safePage} of {totalPages}</span>
+
                 {buildPages(safePage, totalPages).map((p, i) =>
                   p === '…' ? (
                     <span key={`gap-${i}`} className="ad-page-gap">…</span>
@@ -1136,7 +992,7 @@ export const AuditLogPage = () => {
                     <button
                       key={p}
                       type="button"
-                      className={`ad-page-btn${p === safePage ? ' active' : ''}`}
+                      className={`ad-page-btn ad-page-num${p === safePage ? ' active' : ''}`}
                       onClick={() => setPage(p)}
                       aria-current={p === safePage ? 'page' : undefined}
                     >
@@ -1144,6 +1000,7 @@ export const AuditLogPage = () => {
                     </button>
                   )
                 )}
+
                 <button
                   type="button"
                   className="ad-page-btn"
@@ -1164,7 +1021,10 @@ export const AuditLogPage = () => {
           className="cam-lightbox-backdrop"
           onClick={(e) => { if (e.target === e.currentTarget) setLightboxImg(null); }}
         >
-          <div className="panel" style={{ maxWidth: 640, width: '100%', padding: 20 }}>
+          <div
+            className="panel"
+            style={{ maxWidth: 640, width: '100%', padding: 20, maxHeight: 'calc(100dvh - 24px)', overflowY: 'auto' }}
+          >
             <div className="panel-head" style={{ marginBottom: 12 }}>
               <h2>Audit verification proof</h2>
               <button
@@ -1176,11 +1036,7 @@ export const AuditLogPage = () => {
               </button>
             </div>
             <div style={{ background: 'var(--chrome)', borderRadius: 8, padding: 12, textAlign: 'center' }}>
-              <img
-                src={lightboxImg}
-                alt="Audit verification proof"
-                style={{ maxWidth: '100%', maxHeight: '72vh', objectFit: 'contain', borderRadius: 4 }}
-              />
+              <img src={lightboxImg} alt="Audit verification proof" className="ad-lightbox-img" />
             </div>
           </div>
         </div>

@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
-const API_URL = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || (window.location.protocol === 'https:' ? `https://${window.location.hostname}:8443` : `http://${window.location.hostname}:8000`);
 
 const DEFAULT_NOTIFICATIONS = { notifyMotion: true, notifyPerson: true };
 
@@ -52,6 +52,15 @@ export default function Settings() {
 
   const [activeCategory, setActiveCategory] = useState(isHRorGuard ? 'security' : 'notifications');
   const [search, setSearch] = useState('');
+  const tabsRef = useRef(null);
+
+  // keep the active category visible in the swipeable tab strip (phone)
+  useEffect(() => {
+    const el = tabsRef.current?.querySelector('button.active');
+    if (el && el.scrollIntoView) {
+      el.scrollIntoView({ inline: 'center', block: 'nearest' });
+    }
+  }, [activeCategory, search]);
 
   // Notifications
   const [notifyMotion, setNotifyMotion] = useState(true);
@@ -131,7 +140,7 @@ export default function Settings() {
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       try {
-        const res = await fetch(`${API_URL}/app-settings`, {
+        const res = await fetch(`${API_BASE}/app-settings`, {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         });
@@ -189,7 +198,7 @@ export default function Settings() {
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       try {
-        const res = await fetch(`${API_URL}/settings`, {
+        const res = await fetch(`${API_BASE}/settings`, {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         });
@@ -222,7 +231,7 @@ export default function Settings() {
 
   // ---------- API HELPERS ----------
   async function saveSetting(key, value) {
-    const res = await fetch(`${API_URL}/app-settings`, {
+    const res = await fetch(`${API_BASE}/app-settings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -244,7 +253,7 @@ export default function Settings() {
     body.append('store_open_time', open);
     body.append('store_close_time', close);
 
-    const res = await fetch(`${API_URL}/settings`, {
+    const res = await fetch(`${API_BASE}/settings`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body,
@@ -312,7 +321,7 @@ export default function Settings() {
   }
 
   // ---------- SAVE ----------
-    async function saveNotifications(event) {
+  async function saveNotifications(event) {
     event.preventDefault();
     if (savingNotifications) return;
 
@@ -393,7 +402,7 @@ export default function Settings() {
     setChangingPassword(true);
 
     try {
-      const res = await fetch(`${API_URL}/auth/change-password`, {
+      const res = await fetch(`${API_BASE}/auth/change-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -433,7 +442,7 @@ export default function Settings() {
     setSavingAccount(true);
 
     try {
-      const res = await fetch(`${API_URL}/auth/me`, {
+      const res = await fetch(`${API_BASE}/auth/me`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -462,7 +471,7 @@ export default function Settings() {
     setClearingRecords(true);
 
     try {
-      const res = await fetch(`${API_URL}/records`, {
+      const res = await fetch(`${API_BASE}/records`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -559,9 +568,7 @@ export default function Settings() {
               >
                 <div>
                   <span>{result.title}</span>
-                  <div style={{ marginTop: '4px', color: '#858b95', fontSize: '11px' }}>
-                    {result.description}
-                  </div>
+                  <div className="vscode-search-desc">{result.description}</div>
                 </div>
                 <small>{CATEGORIES.find((c) => c.key === result.category)?.label}</small>
               </button>
@@ -569,13 +576,18 @@ export default function Settings() {
           </div>
         ) : (
           <div className="vscode-settings-body">
-            {/* SIDEBAR */}
-            <aside className="vscode-settings-sidebar">
+            {/* SIDEBAR (tabs on phones) */}
+            <aside
+              className="vscode-settings-sidebar"
+              ref={tabsRef}
+              aria-label="Settings categories"
+            >
               {CATEGORIES.map((category) => (
                 <button
                   key={category.key}
                   type="button"
                   className={activeCategory === category.key ? 'active' : ''}
+                  aria-current={activeCategory === category.key ? 'page' : undefined}
                   onClick={() => setActiveCategory(category.key)}
                 >
                   {category.label}

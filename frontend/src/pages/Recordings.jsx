@@ -9,7 +9,7 @@ export default function Recordings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedVideo, setSelectedVideo] = useState(null);
-
+  
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const pageSize = 10;
@@ -45,6 +45,15 @@ export default function Recordings() {
       dateStyle: 'medium',
       timeStyle: 'short',
     });
+  }
+
+  function openVideo(rec) {
+    if (!rec.video_url) return;
+    setSelectedVideo(rec);
+  }
+
+  function closeVideo() {
+    setSelectedVideo(null);
   }
 
   return (
@@ -98,7 +107,7 @@ export default function Recordings() {
                     <td style={{ padding: '12px', textAlign: 'right' }}>
                       <button
                         className="btn btn-outline btn-sm"
-                        onClick={() => setSelectedVideo(rec)}
+                        onClick={() => openVideo(rec)}
                       >
                         Play Video
                       </button>
@@ -112,11 +121,11 @@ export default function Recordings() {
       </div>
 
       {selectedVideo && (
-        <div className="cam-lightbox-backdrop" onClick={() => setSelectedVideo(null)}>
+        <div className="cam-lightbox-backdrop" onClick={closeVideo}>
           <div className="panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', width: '90%' }}>
             <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2>Recording - {selectedVideo.camera_name} ({formatDateTime(selectedVideo.timestamp)})</h2>
-              <button className="btn btn-outline btn-sm" onClick={() => setSelectedVideo(null)}>
+              <button className="btn btn-outline btn-sm" onClick={closeVideo}>
                 Close
               </button>
             </div>
