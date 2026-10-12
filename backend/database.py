@@ -1,6 +1,10 @@
 import os
+import threading
 import psycopg2
 import psycopg2.extras
+import sys
+import time
+import traceback
 from contextlib import contextmanager
 from dotenv import load_dotenv
 from psycopg2 import pool
@@ -10,15 +14,24 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 print("[db] using:", DATABASE_URL.split("@")[-1] if DATABASE_URL else "NOT SET")
 
+_POOL_MAX = 40
+_pool_sem = threading.BoundedSemaphore(_POOL_MAX)
+
 _pg_pool = None
 def _get_pg_pool():
     global _pg_pool
     if _pg_pool is None:
         _pg_pool = pool.ThreadedConnectionPool(
-            minconn=2,
-            maxconn=20,
+            minconn=1,
+            maxconn=_POOL_MAX,
             dsn=DATABASE_URL,
             cursor_factory=psycopg2.extras.RealDictCursor,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5,
+            connect_timeout=10,
+            tcp_user_timeout=15000,
         )
     return _pg_pool
 
@@ -223,6 +236,10 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_last_seen ON incidents (last_seen DESC)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents (status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_currently_detected_last_seen ON currently_detected (last_seen)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_incident ON alerts (incident_id, timestamp DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_alert_records_incident ON alert_records (incident_id, timestamp DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_recordings_ts ON recordings (timestamp DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_dedupe ON incidents (person_name, alert_type, camera_name, last_seen DESC)")
 
         # Seed default accounts so every role in the RBAC set has a working login
         # out of the box. The primary admin account honors the env vars if set;
@@ -236,7 +253,9 @@ def init_db():
             {"username": "guard", "password": "guard123", "role": "guard"},
         ]
 
-        for u in default_users:
+        cursor.execute("SELECT COUNT(*) FROM users")
+        _user_count = cursor.fetchone()[0]
+        for u in (default_users if _user_count == 0 else []):
             cursor.execute("SELECT id FROM users WHERE username = %s", (u["username"],))
             existing = cursor.fetchone()
             if not existing:
@@ -260,12 +279,66 @@ def init_db():
         cursor.close()
         conn.close()
 
+_holders = {}
+_holders_lock = threading.Lock()
+_last_used = {}
+
+def _dump_holders():
+    frames = sys._current_frames()
+    now = time.time()
+    with _holders_lock:
+        items = list(_holders.values())
+    print(f"[db] POOL BUSY: {len(items)} holders", flush=True)
+    for tid, t0 in items:
+        f = frames.get(tid)
+        stack = "".join(traceback.format_stack(f)[-5:]) if f else "(thread gone)"
+        print(f"[db] held {now - t0:.1f}s by thread {tid}\n{stack}", flush=True)
 
 @contextmanager
 def get_db():
+    if not _pool_sem.acquire(timeout=30):
+        _dump_holders()
+        raise pool.PoolError("db busy: waited 30s for a connection")
+    key = object()
+    with _holders_lock:
+        _holders[key] = (threading.get_ident(), time.time())
     p = _get_pg_pool()
-    conn = p.getconn()
+    conn = None
+    broken = False
     try:
-        yield conn
+        for _ in range(3):
+            c = p.getconn()
+            try:
+                if c.closed:
+                    raise psycopg2.OperationalError("closed")
+                if time.monotonic() - _last_used.get(id(c), 0) > 20:
+                    with c.cursor() as cur:
+                        cur.execute("SELECT 1")
+                    c.rollback()
+                conn = c
+                break
+            except Exception:
+                _last_used.pop(id(c), None)
+                p.putconn(c, close=True)
+        if conn is None:
+            raise psycopg2.OperationalError("no healthy db connection")
+        try:
+            yield conn
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            broken = True
+            raise
+        finally:
+            try:
+                if not broken and not conn.closed:
+                    conn.rollback()
+            except Exception:
+                broken = True
+            if broken or conn.closed:
+                _last_used.pop(id(conn), None)
+            else:
+                _last_used[id(conn)] = time.monotonic()
+            p.putconn(conn, close=(broken or bool(conn.closed)))
     finally:
-        p.putconn(conn)
+        with _holders_lock:
+            _holders.pop(key, None)
+        _pool_sem.release()

@@ -56,8 +56,20 @@ offline_bytes = _make_offline_frame_bytes()
 
 @app.on_event("startup")
 async def raise_thread_limit():
-    anyio.to_thread.current_default_thread_limiter().total_tokens = 200
+    anyio.to_thread.current_default_thread_limiter().total_tokens = 60
 
+def _db_keepalive():
+    while True:
+        time.sleep(240)
+        try:
+            with get_db() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT 1")
+                cur.close()
+        except Exception as e:
+            print("[db_keepalive]", e, flush=True)
+
+@app.on_event("startup")
 def startup():
     init_db()
     _seed_cameras_from_config()

@@ -35,15 +35,16 @@ def _fetch_saved():
         cur.close()
     return {r["key"]: r["value"] for r in rows}
 
-
 def _saved_settings():
     """Saved rows from the DB, cached for a few seconds. Never returns None."""
     data = _cache["data"]
     if data is not None and time.monotonic() - _cache["ts"] < _CACHE_TTL_SEC:
         return data
 
-    # One thread refreshes; the others wait and reuse its result instead of all hitting the DB.
-    with _lock:
+    # Stale copy exists and another thread is refreshing: use stale, never wait.
+    if not _lock.acquire(blocking=(data is None)):
+        return data
+    try:
         now = time.monotonic()
         data = _cache["data"]
         if data is not None and now - _cache["ts"] < _CACHE_TTL_SEC:
@@ -54,7 +55,6 @@ def _saved_settings():
             fresh = _fetch_saved()
         except Exception as e:
             if data is not None:
-                # DB blip: keep serving the last known values instead of failing every caller
                 print(f"[app_settings] DB read failed, using last known settings: {e}")
                 _cache["ts"] = now
                 return data
@@ -64,7 +64,8 @@ def _saved_settings():
             _cache["data"] = fresh
             _cache["ts"] = now
         return fresh
-
+    finally:
+        _lock.release()
 
 def invalidate_cache():
     """Force the next read to go to the DB (called after every write)."""

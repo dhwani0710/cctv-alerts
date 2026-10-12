@@ -155,6 +155,8 @@ def _get_or_create_incident(cur, person_name, alert_type, priority, camera_name,
 def get_or_create_incident(person_name, alert_type, priority, camera_name, zone_name, window_seconds=None):
     """Public wrapper kept for any other module that calls it."""
     now = datetime.now()
+    if window_seconds is None:
+        window_seconds = _setting_int("alert_dedupe_window_sec") or config.ALERT_DEDUPE_WINDOW_SEC
     with get_db() as conn:
         cur = conn.cursor()
         result = _get_or_create_incident(cur, person_name, alert_type, priority, camera_name, zone_name, now, window_seconds)
@@ -208,12 +210,13 @@ def log_alert(person_name, alert_type, priority, message, frame=None, camera_nam
     local_path, filename = (save_snapshot(frame) if frame is not None else (None, None))
     final_url = f"/snapshots/{filename}" if filename else None
     now = datetime.now()
+    window = _setting_int("alert_dedupe_window_sec") or config.ALERT_DEDUPE_WINDOW_SEC
 
     # One connection / one transaction for the incident + the alert row
     with get_db() as conn:
         cur = conn.cursor()
         incident_id, alert_count, is_new, last_notified = _get_or_create_incident(
-            cur, person_name, alert_type, priority, camera_name, zone_name, now
+            cur, person_name, alert_type, priority, camera_name, zone_name, now, window
         )
         cur.execute(
             "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp, snapshot_filename, "
