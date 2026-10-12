@@ -17,7 +17,6 @@ try:
 except ImportError as e:
     print(f"[recognition] DeepFace import failed: {e}")
     DeepFace = None
-
 KNOWN_FACES_DIR = "known_faces"
 VALID_PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
@@ -25,11 +24,21 @@ MODEL_NAME = "Facenet512"
 # Gallery photos are processed rarely, so keep the accurate detector there.
 GALLERY_DETECTOR = os.getenv("RECOG_GALLERY_DETECTOR", "mtcnn")
 # Live frames: try "yunet" or "opencv" if mtcnn is too slow, then test accuracy on your own footage.
+# If mtcnn still gives false boxes after the filters below, try "retinaface".
 LIVE_DETECTOR = os.getenv("RECOG_LIVE_DETECTOR", "mtcnn")
 # Frames wider than this are downscaled before detection (boxes are scaled back up).
 MAX_DETECT_WIDTH = int(os.getenv("RECOG_MAX_WIDTH", "960"))
-# 0 keeps your current behaviour. Raise to ~0.9 to cut false "Unknown" detections.
-MIN_FACE_CONFIDENCE = float(os.getenv("RECOG_MIN_CONFIDENCE", "0"))
+
+# ---- false-face filtering (fixes boxes on hands, mice, mousepads, etc.) ----
+# Faces scoring at or below this are ignored. 0.9 works well for mtcnn; set 0 to disable.
+MIN_FACE_CONFIDENCE = float(os.getenv("RECOG_MIN_CONFIDENCE", "0.9"))
+# Minimum face width/height in ORIGINAL frame pixels. Lower it if distant real faces get missed.
+MIN_FACE_PX = int(os.getenv("RECOG_MIN_FACE_PX", "30"))
+# Real faces are roughly square (width / height). Reject boxes outside this range.
+MIN_FACE_ASPECT = float(os.getenv("RECOG_MIN_ASPECT", "0.6"))
+MAX_FACE_ASPECT = float(os.getenv("RECOG_MAX_ASPECT", "1.4"))
+# Set RECOG_LOG_CONFIDENCE=1 to log every detection's confidence/size while tuning.
+LOG_CONFIDENCE = os.getenv("RECOG_LOG_CONFIDENCE", "0") == "1"
 
 DEFAULT_THRESHOLDS = {
     "VGG-Face": 0.68,
@@ -269,6 +278,32 @@ def _downscale(frame):
     return frame, 1.0
 
 
+def _plausible_face(r, work_shape, scale):
+    """Rejects detections that are very unlikely to be real faces
+    (hands, mice, mousepads, whole-image fallbacks, tiny specks)."""
+    a = r["facial_area"]
+    w, h = a["w"], a["h"]
+    if w <= 0 or h <= 0:
+        return False
+
+    # Size in ORIGINAL frame pixels
+    if (w / scale) < MIN_FACE_PX or (h / scale) < MIN_FACE_PX:
+        return False
+
+    # Faces are roughly square
+    aspect = w / h
+    if not (MIN_FACE_ASPECT <= aspect <= MAX_FACE_ASPECT):
+        return False
+
+    # DeepFace returns the whole image as the "face" when nothing is detected
+    # (enforce_detection=False). Reject that fallback.
+    work_h, work_w = work_shape[:2]
+    if w >= 0.95 * work_w and h >= 0.95 * work_h:
+        return False
+
+    return True
+
+
 def recognize_faces(frame, with_boxes=False):
     """Takes a BGR frame (OpenCV) and returns a list of
     {"name": <employee name or "Unknown">, "box": (x, y, w, h)} dicts,
@@ -286,7 +321,18 @@ def recognize_faces(frame, with_boxes=False):
         traceback.print_exc()
         return []
 
-    faces = [r for r in reps if r.get("face_confidence", 1.0) > MIN_FACE_CONFIDENCE]
+    if LOG_CONFIDENCE:
+        for r in reps:
+            a = r["facial_area"]
+            print(f"[recognition] detection conf={r.get('face_confidence')} "
+                  f"size={a['w']}x{a['h']} (work px, scale={scale:.2f})")
+
+    # Missing confidence is treated as 0 (rejected), not as a perfect score.
+    faces = [
+        r for r in reps
+        if r.get("face_confidence", 0.0) > MIN_FACE_CONFIDENCE
+        and _plausible_face(r, work.shape, scale)
+    ]
     if not faces:
         return []
 

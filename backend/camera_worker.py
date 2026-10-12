@@ -314,6 +314,9 @@ def _process_frame(frame, camera_id, camera_name):
     _set_had_faces(camera_id, bool(detections))
 
     if not detections:
+        # No faces this pass: reset the unknown streak so isolated false
+        # detections can't pile up over hours into a "stranger" alert.
+        set_unknown_streak(camera_id, 0)
         return
 
     any_unknown = False

@@ -8,8 +8,11 @@ import math
 import threading
 import uuid
 import re
+import anyio
+import asyncio
+from starlette.concurrency import run_in_threadpool
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Response
+from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Request, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel
@@ -26,7 +29,7 @@ import storage
 from PIL import Image, ImageOps
 from retention import start_retention_thread, start_daily_reset_thread
 
-    # Set RUN_CAMERAS=false on cloud hosts (e.g. Render) where the cameras can't be reached
+# Set RUN_CAMERAS=false on cloud hosts (e.g. Render) where the cameras can't be reached
 RUN_CAMERAS = os.getenv("RUN_CAMERAS", "true").strip().lower() == "true"
 
 app = FastAPI(title="Jewellery Store Alert System")
@@ -43,16 +46,29 @@ app.add_middleware(
 
 KNOWN_FACES_DIR = "known_faces"
 
-
 def _make_offline_frame_bytes() -> bytes:
     image = Image.new("RGB", (640, 480), color=(0, 0, 0))
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=70)
     return buffer.getvalue()
 
-
 offline_bytes = _make_offline_frame_bytes()
 
+@app.on_event("startup")
+async def raise_thread_limit():
+    anyio.to_thread.current_default_thread_limiter().total_tokens = 200
+
+def _db_keepalive():
+    """Pings the database every few minutes so idle connections are not dropped."""
+    while True:
+        time.sleep(240)
+        try:
+            with get_db() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT 1")
+                cur.close()
+        except Exception as e:
+            print(f"[keepalive] DB ping failed: {e}")
 
 @app.on_event("startup")
 def startup():
@@ -69,6 +85,7 @@ def startup():
         print("[startup] RUN_CAMERAS=false - camera threads not started")
     start_retention_thread()
     start_daily_reset_thread()
+    threading.Thread(target=_db_keepalive, daemon=True).start()
 
 @app.on_event("shutdown")
 def shutdown():
@@ -1422,9 +1439,14 @@ def delete_zone(zone_id: str, current_user: dict = Depends(require_admin)):
 def list_incidents(status: str = None, limit: int = 100):
     query = """
         SELECT i.*,
-            (SELECT a.snapshot_filename FROM alerts a
-            WHERE a.incident_id = i.id AND a.snapshot_filename IS NOT NULL
-            ORDER BY a.timestamp DESC LIMIT 1) AS snapshot_filename
+            COALESCE(
+                (SELECT a.snapshot_filename FROM alerts a
+                 WHERE a.incident_id = i.id AND a.snapshot_filename IS NOT NULL
+                 ORDER BY a.timestamp DESC LIMIT 1),
+                (SELECT r.snapshot_filename FROM alert_records r
+                 WHERE r.incident_id = i.id AND r.snapshot_filename IS NOT NULL
+                 ORDER BY r.timestamp DESC LIMIT 1)
+            ) AS snapshot_filename
         FROM incidents i
         WHERE 1=1
     """
@@ -1520,8 +1542,7 @@ def mark_permanent(alert_id: int, permanent: bool = True):
     return {"message": "Updated"}
 
 # --- Streaming ---
-
-def _mjpeg_generator(camera_id):
+async def _mjpeg_generator(camera_id, request):
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, 70]
     offline_frame = cv2.imread("snapshots/offline.jpg") if os.path.exists("snapshots/offline.jpg") else None
     offline_bytes = b""
@@ -1530,14 +1551,16 @@ def _mjpeg_generator(camera_id):
         offline_bytes = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
 
     while True:
+        if await request.is_disconnected():
+            break
         frame = get_current_frame(camera_id)
         if frame is not None:
-            _, buffer = cv2.imencode(".jpg", frame, encode_params)
-            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
-            time.sleep(1/8)
+            buffer = await run_in_threadpool(lambda: cv2.imencode(".jpg", frame, encode_params)[1])
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+            await asyncio.sleep(1 / 8)
         else:
             yield offline_bytes
-            time.sleep(1.0)
+            await asyncio.sleep(1.0)
 
 @app.get("/snapshots/{filename:path}", dependencies=[Depends(verify_token)])
 def get_snapshot(filename: str):
@@ -1559,5 +1582,8 @@ def get_media(u: str):
     )
 
 @app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_token)])
-def video_feed(camera_id: str):
-    return StreamingResponse(_mjpeg_generator(camera_id), media_type="multipart/x-mixed-replace; boundary=frame")
+async def video_feed(camera_id: str, request: Request):
+    return StreamingResponse(
+        _mjpeg_generator(camera_id, request),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )

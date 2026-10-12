@@ -93,8 +93,7 @@ function StatusOverlay({ status }) {
   );
 }
 
-export default function CamerasAlerts() {
-  function AlertThumb({ src, onClick }) {
+function AlertThumb({ src, onClick }) {
   const [shown, setShown] = useState(null);
 
   useEffect(() => {
@@ -116,6 +115,8 @@ export default function CamerasAlerts() {
   if (!shown) return <div className="cag-inc-thumb" />;
   return <img className="cag-inc-thumb" src={shown} alt="snapshot" onClick={onClick} />;
 }
+
+export default function CamerasAlerts() {
   const { session, apiFetch } = useAuth();
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const canAckAlerts = ['owner', 'ceo', 'admin', 'guard'].includes(session.role);
@@ -430,7 +431,6 @@ export default function CamerasAlerts() {
       </div>
 
       {/* ---------- LIGHTBOX ---------- */}
-  
       {selected && (
         <div
           className="cam-lightbox-backdrop"
@@ -477,19 +477,27 @@ export default function CamerasAlerts() {
         </div>
       )}
 
+      {/* ---------- SNAPSHOT LIGHTBOX ---------- */}
       {snapshotView && (
         <div
           className="cam-lightbox-backdrop"
           onClick={(e) => { if (e.target === e.currentTarget) setSnapshotView(null); }}
         >
           <div className="cam-lightbox">
-            <img
-              src={snapSrc(snapshotView)}
-              alt="Alert snapshot"
-              style={{ width: '100%', height: 'auto', display: 'block' }}
-            />
+            <div className="cam-lightbox-stage">
+              <div className="cam-feed" style={{ aspectRatio: 16 / 9, '--r': 16 / 9 }}>
+                <img
+                  src={snapSrc(snapshotView)}
+                  alt="Snapshot"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              </div>
+            </div>
             <div className="cam-lightbox-head">
-              <div><div className="name">{alertTitle(snapshotView)}</div></div>
+              <div>
+                <div className="name">{alertTitle(snapshotView)}</div>
+                <div className="zone">{snapshotView.camera_name || '-'} · {fmtTime(snapshotView.last_seen)}</div>
+              </div>
               <button className="cam-lightbox-close" onClick={() => setSnapshotView(null)} aria-label="Close">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path d="M6 6l12 12M18 6 6 18" />
