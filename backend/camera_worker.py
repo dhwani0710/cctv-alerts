@@ -1,5 +1,7 @@
 import os
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000|max_delay;500000"
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+    "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|stimeout;5000000"
+)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 import cv2

@@ -1,4 +1,7 @@
 import os
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+    "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|stimeout;5000000"
+)
 import shutil
 import cv2
 import time
