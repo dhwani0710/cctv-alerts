@@ -30,7 +30,9 @@ backend/__pycache__/
 # Environment & Secrets
 .env
 .env.local
+.env.production
 backend/.env
+frontend/.env.production
 
 # Database & Runtime Data
 *.db
