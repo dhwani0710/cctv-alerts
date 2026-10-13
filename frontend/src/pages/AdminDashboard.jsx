@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useStatus } from '../context/StatusContext.jsx';
+import Loader from '../components/Loader.jsx';
 
 const ALERT_TYPE_LABELS = {
   stranger: 'Unrecognized face',
@@ -63,16 +64,21 @@ export default function AdminDashboard() {
   const [cameraCount, setCameraCount] = useState({ live: 0, total: 0 });
   const [records, setRecords] = useState([]);
   const [incidents, setIncidents] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const [empRes, recRes, incRes] = await Promise.all([
-      apiFetch('/employees'),
-      apiFetch('/records?limit=10'),
-      apiFetch('/incidents?status=new'),
-    ]);
-    if (empRes.ok) setEmployeeCount((await empRes.json()).length);
-    if (recRes.ok) setRecords((await recRes.json()).records || []);
-    if (incRes.ok) setIncidents(await incRes.json());
+    try {
+      const [empRes, recRes, incRes] = await Promise.all([
+        apiFetch('/employees'),
+        apiFetch('/records?limit=10'),
+        apiFetch('/incidents?status=new'),
+      ]);
+      if (empRes.ok) setEmployeeCount((await empRes.json()).length);
+      if (recRes.ok) setRecords((await recRes.json()).records || []);
+      if (incRes.ok) setIncidents(await incRes.json());
+    } finally {
+      setLoading(false);
+    }
   }, [apiFetch]);
 
   useEffect(() => {
@@ -93,78 +99,79 @@ export default function AdminDashboard() {
         <h1>Good to see you</h1>
         <p>Here's what's happening at your store today.</p>
       </div>
-
-      <div className="stat-grid">
-        <StatCard
-          icon={icons.camera}
-          label="Cameras live"
-          value={`${cameraCount.live} / ${cameraCount.total}`}
-          tone="good"
-        />
-        <StatCard
-          icon={icons.bell}
-          label="Active alerts"
-          value={incidents.length}
-          sub={`${highAlerts} high severity`}
-          tone={highAlerts > 0 ? 'warn' : ''}
-        />
-        <StatCard
-          icon={icons.users}
-          label="Staff on shift"
-          value={status.currently_detected.length}
-          sub={`of ${employeeCount} total employees`}
-        />
-        <StatCard icon={icons.records} label="Records today" value={records.length} />
-      </div>
-
-      {/* ---------- RECENT ALERTS ---------- */}
-      <div className="panel">
-        <div className="panel-head">
-          <h2>Recent alerts</h2>
-          <Link className="link-btn" to="/cameras-alerts">View all →</Link>
+      {loading ? <Loader /> : (<>
+        <div className="stat-grid">
+          <StatCard
+            icon={icons.camera}
+            label="Cameras live"
+            value={`${cameraCount.live} / ${cameraCount.total}`}
+            tone="good"
+          />
+          <StatCard
+            icon={icons.bell}
+            label="Active alerts"
+            value={incidents.length}
+            sub={`${highAlerts} high severity`}
+            tone={highAlerts > 0 ? 'warn' : ''}
+          />
+          <StatCard
+            icon={icons.users}
+            label="Staff on shift"
+            value={status.currently_detected.length}
+            sub={`of ${employeeCount} total employees`}
+          />
+          <StatCard icon={icons.records} label="Records today" value={records.length} />
         </div>
 
-        {incidents.length > 0 ? (
-          <div className="table-wrap">
-            <table className="records compact">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Alert</th>
-                  <th className="col-hide-sm">Camera</th>
-                  <th className="col-hide-sm">Zone</th>
-                  <th style={{ textAlign: 'right' }}>Priority</th>
-                </tr>
-              </thead>
-              <tbody>
-                {incidents.slice(0, 5).map((a) => (
-                  <tr key={a.id}>
-                    <td className="alert-time-cell mono">
-                      <span className={`log-dot p-${a.priority}`} />
-                      {formatTime(a.last_seen)}
-                    </td>
-                    <td className="cell-ellipsis">
-                      {formatIncident(a)}
-                      <span className="alert-count">×{a.alert_count}</span>
-                      {/* phone only: camera and zone move under the title */}
-                      <span className="alert-sub">
-                        {a.camera_name || '-'} · {a.zone_name || '-'}
-                      </span>
-                    </td>
-                    <td className="col-hide-sm">{a.camera_name || '-'}</td>
-                    <td className="col-hide-sm">{a.zone_name || '-'}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      <span className={`pill p-${a.priority}`}>{a.priority}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {/* ---------- RECENT ALERTS ---------- */}
+        <div className="panel">
+          <div className="panel-head">
+            <h2>Recent alerts</h2>
+            <Link className="link-btn" to="/cameras-alerts">View all →</Link>
           </div>
-        ) : (
-          <p className="empty-note">No alerts.</p>
-        )}
-      </div>
+
+          {incidents.length > 0 ? (
+            <div className="table-wrap">
+              <table className="records compact">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Alert</th>
+                    <th className="col-hide-sm">Camera</th>
+                    <th className="col-hide-sm">Zone</th>
+                    <th style={{ textAlign: 'right' }}>Priority</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {incidents.slice(0, 5).map((a) => (
+                    <tr key={a.id}>
+                      <td className="alert-time-cell mono">
+                        <span className={`log-dot p-${a.priority}`} />
+                        {formatTime(a.last_seen)}
+                      </td>
+                      <td className="cell-ellipsis">
+                        {formatIncident(a)}
+                        <span className="alert-count">×{a.alert_count}</span>
+                        {/* phone only: camera and zone move under the title */}
+                        <span className="alert-sub">
+                          {a.camera_name || '-'} · {a.zone_name || '-'}
+                        </span>
+                      </td>
+                      <td className="col-hide-sm">{a.camera_name || '-'}</td>
+                      <td className="col-hide-sm">{a.zone_name || '-'}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <span className={`pill p-${a.priority}`}>{a.priority}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="empty-note">No alerts.</p>
+          )}
+        </div>
+      </>)}
     </Shell>
   );
 }

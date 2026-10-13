@@ -3,6 +3,7 @@ import Shell from '../components/Shell.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { initials } from '../data/mockData.js';
+import Loader from '../components/Loader.jsx';
 
 const ROLE_OPTIONS = ['ceo', 'owner', 'guard', 'hr'];
 
@@ -11,6 +12,7 @@ export default function AdminUsers() {
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
 
   const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [username, setUsername] = useState('');
   const [role, setRole] = useState('guard');
@@ -29,10 +31,14 @@ export default function AdminUsers() {
   const [deleteError, setDeleteError] = useState('');
 
   const loadUsers = useCallback(async () => {
-    const res = await apiFetch('/users');
-    if (res.ok) {
-      const data = await res.json();
-      setUsers(data);
+    try {
+      const res = await apiFetch('/users');
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data);
+      }
+    } finally {
+      setLoading(false);
     }
   }, [apiFetch]);
 
@@ -159,7 +165,7 @@ export default function AdminUsers() {
 
       {deleteError && <div className="form-error show" style={{ marginBottom: 16 }}>{deleteError}</div>}
 
-      <div className="results-count mono">
+      <div className="results-count mono" style={{ visibility: loading ? 'hidden' : 'visible' }}>
         {filteredUsers.length} {filteredUsers.length === 1 ? 'user' : 'users'}
       </div>
 
@@ -178,7 +184,8 @@ export default function AdminUsers() {
             )}
           </div>
         ))}
-        {filteredUsers.length === 0 && (
+        {loading && <div style={{ gridColumn: '1 / -1' }}><Loader /></div>}
+        {!loading && filteredUsers.length === 0 && (
           <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No users match that search.</p>
         )}
       </div>

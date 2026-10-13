@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { buildEmployeeCsv, downloadCsv } from '../utils/attendanceCsv.js';
+import Loader from '../components/Loader.jsx';
 
 function monthRange(monthStr) {
   const [year, month] = monthStr.split('-').map(Number);
@@ -30,13 +31,19 @@ export default function Attendance() {
   const [search, setSearch] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const { start, end } = monthRange(month);
-    const res = await apiFetch(`/attendance?start_date=${start}&end_date=${end}&limit=1000`);
-    if (res.ok) {
-      const data = await res.json();
-      setRecords(data.records || []);
+    setLoading(true);
+    try {
+      const { start, end } = monthRange(month);
+      const res = await apiFetch(`/attendance?start_date=${start}&end_date=${end}&limit=1000`);
+      if (res.ok) {
+        const data = await res.json();
+        setRecords(data.records || []);
+      }
+    } finally {
+      setLoading(false);
     }
   }, [apiFetch, month]);
 
@@ -53,10 +60,10 @@ export default function Attendance() {
 
   const suggestions = search
     ? records
-        .filter((r) => (r.name || '').toLowerCase().includes(query))
-        .map((r) => r.name)
-        .filter((name, idx, arr) => arr.indexOf(name) === idx)
-        .slice(0, 5)
+      .filter((r) => (r.name || '').toLowerCase().includes(query))
+      .map((r) => r.name)
+      .filter((name, idx, arr) => arr.indexOf(name) === idx)
+      .slice(0, 5)
     : [];
 
   function handleExport() {
@@ -142,7 +149,10 @@ export default function Attendance() {
             </tr>
           </thead>
           <tbody>
-            {filteredRecords.map((r, i) => (
+            {loading && (
+              <tr><td colSpan={5}><Loader compact /></td></tr>
+            )}
+            {!loading && filteredRecords.map((r, i) => (
               <tr key={i}>
                 <td className="mono tight" data-label="Date">{r.attendance_date}</td>
                 <td data-label="Staff">{r.name}</td>
@@ -155,7 +165,7 @@ export default function Attendance() {
                 </td>
               </tr>
             ))}
-            {filteredRecords.length === 0 && (
+            {!loading && filteredRecords.length === 0 && (
               <tr>
                 <td colSpan={5} className="table-empty-state">No attendance records found.</td>
               </tr>

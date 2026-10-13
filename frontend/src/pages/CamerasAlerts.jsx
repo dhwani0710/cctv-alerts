@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef , useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Shell from '../components/Shell.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import AddCameraModal from '../components/AddCameraModal.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useStatus } from '../context/StatusContext.jsx';
 import { GuardAckModal } from '../components/GuardAckModal';
+import Loader from '../components/Loader.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE || (window.location.protocol === 'https:' ? `https://${window.location.hostname}:8443` : `http://${window.location.hostname}:8000`);
 
@@ -120,11 +121,13 @@ export default function CamerasAlerts() {
   const { session, apiFetch } = useAuth();
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const canAckAlerts = ['owner', 'ceo', 'admin', 'guard'].includes(session.role);
-  const { cameras, refreshCameras } = useStatus();
+  const { cameras, refreshCameras, statusLoaded } = useStatus();
 
   const [selected, setSelected] = useState(null);
   const [showAddCamera, setShowAddCamera] = useState(false);
   const [incidents, setIncidents] = useState([]);
+  const [incLoading, setIncLoading] = useState(true);
+  const [detLoading, setDetLoading] = useState(true);
   const [dismissTarget, setDismissTarget] = useState(null);
   const [ackModalAlert, setAckModalAlert] = useState(null);
   const [snapshotView, setSnapshotView] = useState(null);
@@ -140,8 +143,12 @@ export default function CamerasAlerts() {
   const [gridRef, gridWidth] = useElementWidth();
 
   const loadIncidents = useCallback(async () => {
-    const res = await apiFetch('/incidents?status=new');
-    if (res.ok) setIncidents(await res.json());
+    try {
+      const res = await apiFetch('/incidents?status=new');
+      if (res.ok) setIncidents(await res.json());
+    } finally {
+      setIncLoading(false);
+    }
   }, [apiFetch]);
 
   useEffect(() => {
@@ -161,15 +168,19 @@ export default function CamerasAlerts() {
   useEffect(() => {
     let cancelled = false;
     async function loadStatus() {
-      const res = await apiFetch('/status');
-      if (res.ok && !cancelled) {
-        const data = await res.json();
-        const incoming = (data.currently_detected || []).filter(
-          (d) => d.name && d.name.toLowerCase() !== 'unknown'
-        );
-        const next = {};
-        incoming.forEach((d) => { next[d.name] = d; });
-        setDetected(next);
+      try {
+        const res = await apiFetch('/status');
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          const incoming = (data.currently_detected || []).filter(
+            (d) => d.name && d.name.toLowerCase() !== 'unknown'
+          );
+          const next = {};
+          incoming.forEach((d) => { next[d.name] = d; });
+          setDetected(next);
+        }
+      } finally {
+        if (!cancelled) setDetLoading(false);
       }
     }
     loadStatus();
@@ -359,7 +370,8 @@ export default function CamerasAlerts() {
                 );
               })}
             </div>
-            {filtered.length === 0 && (
+            {!statusLoaded && <Loader text="Loading cameras…" />}
+            {statusLoaded && filtered.length === 0 && (
               <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No cameras in this zone.</p>
             )}
           </div>
@@ -378,7 +390,8 @@ export default function CamerasAlerts() {
                   {d.name} <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>· {d.camera}</span>
                 </div>
               ))}
-              {detectedList.length === 0 && (
+              {detLoading && <Loader compact />}
+              {!detLoading && detectedList.length === 0 && (
                 <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: 0 }}>No one detected.</p>
               )}
             </div>
@@ -422,7 +435,8 @@ export default function CamerasAlerts() {
                   </div>
                 );
               })}
-              {incidents.length === 0 && (
+              {incLoading && <Loader compact />}
+              {!incLoading && incidents.length === 0 && (
                 <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No active alerts.</p>
               )}
             </div>

@@ -10,6 +10,7 @@ export function StatusProvider({ children }) {
   const { apiFetch, session } = useAuth();
   const [status, setStatus] = useState({ recent_alerts: [], currently_detected: [] });
   const [cameras, setCameras] = useState([]);
+  const [statusLoaded, setStatusLoaded] = useState(false);
 
   const role = String(session?.role || '').toLowerCase();
   const canPoll = !!session && POLLING_ROLES.includes(role);
@@ -23,7 +24,9 @@ export function StatusProvider({ children }) {
       ]);
       if (statusRes.ok) setStatus(await statusRes.json());
       if (camRes.ok) setCameras(await camRes.json());
-    } catch {}
+    } catch { } finally {
+      setStatusLoaded(true);
+    }
   }, [apiFetch, canPoll]);
 
   const refreshCameras = useCallback(async () => {
@@ -31,11 +34,11 @@ export function StatusProvider({ children }) {
     try {
       const res = await apiFetch('/cameras');
       if (res.ok) setCameras(await res.json());
-    } catch {}
+    } catch { }
   }, [apiFetch, canPoll]);
 
   useEffect(() => {
-    if (!canPoll) return;
+    if (!canPoll) { setStatusLoaded(true); return; }
     poll();
     const t = setInterval(poll, 10000);
     return () => clearInterval(t);
@@ -45,7 +48,7 @@ export function StatusProvider({ children }) {
   const hasHighAlert = recentAlerts.some((a) => a.priority === 'high');
 
   return (
-    <StatusContext.Provider value={{ status, recentAlerts, hasHighAlert, currentlyDetected: status.currently_detected || [], cameras, refreshCameras }}>
+    <StatusContext.Provider value={{ status, recentAlerts, hasHighAlert, currentlyDetected: status.currently_detected || [], cameras, refreshCameras, statusLoaded }}>
       {children}
     </StatusContext.Provider>
   );

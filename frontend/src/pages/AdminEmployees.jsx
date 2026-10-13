@@ -9,6 +9,7 @@ import Shell from '../components/Shell.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { initials } from '../data/mockData.js';
+import Loader from '../components/Loader.jsx';
 
 function classifyShift(shift) {
   if (!shift || !shift.includes('–')) return null;
@@ -36,6 +37,7 @@ export default function AdminEmployees() {
   const canManageEmployees = isAdmin || isHr;
 
   const [staff, setStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
 
   const [name, setName] = useState('');
@@ -78,6 +80,8 @@ export default function AdminEmployees() {
       }
     } catch (error) {
       console.error('Error loading employees:', error);
+    } finally {
+      setLoading(false);
     }
   }, [apiFetch]);
 
@@ -361,7 +365,7 @@ export default function AdminEmployees() {
         </div>
       )}
 
-      <div className="results-count mono">
+      <div className="results-count mono" style={{ visibility: loading ? 'hidden' : 'visible' }}>
         {filteredStaff.length}{' '}
         {filteredStaff.length === 1
           ? 'employee'
@@ -413,7 +417,8 @@ export default function AdminEmployees() {
           </div>
         ))}
 
-        {filteredStaff.length === 0 && (
+        {loading && <div style={{ gridColumn: '1 / -1' }}><Loader /></div>}
+        {!loading && filteredStaff.length === 0 && (
           <p
             style={{
               color: 'var(--text-muted)',

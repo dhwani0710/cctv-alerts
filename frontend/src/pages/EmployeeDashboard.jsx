@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useStatus } from '../context/StatusContext.jsx';
+import Loader from '../components/Loader.jsx';
 
 const ALERT_TYPE_LABELS = {
   stranger: 'Unrecognized face',
@@ -32,19 +33,24 @@ function GuardOverview() {
   const [incidents, setIncidents] = useState([]);
   const [entryLog, setEntryLog] = useState([]);
   const [recordsToday, setRecordsToday] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   const today = new Date().toISOString().split('T')[0];
 
   const load = useCallback(async () => {
-    const [incRes, recRes] = await Promise.all([
-      apiFetch('/incidents?status=new&limit=1000'),
-      apiFetch(`/records?date=${today}&limit=6`),
-    ]);
-    if (incRes.ok) setIncidents(await incRes.json());
-    if (recRes.ok) {
-      const data = await recRes.json();
-      setEntryLog(data.records || []);
-      setRecordsToday(data.total || 0);
+    try {
+      const [incRes, recRes] = await Promise.all([
+        apiFetch('/incidents?status=new&limit=1000'),
+        apiFetch(`/records?date=${today}&limit=6`),
+      ]);
+      if (incRes.ok) setIncidents(await incRes.json());
+      if (recRes.ok) {
+        const data = await recRes.json();
+        setEntryLog(data.records || []);
+        setRecordsToday(data.total || 0);
+      }
+    } finally {
+      setLoading(false);
     }
   }, [apiFetch, today]);
 
@@ -78,7 +84,7 @@ function GuardOverview() {
 
         <div className="stat-card">
           <span className="eyebrow">Entries today</span>
-          <div className="value">{recordsToday}</div>
+          <div className="value">{loading ? '–' : recordsToday}</div>
         </div>
       </div>
 
@@ -97,7 +103,7 @@ function GuardOverview() {
             <h2>Active alerts</h2>
             <Link className="link-btn" to="/cameras-alerts">View all →</Link>
           </div>
-
+          {loading && <Loader compact />}
           {incidents.slice(0, 5).map((a) => (
             <div className="log-row" key={a.id}>
               <div className={`log-dot ${a.priority === 'high' ? 'alert' : 'info'}`} />
@@ -109,7 +115,7 @@ function GuardOverview() {
             </div>
           ))}
 
-          {incidents.length === 0 && (
+          {!loading && incidents.length === 0 && (
             <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No active alerts.</p>
           )}
         </div>
@@ -119,7 +125,7 @@ function GuardOverview() {
             <h2>Entry &amp; exit log</h2>
             <Link className="link-btn" to="/records">Full records →</Link>
           </div>
-
+          {loading && <Loader compact />}
           {entryLog.map((r) => (
             <div className="log-row" key={r.id}>
               <div className={`log-dot ${r.priority === 'high' ? 'alert' : r.priority === 'medium' ? 'info' : ''}`} />
@@ -129,7 +135,7 @@ function GuardOverview() {
             </div>
           ))}
 
-          {entryLog.length === 0 && (
+          {!loading && entryLog.length === 0 && (
             <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No entries logged yet today.</p>
           )}
         </div>
@@ -141,12 +147,11 @@ function GuardOverview() {
 function StaffAttendanceOverview() {
   const { apiFetch } = useAuth();
   const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const today = new Date().toISOString().split('T')[0];
 
   const loadAttendance = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await apiFetch(`/attendance?date=${today}`);
       if (res.ok) {
@@ -177,7 +182,7 @@ function StaffAttendanceOverview() {
       <div className="stat-grid">
         <div className="stat-card good">
           <span className="eyebrow">Employees present</span>
-          <div className="value">{records.length}</div>
+          <div className="value">{loading ? '–' : records.length}</div>
           <div className="delta">As of {formatTime(new Date().toISOString())}</div>
         </div>
       </div>
@@ -196,7 +201,7 @@ function StaffAttendanceOverview() {
             <h2>Currently present</h2>
             <Link className="link-btn" to="/attendance">View all →</Link>
           </div>
-
+          {loading && <Loader compact />}
           {records.slice(0, 5).map((r, i) => (
             <div className="log-row" key={i}>
               <div className="log-dot info" />
