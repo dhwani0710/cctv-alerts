@@ -15,15 +15,15 @@ import anyio
 import asyncio
 from starlette.concurrency import run_in_threadpool
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException,Request, Response, BackgroundTasks
+from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Request, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel
 from database import init_db, get_db
 from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, stop_all_cameras, get_tampered_cameras
 from datetime import datetime, timedelta
 import config
-from auth import verify_token, require_admin, require_hr, require_guard, require_staff
+from auth import verify_token, require_admin, require_hr, require_guard, require_staff, require_owner
 from auth_users import verify_password, create_token, hash_password, VALID_ROLES
 from app_settings import get_all_settings, set_setting
 from settings_store import load_settings, save_settings
@@ -62,6 +62,7 @@ async def raise_thread_limit():
     anyio.to_thread.current_default_thread_limiter().total_tokens = 60
 
 def _db_keepalive():
+    """Pings the database every few minutes so idle connections are not dropped."""
     while True:
         time.sleep(240)
         try:
@@ -70,7 +71,7 @@ def _db_keepalive():
                 cur.execute("SELECT 1")
                 cur.close()
         except Exception as e:
-            print("[db_keepalive]", e, flush=True)
+            print(f"[db_keepalive] DB ping failed: {e}", flush=True)
 
 @app.on_event("startup")
 def startup():
@@ -87,7 +88,7 @@ def startup():
         print("[startup] RUN_CAMERAS=false - camera threads not started")
     start_retention_thread()
     start_daily_reset_thread()
-    threading.Thread(target=_db_keepalive, daemon=True).start()   # <-- new
+    threading.Thread(target=_db_keepalive, daemon=True).start()
 
 @app.on_event("shutdown")
 def shutdown():
@@ -168,12 +169,12 @@ def change_own_password(payload: ChangePasswordRequest, current_user: dict = Dep
             cur.close()
             raise HTTPException(status_code=400, detail="Current password is incorrect")
         cur.execute("UPDATE users SET password_hash = %s WHERE id = %s",
-                     (hash_password(payload.new_password), current_user["user_id"]))
+                    (hash_password(payload.new_password), current_user["user_id"]))
         conn.commit()
         cur.close()
     log_audit_event(username=current_user.get("username"), user_role=current_user.get("role"),
-                     action="PASSWORD_CHANGED", target_module="Users",
-                     details="User changed their own password", user_id=current_user.get("user_id"))
+                    action="PASSWORD_CHANGED", target_module="Users",
+                    details="User changed their own password", user_id=current_user.get("user_id"))
     return {"message": "Password updated"}
 
 @app.post("/auth/login")
@@ -207,7 +208,7 @@ def login(payload: LoginRequest):
 
 # --- System Audit Log (Owner Exclusive) ---
 
-@app.get("/audit-logs", dependencies=[Depends(require_admin)])
+@app.get("/audit-logs", dependencies=[Depends(require_owner)])
 def get_audit_logs(
     role: Optional[str] = None,
     module: Optional[str] = None,
@@ -430,9 +431,9 @@ async def add_employee(
     current_user: dict = Depends(require_hr)
 ):
     if shift_start == shift_end:
-        return {"error": "Shift start and end time cannot be the same."}
+        raise HTTPException(status_code=400, detail="Shift start and end time cannot be the same.")
     if len(photos) == 0:
-        return {"error": "At least one photo is required."}
+        raise HTTPException(status_code=400, detail="At least one photo is required.")
 
     with get_db() as conn:
         cur = conn.cursor()
@@ -440,7 +441,7 @@ async def add_employee(
         existing = cur.fetchone()
         cur.close()
     if existing:
-        return {"error": f"An employee named '{name.strip()}' already exists."}
+        raise HTTPException(status_code=409, detail=f"An employee named '{name.strip()}' already exists.")
 
     folder_name = _safe_folder_name(name)
     for photo in photos:
@@ -502,7 +503,18 @@ async def update_employee(
     current_user: dict = Depends(require_hr)
 ):
     if shift_start == shift_end:
-        return {"error": "Shift start and end time cannot be the same."}
+        raise HTTPException(status_code=400, detail="Shift start and end time cannot be the same.")
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM employees WHERE LOWER(name) = LOWER(%s) AND id != %s",
+            (name.strip(), employee_id),
+        )
+        clash = cur.fetchone()
+        cur.close()
+    if clash:
+        raise HTTPException(status_code=409, detail=f"An employee named '{name.strip()}' already exists.")
 
     with get_db() as conn:
         cur = conn.cursor()
@@ -801,8 +813,8 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
     count_query = "SELECT COUNT(*) AS count " + base_query
     data_query = """
         SELECT i.id, i.person_name, i.alert_type, i.priority, i.camera_name, i.zone_name,
-               i.first_seen, i.last_seen, i.alert_count, i.status,
-               a.message, a.snapshot_filename
+            i.first_seen, i.last_seen, i.alert_count, i.status,
+            a.message, a.snapshot_filename
     """ + base_query + " ORDER BY i.last_seen DESC LIMIT %s OFFSET %s"
 
     data_params = params + [limit, offset]
@@ -1218,8 +1230,8 @@ def get_status():
         cur = conn.cursor()
         cur.execute("""
             SELECT person_name,
-                   MAX(last_seen) AS last_seen,
-                   STRING_AGG(camera_name, ', ') AS camera_name
+                MAX(last_seen) AS last_seen,
+                STRING_AGG(camera_name, ', ') AS camera_name
             FROM currently_detected
             WHERE last_seen > %s
             GROUP BY person_name
@@ -1236,54 +1248,6 @@ def get_status():
     detected = [{"name": r["person_name"], "camera": r["camera_name"], "last_seen": r["last_seen"]} for r in detected_rows]
     alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
-
-# --- Media (snapshot images) ---
-
-_media_cache = {}          # key -> (expires_at, url or None)
-_MEDIA_OK_TTL = 50 * 60    # signed URLs last 1 hour; reuse for 50 min
-_MEDIA_MISS_TTL = 60       # remember "missing" briefly so we don't hammer Supabase
-
-
-def _local_snapshot_exists(rel_path: str) -> bool:
-    base = os.path.realpath("snapshots")
-    path = os.path.realpath(os.path.join(base, rel_path))
-    return path.startswith(base + os.sep) and os.path.isfile(path)
-
-
-@app.get("/media/signed-url", dependencies=[Depends(verify_token)])
-def get_media_signed_url(key: str):
-    clean = key.strip().replace("\\", "/").lstrip("/")
-    if not clean:
-        raise HTTPException(status_code=400, detail="Missing key")
-
-    # 1. File is still on this server's disk -> serve it directly
-    local_rel = clean[len("snapshots/"):] if clean.startswith("snapshots/") else clean
-    if _local_snapshot_exists(local_rel):
-        return {"url": f"/snapshots/{local_rel}"}
-
-    # 2. Cached answer (hit or miss)
-    cached = _media_cache.get(clean)
-    if cached and cached[0] > time.time():
-        if cached[1] is None:
-            raise HTTPException(status_code=404, detail="File not found in storage")
-        return {"url": cached[1]}
-
-    # 3. Cloud storage: try the key as given, then with/without the "snapshots/" prefix
-    if storage.supabase:
-        alt = local_rel if clean.startswith("snapshots/") else f"snapshots/{clean}"
-        last_err = None
-        for candidate in (clean, alt):
-            try:
-                url = storage.get_signed_url(candidate)
-                if url and storage.object_exists(url):
-                    _media_cache[clean] = (time.time() + _MEDIA_OK_TTL, url)
-                    return {"url": url}
-            except Exception as e:
-                last_err = e
-        print(f"[media] not found in storage: tried {[clean, alt]} (last error: {last_err})")
-
-    _media_cache[clean] = (time.time() + _MEDIA_MISS_TTL, None)
-    raise HTTPException(status_code=404, detail="File not found in storage")
 
 # --- Camera Streaming & Management ---
 
@@ -1601,13 +1565,24 @@ async def _mjpeg_generator(camera_id, request):
             yield offline_bytes
             await asyncio.sleep(1.0)
 
-@app.get("/snapshots/{filename:path}")
+@app.get("/snapshots/{filename:path}", dependencies=[Depends(verify_token)])
 def get_snapshot(filename: str):
-    base_dir = os.path.realpath("snapshots")
-    filepath = os.path.realpath(os.path.join(base_dir, filename))
-    if not filepath.startswith(base_dir + os.sep) or not os.path.isfile(filepath):
+    base = os.path.realpath("snapshots")
+    target = os.path.realpath(os.path.join(base, filename))
+    if not target.startswith(base + os.sep) or not os.path.isfile(target):
         raise HTTPException(status_code=404, detail="Snapshot not found")
-    return FileResponse(filepath, media_type="image/jpeg")
+    return FileResponse(target, media_type="image/jpeg")
+
+@app.get("/media", dependencies=[Depends(verify_token)])
+def get_media(u: str):
+    signed = storage.signed_url_for(u)
+    if not signed:
+        raise HTTPException(status_code=404, detail="Media not found")
+    return RedirectResponse(
+        signed,
+        status_code=302,
+        headers={"Cache-Control": "private, max-age=3000"},
+    )
 
 @app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_token)])
 async def video_feed(camera_id: str, request: Request):

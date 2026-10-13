@@ -131,7 +131,7 @@ export default function AdminEmployees() {
 
       const data = await res.json();
 
-      if (res.ok && !data.error) {
+      if (res.ok) {
         setName('');
         setRole('');
         setStart('');
@@ -141,7 +141,7 @@ export default function AdminEmployees() {
 
         await loadStaff();
       } else {
-        alert(data.error || 'Failed to add employee');
+        alert(data.detail || 'Failed to add employee');
       }
     } catch (error) {
       console.error('Error adding employee:', error);
@@ -184,11 +184,11 @@ export default function AdminEmployees() {
 
       const data = await res.json();
 
-      if (res.ok && !data.error) {
+      if (res.ok) {
         setEditTarget(null);
         await loadStaff();
       } else {
-        alert(data.error || 'Failed to update employee');
+        alert(data.detail || 'Failed to update employee');
       }
     } catch (error) {
       console.error('Error updating employee:', error);

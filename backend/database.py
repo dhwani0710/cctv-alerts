@@ -37,7 +37,7 @@ def _get_pg_pool():
 
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_ROLE = os.getenv("DEFAULT_ADMIN_ROLE", "owner")
-DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
+DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD")
 
 
 def init_db():
@@ -241,32 +241,27 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_recordings_ts ON recordings (timestamp DESC)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_dedupe ON incidents (person_name, alert_type, camera_name, last_seen DESC)")
 
-        # Seed default accounts so every role in the RBAC set has a working login
-        # out of the box. The primary admin account honors the env vars if set;
-        # the rest are fixed demo credentials, meant to be changed after first login.
+        # Create the first admin account only when no users exist yet.
+        # Credentials come from environment variables. If no password is set,
+        # a random one is generated and printed once on the console.
         from auth_users import hash_password
-        default_users = [
-            {"username": DEFAULT_ADMIN_USERNAME, "password": DEFAULT_ADMIN_PASSWORD, "role": DEFAULT_ADMIN_ROLE},
-            {"username": "owner", "password": "ceo123", "role": "owner"},
-            {"username": "ceo", "password": "ceo123", "role": "ceo"},
-            {"username": "hr", "password": "hr1234", "role": "hr"},
-            {"username": "guard", "password": "guard123", "role": "guard"},
-        ]
-
+        import secrets
         cursor.execute("SELECT COUNT(*) FROM users")
-        _user_count = cursor.fetchone()[0]
-        for u in (default_users if _user_count == 0 else []):
-            cursor.execute("SELECT id FROM users WHERE username = %s", (u["username"],))
-            existing = cursor.fetchone()
-            if not existing:
-                cursor.execute(
-                    "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
-                    (u["username"], hash_password(u["password"]), u["role"])
-                )
-            # Existing accounts are left untouched — don't clobber a real admin's
-            # changed password/role on every restart.
-
-        conn.commit()
+        if cursor.fetchone()[0] == 0:
+            admin_password = DEFAULT_ADMIN_PASSWORD
+            generated = False
+            if not admin_password:
+                admin_password = secrets.token_urlsafe(12)
+                generated = True
+            cursor.execute(
+                "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
+                (DEFAULT_ADMIN_USERNAME, hash_password(admin_password), DEFAULT_ADMIN_ROLE),
+            )
+            if generated:
+                print("=" * 60)
+                print(f"[setup] First admin created. Username: {DEFAULT_ADMIN_USERNAME}")
+                print(f"[setup] Password (shown only once): {admin_password}")
+                print("=" * 60)
     except Exception:
         conn.rollback()
         raise

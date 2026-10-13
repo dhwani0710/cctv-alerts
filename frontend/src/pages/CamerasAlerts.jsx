@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef , useMemo } from 'react';
 import Shell from '../components/Shell.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import AddCameraModal from '../components/AddCameraModal.jsx';
@@ -44,15 +44,6 @@ function camStatus(c) {
 
 function fmtTime(v) {
   return new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-const SNAP_URL_TTL_MS = 50 * 60 * 1000;   // signed URLs last 1h; refresh a bit early
-const SNAP_RETRY_MS = 10 * 60 * 1000;     // don't re-ask for a missing snapshot more than once per 10 min
-
-function toAbsoluteUrl(u) {
-  if (!u) return null;
-  if (/^https?:\/\//i.test(u)) return u;
-  return `${API_BASE}${u.startsWith('/') ? '' : '/'}${u}`;
 }
 
 /* measures the real width of an element, so Auto adapts to the space
@@ -102,6 +93,29 @@ function StatusOverlay({ status }) {
   );
 }
 
+function AlertThumb({ src, onClick }) {
+  const [shown, setShown] = useState(null);
+
+  useEffect(() => {
+    let dead = false;
+    let tries = 0;
+    let timer;
+    function load() {
+      const im = new Image();
+      im.onload = () => { if (!dead) setShown(src); };
+      im.onerror = () => {
+        if (!dead && tries++ < 5) timer = setTimeout(load, 1500);
+      };
+      im.src = src;
+    }
+    load();
+    return () => { dead = true; clearTimeout(timer); };
+  }, [src]);
+
+  if (!shown) return <div className="cag-inc-thumb" />;
+  return <img className="cag-inc-thumb" src={shown} alt="snapshot" onClick={onClick} />;
+}
+
 export default function CamerasAlerts() {
   const { session, apiFetch } = useAuth();
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
@@ -122,9 +136,6 @@ export default function CamerasAlerts() {
   const [zoneFilter, setZoneFilter] = useState('all');
   const [cols, setCols] = useState('auto');
   const [ratios, setRatios] = useState({});
-  const [signedUrls, setSignedUrls] = useState({});     // key -> url, for rendering
-  const [missingSnaps, setMissingSnaps] = useState({}); // key -> true when no image is available
-  const snapCache = useRef(new Map());                  // key -> { promise | url+at | failedAt }
 
   const [gridRef, gridWidth] = useElementWidth();
 
@@ -204,45 +215,10 @@ export default function CamerasAlerts() {
   }, []);
 
   const feedSrc = (c) => `${API_BASE}/video_feed/${c.id}?token=${encodeURIComponent(session.token)}`;
-
-  const resolveSnapUrl = useCallback((key) => {
-    if (!key) return Promise.resolve(null);
-    if (/^https?:\/\//i.test(key)) return Promise.resolve(key);
-
-    const cached = snapCache.current.get(key);
-    if (cached) {
-      if (cached.promise) return cached.promise; // request already in flight
-      if (cached.url && Date.now() - cached.at < SNAP_URL_TTL_MS) return Promise.resolve(cached.url);
-      if (cached.failedAt && Date.now() - cached.failedAt < SNAP_RETRY_MS) return Promise.resolve(null);
-    }
-
-    const promise = (async () => {
-      try {
-        const res = await apiFetch(`/media/signed-url?key=${encodeURIComponent(key)}`);
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = await res.json();
-        const url = toAbsoluteUrl(data.url);
-        if (!url) throw new Error('empty url');
-        snapCache.current.set(key, { url, at: Date.now() });
-        setSignedUrls((p) => ({ ...p, [key]: url }));
-        setMissingSnaps((p) => (p[key] ? { ...p, [key]: false } : p));
-        return url;
-      } catch {
-        snapCache.current.set(key, { failedAt: Date.now() });
-        setMissingSnaps((p) => (p[key] ? p : { ...p, [key]: true }));
-        return null;
-      }
-    })();
-
-    snapCache.current.set(key, { promise });
-    return promise;
-  }, [apiFetch]);
-
-  useEffect(() => {
-    incidents.forEach((a) => {
-      if (a.snapshot_filename) resolveSnapUrl(a.snapshot_filename);
-    });
-  }, [incidents, resolveSnapUrl]);
+  const snapSrc = (a) =>
+    a.snapshot_filename.startsWith('http')
+      ? `${API_BASE}/media?u=${encodeURIComponent(a.snapshot_filename)}&token=${encodeURIComponent(session.token)}`
+      : `${API_BASE}${a.snapshot_filename}?token=${encodeURIComponent(session.token)}`;
 
   async function confirmDismiss() {
     await apiFetch(`/incidents/${dismissTarget.id}`, {
@@ -415,29 +391,11 @@ export default function CamerasAlerts() {
             </div>
             <div className="cag-alerts-list">
               {sortedIncidents.map((a) => {
-                const key = a.snapshot_filename;
-                const thumbSrc = key
-                  ? (/^https?:\/\//i.test(key) ? key : signedUrls[key])
-                  : null;
-                const snapMissing = key && missingSnaps[key];
+                const thumbSrc = a.snapshot_filename ? snapSrc(a) : null;
                 return (
                   <div className={`cag-inc p-${a.priority}`} key={a.id}>
-                    {key && thumbSrc && !snapMissing && (
-                      <img
-                        className="cag-inc-thumb"
-                        src={thumbSrc}
-                        alt="snapshot"
-                        onClick={() => setSnapshotView({ ...a, snapUrl: thumbSrc })}
-                        onError={() => {
-                          snapCache.current.set(key, { failedAt: Date.now() });
-                          setMissingSnaps((p) => ({ ...p, [key]: true }));
-                        }}
-                      />
-                    )}
-                    {key && snapMissing && (
-                      <div className="cag-inc-thumb cag-inc-thumb-missing" title="Snapshot unavailable">
-                        No image
-                      </div>
+                    {a.snapshot_filename && thumbSrc && (
+                      <AlertThumb src={thumbSrc} onClick={() => setSnapshotView(a)} />
                     )}
                     <div className="cag-inc-body">
                       <div className="cag-inc-top">
@@ -529,7 +487,7 @@ export default function CamerasAlerts() {
             <div className="cam-lightbox-stage">
               <div className="cam-feed" style={{ aspectRatio: 16 / 9, '--r': 16 / 9 }}>
                 <img
-                  src={snapshotView.snapUrl}
+                  src={snapSrc(snapshotView)}
                   alt="Snapshot"
                   style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                 />

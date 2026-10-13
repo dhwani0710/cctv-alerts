@@ -9,6 +9,7 @@ import imageio_ffmpeg
 from datetime import datetime
 import storage
 from database import get_db
+from alerts import log_alert
 
 RECORDINGS_DIR = "recordings"
 
@@ -110,7 +111,6 @@ class VideoRecorder:
                 pass
 
     def _record_loop(self):
-        from alerts import log_alert
         while True:
             try:
                 frame = self.frame_queue.get(timeout=5.0)
@@ -129,6 +129,7 @@ class VideoRecorder:
                 with self.lock:
                     self.is_recording = False
                 break
+
             writer.write(frame)
             frames_written = 1
             clip_start = time.monotonic()
@@ -165,6 +166,7 @@ class VideoRecorder:
                 else:
                     self.is_recording = False
                     break
+
 
 _recorders = {}
 _recorders_lock = threading.Lock()
