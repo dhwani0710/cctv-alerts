@@ -8,7 +8,7 @@ import subprocess
 import imageio_ffmpeg
 from datetime import datetime
 import storage
-from database import get_db
+from database import get_db, OFFICE_ID
 from alerts import log_alert
 
 RECORDINGS_DIR = "recordings"

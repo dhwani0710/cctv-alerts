@@ -8,7 +8,7 @@ import cv2
 
 import config
 import storage
-from database import get_db
+from database import get_db, OFFICE_ID
 from notifications import send_telegram_alert, send_telegram_photo
 from settings_store import load_settings
 
@@ -131,8 +131,8 @@ def _get_or_create_incident(cur, person_name, alert_type, priority, camera_name,
 
     cur.execute(
         "SELECT id, alert_count, last_notified FROM incidents WHERE person_name = %s AND alert_type = %s "
-        "AND camera_name = %s AND last_seen >= %s ORDER BY last_seen DESC LIMIT 1",
-        (person_name, alert_type, camera_name, cutoff.isoformat())
+        "AND camera_name = %s AND last_seen >= %s AND office_id = %s ORDER BY last_seen DESC LIMIT 1",
+        (person_name, alert_type, camera_name, cutoff.isoformat(), OFFICE_ID)
     )
     row = cur.fetchone()
 
@@ -145,9 +145,9 @@ def _get_or_create_incident(cur, person_name, alert_type, priority, camera_name,
         return row["id"], row["alert_count"] + 1, False, row["last_notified"]
 
     cur.execute(
-        "INSERT INTO incidents (person_name, alert_type, priority, camera_name, zone_name, first_seen, last_seen, alert_count, last_notified) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s) RETURNING id",
-        (person_name, alert_type, priority, camera_name, zone_name, now.isoformat(), now.isoformat(), now.isoformat())
+        "INSERT INTO incidents (person_name, alert_type, priority, camera_name, zone_name, first_seen, last_seen, alert_count, last_notified, office_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s, %s) RETURNING id",
+        (person_name, alert_type, priority, camera_name, zone_name, now.isoformat(), now.isoformat(), now.isoformat(), OFFICE_ID)
     )
     return cur.fetchone()["id"], 1, True, now.isoformat()
 
@@ -220,8 +220,8 @@ def log_alert(person_name, alert_type, priority, message, frame=None, camera_nam
         )
         cur.execute(
             "INSERT INTO alerts (person_name, alert_type, priority, message, timestamp, snapshot_filename, "
-            "camera_name, zone_name, incident_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (person_name, alert_type, priority, message, now.isoformat(), final_url, camera_name, zone_name, incident_id)
+            "camera_name, zone_name, incident_id, office_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (person_name, alert_type, priority, message, now.isoformat(), final_url, camera_name, zone_name, incident_id, OFFICE_ID)
         )
         alert_id = cur.fetchone()["id"]
         conn.commit()
@@ -288,7 +288,8 @@ def escalate_stale_incidents():
         cur = conn.cursor()
         cur.execute(
             "SELECT id, priority, first_seen, person_name, alert_type FROM incidents "
-            "WHERE status = 'new' AND priority IN ('low', 'medium')"
+            "WHERE status = 'new' AND priority IN ('low', 'medium') AND office_id = %s",
+            (OFFICE_ID,)
         )
         rows = cur.fetchall()
 

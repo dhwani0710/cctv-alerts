@@ -19,7 +19,7 @@ from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Req
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel
-from database import init_db, get_db
+from database import init_db, get_db, OFFICE_ID
 from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, stop_all_cameras, get_tampered_cameras
 from datetime import datetime, timedelta
 import config

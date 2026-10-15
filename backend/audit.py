@@ -1,5 +1,5 @@
 from datetime import datetime
-from database import get_db
+from database import get_db, OFFICE_ID
 
 def log_audit_event(username: str, user_role: str, action: str, target_module: str, details: str, proof_image: str = None, user_id: int = None):
     """
