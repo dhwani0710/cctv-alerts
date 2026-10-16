@@ -2,7 +2,7 @@ import os
 import time
 import threading
 from datetime import datetime, timedelta
-from database import get_db
+from database import get_db, OFFICE_ID
 import config
 import storage
 
@@ -39,9 +39,9 @@ def _cleanup_table(table, extra_where, cutoff):
             cur = conn.cursor()
             cur.execute(
                 f"SELECT id, snapshot_filename FROM {table} "
-                f"WHERE timestamp < %s AND snapshot_filename IS NOT NULL {extra_where} "
+                f"WHERE timestamp < %s AND snapshot_filename IS NOT NULL AND office_id = %s {extra_where} "
                 f"ORDER BY id LIMIT %s",
-                (cutoff, CLEANUP_BATCH),
+                (cutoff, OFFICE_ID, CLEANUP_BATCH),
             )
             rows = cur.fetchall()
             cur.close()
@@ -100,12 +100,12 @@ def _clear_daily_alerts():
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO alert_records (person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_name, zone_name, incident_id)
-            SELECT person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_name, zone_name, incident_id
-            FROM alerts WHERE permanent = FALSE
-        """)
-        cur.execute("DELETE FROM alerts WHERE permanent = FALSE")
-        cur.execute("DELETE FROM currently_detected")
+            INSERT INTO alert_records (person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_name, zone_name, incident_id, office_id)
+            SELECT person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_name, zone_name, incident_id, office_id
+            FROM alerts WHERE permanent = FALSE AND office_id = %s
+        """, (OFFICE_ID,))
+        cur.execute("DELETE FROM alerts WHERE permanent = FALSE AND office_id = %s", (OFFICE_ID,))
+        cur.execute("DELETE FROM currently_detected WHERE office_id = %s", (OFFICE_ID,))
         conn.commit()
         cur.close()
     print("[daily-reset] Archived and cleared non-permanent alerts, cleared currently_detected at 5:30 PM")

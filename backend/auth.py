@@ -50,3 +50,15 @@ def require_owner(authorization: Optional[str] = Header(None)):
     if payload.get("role") != "owner":
         raise HTTPException(status_code=403, detail="Owner access required")
     return payload
+
+def get_office_id(
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = Query(None),
+    x_office_id: Optional[int] = Header(None),
+    office_id: Optional[int] = Query(None),
+):
+    payload = verify_token(authorization, token)
+    own = payload.get("office_id")
+    if own is not None:
+        return int(own)  # locked to own office
+    return int(x_office_id or office_id or 1)  # owner/ceo picks

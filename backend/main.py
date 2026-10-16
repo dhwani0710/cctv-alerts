@@ -19,7 +19,7 @@ from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Req
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel
-from database import init_db, get_db
+from database import init_db, get_db, OFFICE_ID
 from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, stop_all_cameras, get_tampered_cameras
 from datetime import datetime, timedelta
 import config
@@ -98,7 +98,7 @@ def shutdown():
 
 @app.get("/")
 def health_check():
-    return {"status": "backend is running"}
+    return {"status": "backend is running", "office_id": OFFICE_ID}
 
 # --- Auth Models & Endpoints ---
 
@@ -188,6 +188,10 @@ def login(payload: LoginRequest):
     if not user or not verify_password(payload.password, user["password_hash"]):
         return {"ok": False, "error": "Incorrect username or password"}
 
+    # office_id NULL = owner/ceo with access to all offices
+    if user["office_id"] is not None and user["office_id"] != OFFICE_ID:
+        return {"ok": False, "error": "No access to this office"}
+
     token = create_token(user["id"], user["username"], user["role"], remember=payload.remember_me)
 
     log_audit_event(
@@ -216,8 +220,8 @@ def get_audit_logs(
     search: Optional[str] = None,
     limit: int = 200
 ):
-    query = "SELECT id, user_id, username, user_role, action, target_module, details, proof_image, timestamp FROM audit_logs WHERE 1=1"
-    params = []
+    query = "SELECT id, user_id, username, user_role, action, target_module, details, proof_image, timestamp FROM audit_logs WHERE office_id = %s"
+    params = [OFFICE_ID]
     if role:
         query += " AND LOWER(user_role) = %s"
         params.append(role.lower())
@@ -250,12 +254,12 @@ def get_recordings(page: int = 1, limit: int = 10):
     offset = (page - 1) * limit
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) as count FROM recordings")
+        cur.execute("SELECT COUNT(*) as count FROM recordings WHERE office_id = %s", (OFFICE_ID,))
         total = cur.fetchone()["count"]
 
         cur.execute(
-            "SELECT id, camera_id, camera_name, zone_name, timestamp, video_url FROM recordings ORDER BY timestamp DESC LIMIT %s OFFSET %s", 
-            (limit, offset)
+            "SELECT id, camera_id, camera_name, zone_name, timestamp, video_url FROM recordings WHERE office_id = %s ORDER BY timestamp DESC LIMIT %s OFFSET %s", 
+            (OFFICE_ID, limit, offset)
         )
         rows = cur.fetchall()
         cur.close()
@@ -267,7 +271,10 @@ def get_recordings(page: int = 1, limit: int = 10):
 def list_users():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, username, role, created_at FROM users ORDER BY id")
+        cur.execute(
+            "SELECT id, username, role, created_at FROM users WHERE office_id = %s OR office_id IS NULL ORDER BY id",
+            (OFFICE_ID,)
+        )
         rows = cur.fetchall()
         cur.close()
         return [dict(r) for r in rows]
@@ -289,8 +296,8 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
             raise HTTPException(status_code=400, detail=f"Username '{username}' already exists")
 
         cur.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
-            (username, hash_password(payload.password), role)
+            "INSERT INTO users (username, password_hash, role, office_id) VALUES (%s, %s, %s, %s)",
+            (username, hash_password(payload.password), role, None if role in ("owner", "ceo") else OFFICE_ID)
         )
         conn.commit()
         cur.close()
@@ -323,10 +330,13 @@ def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depen
     if not updates:
         raise HTTPException(status_code=400, detail="No updates provided")
 
-    params.append(user_id)
+    params.extend([user_id, OFFICE_ID])
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = %s RETURNING id, username, role", tuple(params))
+        cur.execute(
+            f"UPDATE users SET {', '.join(updates)} WHERE id = %s AND (office_id = %s OR office_id IS NULL) RETURNING id, username, role",
+            tuple(params)
+        )
         updated = cur.fetchone()
         conn.commit()
         cur.close()
@@ -352,7 +362,10 @@ def delete_user(user_id: int, current_user: dict = Depends(require_admin)):
 
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, username, role FROM users WHERE id = %s", (user_id,))
+        cur.execute(
+            "SELECT id, username, role FROM users WHERE id = %s AND (office_id = %s OR office_id IS NULL)",
+            (user_id, OFFICE_ID)
+        )
         u = cur.fetchone()
         if not u:
             cur.close()
@@ -437,7 +450,10 @@ async def add_employee(
 
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id FROM employees WHERE LOWER(name) = LOWER(%s)", (name.strip(),))
+        cur.execute(
+            "SELECT id FROM employees WHERE LOWER(name) = LOWER(%s) AND office_id = %s",
+            (name.strip(), OFFICE_ID)
+        )
         existing = cur.fetchone()
         cur.close()
     if existing:
@@ -452,8 +468,8 @@ async def add_employee(
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO employees (name, shift_start, shift_end, photo_filename, designation) VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (name, shift_start, shift_end, "", designation)
+            "INSERT INTO employees (name, shift_start, shift_end, photo_filename, designation, office_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (name, shift_start, shift_end, "", designation, OFFICE_ID)
         )
         employee_id = cur.fetchone()["id"]
 
@@ -487,7 +503,7 @@ async def add_employee(
 def list_employees():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM employees ORDER BY id ASC")
+        cur.execute("SELECT * FROM employees WHERE office_id = %s ORDER BY id ASC", (OFFICE_ID,))
         rows = cur.fetchall()
         cur.close()
         return [dict(row) for row in rows]
@@ -508,8 +524,8 @@ async def update_employee(
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id FROM employees WHERE LOWER(name) = LOWER(%s) AND id != %s",
-            (name.strip(), employee_id),
+            "SELECT id FROM employees WHERE LOWER(name) = LOWER(%s) AND id != %s AND office_id = %s",
+            (name.strip(), employee_id, OFFICE_ID),
         )
         clash = cur.fetchone()
         cur.close()
@@ -518,7 +534,7 @@ async def update_employee(
 
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM employees WHERE id = %s", (employee_id,))
+        cur.execute("SELECT * FROM employees WHERE id = %s AND office_id = %s", (employee_id, OFFICE_ID))
         emp = cur.fetchone()
         if emp is None:
             cur.close()
@@ -549,8 +565,8 @@ async def update_employee(
             _clear_face_cache()
 
         cur.execute(
-            "UPDATE employees SET name = %s, shift_start = %s, shift_end = %s, designation = %s WHERE id = %s",
-            (name, shift_start, shift_end, designation, employee_id)
+            "UPDATE employees SET name = %s, shift_start = %s, shift_end = %s, designation = %s WHERE id = %s AND office_id = %s",
+            (name, shift_start, shift_end, designation, employee_id, OFFICE_ID)
         )
         conn.commit()
         cur.close()
@@ -570,13 +586,13 @@ async def update_employee(
 def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM employees WHERE id = %s", (employee_id,))
+        cur.execute("SELECT * FROM employees WHERE id = %s AND office_id = %s", (employee_id, OFFICE_ID))
         emp = cur.fetchone()
         if emp is None:
             cur.close()
             return {"message": "Employee not found"}
 
-        cur.execute("DELETE FROM employees WHERE id = %s", (employee_id,))
+        cur.execute("DELETE FROM employees WHERE id = %s AND office_id = %s", (employee_id, OFFICE_ID))
         conn.commit()
         cur.close()
 
@@ -747,18 +763,18 @@ async def acknowledge_alert(
             """
             UPDATE incidents
             SET status = 'acknowledged'
-            WHERE id = %s
+            WHERE id = %s AND office_id = %s
             """,
-            (alert_id,)
+            (alert_id, OFFICE_ID)
         )
         
         cur.execute(
             """
             UPDATE alerts 
             SET status = 'acknowledged', acknowledged_by = %s, acknowledged_at = %s, ack_proof_image = %s, ack_notes = %s 
-            WHERE incident_id = %s OR id = %s
+            WHERE (incident_id = %s OR id = %s) AND office_id = %s
             """,
-            (current_user.get("username"), now_iso, proof_url, notes.strip(), alert_id, alert_id)
+            (current_user.get("username"), now_iso, proof_url, notes.strip(), alert_id, alert_id, OFFICE_ID)
         )
         conn.commit()
         cur.close()
@@ -790,9 +806,9 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
             ORDER BY timestamp DESC
             LIMIT 1
         ) a ON true
-        WHERE 1=1
+        WHERE i.office_id = %s
     """
-    params = []
+    params = [OFFICE_ID]
 
     if camera:
         base_query += " AND (i.camera_name = %s OR i.camera_name LIKE %s)"
@@ -847,9 +863,9 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
 def delete_record(alert_id: int, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM alerts WHERE incident_id = %s", (alert_id,))
-        cur.execute("DELETE FROM alert_records WHERE incident_id = %s", (alert_id,))
-        cur.execute("DELETE FROM incidents WHERE id = %s", (alert_id,))
+        cur.execute("DELETE FROM alerts WHERE incident_id = %s AND office_id = %s", (alert_id, OFFICE_ID))
+        cur.execute("DELETE FROM alert_records WHERE incident_id = %s AND office_id = %s", (alert_id, OFFICE_ID))
+        cur.execute("DELETE FROM incidents WHERE id = %s AND office_id = %s", (alert_id, OFFICE_ID))
         deleted = cur.rowcount
         conn.commit()
         cur.close()
@@ -871,10 +887,10 @@ def delete_record(alert_id: int, current_user: dict = Depends(require_admin)):
 def clear_all_records(current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM alerts")
+        cur.execute("DELETE FROM alerts WHERE office_id = %s", (OFFICE_ID,))
         alerts_deleted = cur.rowcount
-        cur.execute("DELETE FROM alert_records")
-        cur.execute("DELETE FROM incidents")
+        cur.execute("DELETE FROM alert_records WHERE office_id = %s", (OFFICE_ID,))
+        cur.execute("DELETE FROM incidents WHERE office_id = %s", (OFFICE_ID,))
         incidents_deleted = cur.rowcount
         conn.commit()
         cur.close()
@@ -887,8 +903,8 @@ def clear_all_records(current_user: dict = Depends(require_admin)):
 
 @app.get("/records/export", dependencies=[Depends(require_staff)])
 def export_records(camera: str = None, status: str = None, date: str = None):
-    query = "SELECT person_name, alert_type, priority, message, timestamp, camera_name FROM alerts WHERE 1=1"
-    params = []
+    query = "SELECT person_name, alert_type, priority, message, timestamp, camera_name FROM alerts WHERE office_id = %s"
+    params = [OFFICE_ID]
 
     if camera:
         query += " AND (camera_name = %s OR camera_name LIKE %s)"
@@ -982,8 +998,8 @@ def _resolve_attendance_range(start_date=None, end_date=None, date=None):
     return today, today
 
 def _build_attendance_filters(employee_id=None, zone_name=None, status=None, search=None):
-    where_clauses = []
-    params = []
+    where_clauses = ["emp.office_id = %s"]
+    params = [OFFICE_ID]
 
     if employee_id:
         where_clauses.append("emp.id = %s")
@@ -1167,7 +1183,7 @@ def export_attendance(
 def override_attendance(req: AttendanceOverrideRequest):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name FROM employees WHERE id = %s", (req.employee_id,))
+        cur.execute("SELECT id, name FROM employees WHERE id = %s AND office_id = %s", (req.employee_id, OFFICE_ID))
         emp = cur.fetchone()
         if not emp:
             cur.close()
@@ -1190,9 +1206,9 @@ def override_attendance(req: AttendanceOverrideRequest):
             )
         else:
             cur.execute(
-                "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, zone_name, status, override_reason, is_override) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)",
-                (req.employee_id, req.date, first_seen, last_seen, zone, status, reason)
+                "INSERT INTO attendance (office_id, employee_id, attendance_date, first_seen, last_seen, zone_name, status, override_reason, is_override) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)",
+                (OFFICE_ID, req.employee_id, req.date, first_seen, last_seen, zone, status, reason)
             )
 
         conn.commit()
@@ -1233,14 +1249,15 @@ def get_status():
                 MAX(last_seen) AS last_seen,
                 STRING_AGG(camera_name, ', ') AS camera_name
             FROM currently_detected
-            WHERE last_seen > %s
+            WHERE last_seen > %s AND office_id = %s
             GROUP BY person_name
             ORDER BY MAX(last_seen) DESC
-        """, (cutoff.isoformat(),))
+        """, (cutoff.isoformat(), OFFICE_ID))
         detected_rows = cur.fetchall()
 
         cur.execute(
-            "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, status, acknowledged_by, acknowledged_at, ack_proof_image, ack_notes FROM alerts ORDER BY timestamp DESC LIMIT 20"
+            "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, status, acknowledged_by, acknowledged_at, ack_proof_image, ack_notes FROM alerts WHERE office_id = %s ORDER BY timestamp DESC LIMIT 20",
+            (OFFICE_ID,)
         )
         alert_rows = cur.fetchall()
         cur.close()
@@ -1256,7 +1273,7 @@ def list_cameras():
     now = datetime.now()
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras")
+        cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras WHERE office_id = %s", (OFFICE_ID,))
         rows = cur.fetchall()
         cur.close()
     heartbeats = get_all_camera_heartbeats()
@@ -1289,8 +1306,8 @@ def add_camera(payload: CameraRequest, current_user: dict = Depends(require_admi
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO cameras (id, name, rtsp_url, zone_name, enabled) VALUES (%s, %s, %s, %s, %s)",
-            (payload.id, payload.name, payload.rtsp_url, payload.zone_name or payload.id, payload.enabled)
+            "INSERT INTO cameras (id, name, rtsp_url, zone_name, enabled, office_id) VALUES (%s, %s, %s, %s, %s, %s)",
+            (payload.id, payload.name, payload.rtsp_url, payload.zone_name or payload.id, payload.enabled, OFFICE_ID)
         )
         conn.commit()
         cur.close()
@@ -1319,8 +1336,8 @@ def update_camera(camera_id: str, payload: CameraRequest, current_user: dict = D
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE cameras SET name=%s, rtsp_url=%s, zone_name=%s, enabled=%s WHERE id=%s",
-            (payload.name, payload.rtsp_url, payload.zone_name or camera_id, payload.enabled, camera_id)
+            "UPDATE cameras SET name=%s, rtsp_url=%s, zone_name=%s, enabled=%s WHERE id=%s AND office_id=%s",
+            (payload.name, payload.rtsp_url, payload.zone_name or camera_id, payload.enabled, camera_id, OFFICE_ID)
         )
         conn.commit()
         cur.close()
@@ -1352,7 +1369,7 @@ def delete_camera(camera_id: str, current_user: dict = Depends(require_admin)):
     threading.Thread(target=stop_single_camera, args=(camera_id,), daemon=True).start()
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM cameras WHERE id = %s", (camera_id,))
+        cur.execute("DELETE FROM cameras WHERE id = %s AND office_id = %s", (camera_id, OFFICE_ID))
         conn.commit()
         cur.close()
 
@@ -1370,13 +1387,13 @@ def delete_camera(camera_id: str, current_user: dict = Depends(require_admin)):
 def _seed_cameras_from_config():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) as count FROM cameras")
+        cur.execute("SELECT COUNT(*) as count FROM cameras WHERE office_id = %s", (OFFICE_ID,))
         count = cur.fetchone()["count"]
         if count == 0:
             for cam in config.CAMERAS:
                 cur.execute(
-                    "INSERT INTO cameras (id, name, rtsp_url, zone_name, enabled) VALUES (%s, %s, %s, %s, %s)",
-                    (cam["id"], cam["name"], cam["source"], cam.get("zone_name", cam.get("location", cam["id"])), True)
+                    "INSERT INTO cameras (id, name, rtsp_url, zone_name, enabled, office_id) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (cam["id"], cam["name"], cam["source"], cam.get("zone_name", cam.get("location", cam["id"])), True, OFFICE_ID)
                 )
             conn.commit()
         cur.close()
@@ -1393,7 +1410,7 @@ class ZoneRequest(BaseModel):
 def list_zones():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name FROM zones ORDER BY id")
+        cur.execute("SELECT id, name FROM zones WHERE office_id = %s ORDER BY id", (OFFICE_ID,))
         rows = cur.fetchall()
         cur.close()
     return [dict(r) for r in rows]
@@ -1402,7 +1419,7 @@ def list_zones():
 def add_zone(payload: ZoneRequest, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("INSERT INTO zones (id, name) VALUES (%s, %s)", (payload.id, payload.name))
+        cur.execute("INSERT INTO zones (id, name, office_id) VALUES (%s, %s, %s)", (payload.id, payload.name, OFFICE_ID))
         conn.commit()
         cur.close()
 
@@ -1421,7 +1438,7 @@ def add_zone(payload: ZoneRequest, current_user: dict = Depends(require_admin)):
 def delete_zone(zone_id: str, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM zones WHERE id = %s", (zone_id,))
+        cur.execute("DELETE FROM zones WHERE id = %s AND office_id = %s", (zone_id, OFFICE_ID))
         conn.commit()
         cur.close()
 
@@ -1451,9 +1468,9 @@ def list_incidents(status: str = None, limit: int = 100):
                  ORDER BY r.timestamp DESC LIMIT 1)
             ) AS snapshot_filename
         FROM incidents i
-        WHERE 1=1
+        WHERE i.office_id = %s
     """
-    params = []
+    params = [OFFICE_ID]
     if status:
         query += " AND i.status = %s"
         params.append(status)
@@ -1478,7 +1495,7 @@ def update_incident(incident_id: int, payload: IncidentUpdateRequest):
         raise HTTPException(status_code=400, detail="Invalid status")
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("UPDATE incidents SET status = %s WHERE id = %s", (status, incident_id))
+        cur.execute("UPDATE incidents SET status = %s WHERE id = %s AND office_id = %s", (status, incident_id, OFFICE_ID))
         conn.commit()
         cur.close()
     return {"message": "Incident updated"}
@@ -1494,8 +1511,9 @@ def attendance_summary(start_date: str = None, end_date: str = None):
         cur.execute(
             "SELECT e.name, a.attendance_date, a.first_seen, a.last_seen FROM attendance a "
             "JOIN employees e ON e.id = a.employee_id "
-            "WHERE a.attendance_date BETWEEN %s AND %s ORDER BY a.attendance_date DESC, e.name",
-            (start_date, end_date)
+            "WHERE a.attendance_date BETWEEN %s AND %s AND e.office_id = %s "
+            "ORDER BY a.attendance_date DESC, e.name",
+            (start_date, end_date, OFFICE_ID)
         )
         rows = cur.fetchall()
         cur.close()
@@ -1509,9 +1527,9 @@ def alert_frequency(start_date: str = None, end_date: str = None):
         cur = conn.cursor()
         cur.execute(
             "SELECT alert_type, priority, COUNT(*) as count FROM alerts "
-            "WHERE timestamp BETWEEN %s AND %s "
+            "WHERE timestamp BETWEEN %s AND %s AND office_id = %s "
             "GROUP BY alert_type, priority ORDER BY count DESC",
-            (f"{start_date}T00:00:00", f"{end_date}T23:59:59")
+            (f"{start_date}T00:00:00", f"{end_date}T23:59:59", OFFICE_ID)
         )
         rows = cur.fetchall()
         cur.close()
@@ -1525,8 +1543,8 @@ def incident_response_times(start_date: str = None, end_date: str = None):
         cur = conn.cursor()
         cur.execute(
             "SELECT id, person_name, alert_type, priority, status, first_seen, last_seen, alert_count "
-            "FROM incidents WHERE first_seen BETWEEN %s AND %s ORDER BY first_seen DESC",
-            (f"{start_date}T00:00:00", f"{end_date}T23:59:59")
+            "FROM incidents WHERE first_seen BETWEEN %s AND %s AND office_id = %s ORDER BY first_seen DESC",
+            (f"{start_date}T00:00:00", f"{end_date}T23:59:59", OFFICE_ID)
         )
         rows = cur.fetchall()
         cur.close()
@@ -1536,7 +1554,7 @@ def incident_response_times(start_date: str = None, end_date: str = None):
 def mark_permanent(alert_id: int, permanent: bool = True):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("UPDATE alerts SET permanent = %s WHERE id = %s", (permanent, alert_id))
+        cur.execute("UPDATE alerts SET permanent = %s WHERE id = %s AND office_id = %s", (permanent, alert_id, OFFICE_ID))
         updated = cur.rowcount
         conn.commit()
         cur.close()

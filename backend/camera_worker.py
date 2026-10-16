@@ -11,7 +11,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from recognition import recognize_faces
 from alerts import get_alert_priority, is_within_store_hours, log_alert, format_duration, get_shift_datetimes, escalate_stale_incidents
-from database import get_db
+from database import get_db, OFFICE_ID
 import config
 from video_recorder import get_recorder
 
@@ -65,7 +65,7 @@ def get_unknown_streak(camera_id):
     location = _get_camera_location(camera_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT value FROM system_state WHERE key = %s", (f"unknown_streak_{location}",))
+        cur.execute("SELECT value FROM system_state WHERE key = %s", (f"unknown_streak_{OFFICE_ID}_{location}",))
         row = cur.fetchone()
         cur.close()
         return int(row["value"]) if row else 0
@@ -80,7 +80,7 @@ def set_unknown_streak(camera_id, value):
         cur.execute(
             "INSERT INTO system_state (key, value) VALUES (%s, %s) "
             "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
-            (f"unknown_streak_{location}", str(value))
+            (f"unknown_streak_{OFFICE_ID}_{location}", str(value))
         )
         conn.commit()
         cur.close()
@@ -97,15 +97,14 @@ def update_currently_detected(name, camera_name, now):
         cur = conn.cursor()
         if do_upsert:
             cur.execute(
-                "INSERT INTO currently_detected (person_name, camera_name, last_seen) VALUES (%s, %s, %s) "
-                "ON CONFLICT(person_name, camera_name) DO UPDATE SET last_seen = EXCLUDED.last_seen",
-                (name, camera_name, now.isoformat())
+                "INSERT INTO currently_detected (office_id, person_name, camera_name, last_seen) VALUES (%s, %s, %s, %s) "
+                "ON CONFLICT(office_id, person_name, camera_name) DO UPDATE SET last_seen = EXCLUDED.last_seen",
+                (OFFICE_ID, name, camera_name, now.isoformat())
             )
         if do_cleanup:
-            cur.execute("DELETE FROM currently_detected WHERE last_seen < %s", (cutoff,))
+            cur.execute("DELETE FROM currently_detected WHERE last_seen < %s AND office_id = %s", (cutoff, OFFICE_ID))
         conn.commit()
         cur.close()
-
 
 def update_attendance(employee_id, now, camera_id, shift_start_dt=None):
     today = now.date().isoformat()
@@ -114,13 +113,13 @@ def update_attendance(employee_id, now, camera_id, shift_start_dt=None):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, zone_name, status) "
-            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "INSERT INTO attendance (office_id, employee_id, attendance_date, first_seen, last_seen, zone_name, status) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT(employee_id, attendance_date) DO UPDATE SET "
             "last_seen = EXCLUDED.last_seen, zone_name = EXCLUDED.zone_name, "
             "status = CASE WHEN attendance.status = 'absent' THEN EXCLUDED.status ELSE attendance.status END, "
             "is_override = CASE WHEN attendance.status = 'absent' THEN FALSE ELSE attendance.is_override END",
-            (employee_id, today, now.isoformat(), now.isoformat(), zone_name, status)
+            (OFFICE_ID, employee_id, today, now.isoformat(), now.isoformat(), zone_name, status)
         )
         conn.commit()
         cur.close()
@@ -156,7 +155,7 @@ def _get_employee_by_name(name):
             return hit[1]
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM employees WHERE name = %s", (name,))
+        cur.execute("SELECT * FROM employees WHERE name = %s AND office_id = %s", (name, OFFICE_ID))
         row = cur.fetchone()
         cur.close()
     emp = dict(row) if row else None
@@ -213,7 +212,7 @@ def _load_cameras_from_db():
         return _camera_cache["data"]
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras WHERE enabled = TRUE")
+        cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras WHERE enabled = TRUE AND office_id = %s", (OFFICE_ID,))
         rows = cur.fetchall()
         cur.close()
     cameras = [{"id": r["id"], "name": r["name"], "source": r["rtsp_url"], "zone_name": r["zone_name"] or r["id"]} for r in rows]

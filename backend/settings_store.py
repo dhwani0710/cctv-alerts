@@ -4,6 +4,7 @@ import threading
 
 import config
 from app_settings import get_setting, set_setting
+from database import OFFICE_ID
 
 # Old file-based storage. Only read once, to import existing values into the database.
 LEGACY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "store_settings.json")
@@ -20,9 +21,13 @@ _migrated = False
 
 
 def _import_legacy_file():
-    """One-time: copy values from store_settings.json into the DB if the DB has none yet."""
+    """One-time: copy values from store_settings.json into the DB if the DB has none yet.
+    Only office 1 imports the legacy file."""
     global _migrated
     if _migrated:
+        return
+    if OFFICE_ID != 1:
+        _migrated = True
         return
     with _migrate_lock:
         if _migrated:

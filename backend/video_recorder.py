@@ -8,7 +8,7 @@ import subprocess
 import imageio_ffmpeg
 from datetime import datetime
 import storage
-from database import get_db
+from database import get_db, OFFICE_ID
 from alerts import log_alert
 
 RECORDINGS_DIR = "recordings"
@@ -50,8 +50,8 @@ def _upload_and_save(camera_id, camera_name, zone_name, filepath, filename, actu
         with get_db() as conn:
             cur = conn.cursor()
             cur.execute(
-                "INSERT INTO recordings (camera_id, camera_name, zone_name, timestamp, video_url) VALUES (%s, %s, %s, %s, %s)",
-                (camera_id, camera_name, zone_name, datetime.now().isoformat(), public_url)
+                "INSERT INTO recordings (camera_id, camera_name, zone_name, timestamp, video_url, office_id) VALUES (%s, %s, %s, %s, %s, %s)",
+                (camera_id, camera_name, zone_name, datetime.now().isoformat(), public_url, OFFICE_ID)
             )
             conn.commit()
             cur.close()
