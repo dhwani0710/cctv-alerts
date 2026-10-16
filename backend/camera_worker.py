@@ -14,6 +14,10 @@ from alerts import get_alert_priority, is_within_store_hours, log_alert, format_
 from database import get_db
 import config
 from video_recorder import get_recorder
+from object_detector import detect_objects
+
+ANIMAL_STREAK_REQUIRED = getattr(config, "ANIMAL_STREAK_REQUIRED", 2)
+_animal_streak = {}
 
 # ---- tunables (override in config.py if you like) ----
 MOTION_GATE_ENABLED = getattr(config, "MOTION_GATE_ENABLED", True)
@@ -296,6 +300,31 @@ def draw_oriented_bbox(img, box, label="", color=(0, 0, 255), thickness=2, corne
 
     return annotated
 
+def _check_animals(frame, camera_id, camera_name, zone_name):
+    try:
+        objects = detect_objects(frame)
+    except Exception as e:
+        print(f"[camera_worker] Object detection error on '{camera_name}': {type(e).__name__}: {e}")
+        return
+
+    animals = [o for o in objects if o["kind"] == "animal"]
+    if not animals:
+        _animal_streak[camera_id] = 0
+        return
+
+    # require repeated sightings before alerting, to cut one-frame false positives
+    streak = _animal_streak.get(camera_id, 0) + 1
+    _animal_streak[camera_id] = streak
+    if streak < ANIMAL_STREAK_REQUIRED:
+        return
+
+    snapshot = frame
+    for a in animals:
+        snapshot = draw_oriented_bbox(snapshot, a["box"], label=f'{a["label"]} {a["conf"]:.2f}', color=(255, 140, 0))
+
+    kinds = ", ".join(sorted({a["label"] for a in animals}))
+    msg = f"[{camera_name}] Animal detected: {kinds}"
+    log_alert("Animal", "animal", "medium", msg, frame=snapshot, camera_name=camera_name, zone_name=zone_name)
 
 def _process_frame(frame, camera_id, camera_name):
     now = datetime.now()
@@ -312,6 +341,7 @@ def _process_frame(frame, camera_id, camera_name):
     if MOTION_GATE_ENABLED and not _motion_gate_allows(camera_id, frame):
         return
 
+    _check_animals(frame, camera_id, camera_name, zone_name) 
     detections = recognize_faces(frame)
     _set_had_faces(camera_id, bool(detections))
 
@@ -480,6 +510,7 @@ def _cleanup_camera_state(camera_id):
     recognition_in_progress.pop(camera_id, None)
     _tampered.pop(camera_id, None)
     _motion_state.pop(camera_id, None)
+    _animal_streak.pop(camera_id, None)
 
 
 def start_camera_threads():

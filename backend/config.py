@@ -35,3 +35,4 @@ DETECTOR_BACKEND = "yolo"     # change to "dfine" or "rfdetr" to switch
 DFINE_MODEL = "ustc-community/dfine-nano-coco"   # or ".../dfine-small-coco"
 RFDETR_SIZE = "nano"
 DETECT_CONF = 0.5
+ANIMAL_STREAK_REQUIRED = 2
