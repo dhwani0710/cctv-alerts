@@ -14,6 +14,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 OFFICE_ID = int(os.getenv("OFFICE_ID", "1"))
 
 print("[db] using:", DATABASE_URL.split("@")[-1] if DATABASE_URL else "NOT SET")
+print("[db] office id:", OFFICE_ID)
 
 _POOL_MAX = 40
 _pool_sem = threading.BoundedSemaphore(_POOL_MAX)
@@ -146,6 +147,7 @@ def init_db():
             CREATE UNIQUE INDEX IF NOT EXISTS idx_cd_office_person_camera
             ON currently_detected (office_id, person_name, camera_name)
         """)
+        # Clear stale "currently in view" rows left over from before a restart
         cursor.execute("DELETE FROM currently_detected WHERE office_id = %s", (OFFICE_ID,))
 
         cursor.execute("""
@@ -233,7 +235,7 @@ def init_db():
             )
         """)
 
-                # ---- multi-office ----
+        # ---- multi-office ----
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS offices (
                 id SERIAL PRIMARY KEY,
@@ -262,6 +264,9 @@ def init_db():
         cursor.execute(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_id "
             "INTEGER REFERENCES offices(id)"
+        )
+        cursor.execute(
+            "UPDATE users SET office_id = 1 WHERE role IN ('guard','hr') AND office_id IS NULL"
         )
 
         # Indexes — created AFTER the tables exist
