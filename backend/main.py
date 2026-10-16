@@ -48,6 +48,8 @@ app.add_middleware(
 )
 
 KNOWN_FACES_DIR = "known_faces"
+# storage.py adds the office prefix (o2/, o3/, ...) itself, so this stays plain
+FACES_REMOTE = "known_faces"
 
 def _make_offline_frame_bytes() -> bytes:
     image = Image.new("RGB", (640, 480), color=(0, 0, 0))
@@ -323,6 +325,8 @@ def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depen
             raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(VALID_ROLES)}")
         updates.append("role = %s")
         params.append(role)
+        updates.append("office_id = %s")
+        params.append(None if role in ("owner", "ceo") else OFFICE_ID)
     if req.password:
         updates.append("password_hash = %s")
         params.append(hash_password(req.password))
@@ -477,7 +481,7 @@ async def add_employee(
             filename = f"photo_{i+1}.jpg"
             photo_path = os.path.join(employee_folder, filename)
             _save_resized_photo(photo, photo_path)
-            threading.Thread(target=_upload_photo_async, args=(photo_path, f"known_faces/{folder_name}/{filename}"), daemon=True).start()
+            threading.Thread(target=_upload_photo_async, args=(photo_path, f"{FACES_REMOTE}/{folder_name}/{filename}"), daemon=True).start()
             cur.execute(
                 "INSERT INTO employee_photos (employee_id, filename) VALUES (%s, %s)",
                 (employee_id, filename)
@@ -551,7 +555,7 @@ async def update_employee(
                     shutil.rmtree(old_folder)
                 else:
                     os.rename(old_folder, new_folder)
-                storage.delete_prefix(f"known_faces/{old_folder_name}")
+                storage.delete_prefix(f"{FACES_REMOTE}/{old_folder_name}")
                 _clear_face_cache()
 
         if photo is not None and photo.filename:
@@ -561,7 +565,7 @@ async def update_employee(
             os.makedirs(employee_folder, exist_ok=True)
             photo_path = os.path.join(employee_folder, "photo_1.jpg")
             _save_resized_photo(photo, photo_path)
-            threading.Thread(target=_upload_photo_async, args=(photo_path, f"known_faces/{folder_name}/photo_1.jpg"), daemon=True).start()
+            threading.Thread(target=_upload_photo_async, args=(photo_path, f"{FACES_REMOTE}/{folder_name}/photo_1.jpg"), daemon=True).start()
             _clear_face_cache()
 
         cur.execute(
@@ -601,7 +605,7 @@ def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
         employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
         if os.path.exists(employee_folder):
             shutil.rmtree(employee_folder)
-        storage.delete_prefix(f"known_faces/{folder_name}")
+        storage.delete_prefix(f"{FACES_REMOTE}/{folder_name}")
         _clear_face_cache()
     except Exception as e:
         print(f"[delete_employee] Face folder cleanup failed for '{emp['name']}': {e}")
@@ -1305,6 +1309,10 @@ class CameraRequest(BaseModel):
 def add_camera(payload: CameraRequest, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
+        cur.execute("SELECT 1 FROM cameras WHERE id = %s", (payload.id,))
+        if cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=400, detail=f"Camera ID '{payload.id}' is already in use. Choose a different ID.")
         cur.execute(
             "INSERT INTO cameras (id, name, rtsp_url, zone_name, enabled, office_id) VALUES (%s, %s, %s, %s, %s, %s)",
             (payload.id, payload.name, payload.rtsp_url, payload.zone_name or payload.id, payload.enabled, OFFICE_ID)
@@ -1385,6 +1393,8 @@ def delete_camera(camera_id: str, current_user: dict = Depends(require_admin)):
     return {"message": "Camera deleted and disconnected"}
 
 def _seed_cameras_from_config():
+    if OFFICE_ID != 1:
+        return  # other offices add their own cameras from the Admin page
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) as count FROM cameras WHERE office_id = %s", (OFFICE_ID,))
@@ -1419,6 +1429,10 @@ def list_zones():
 def add_zone(payload: ZoneRequest, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
+        cur.execute("SELECT 1 FROM zones WHERE id = %s", (payload.id,))
+        if cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=400, detail=f"Zone ID '{payload.id}' is already in use. Choose a different ID.")
         cur.execute("INSERT INTO zones (id, name, office_id) VALUES (%s, %s, %s)", (payload.id, payload.name, OFFICE_ID))
         conn.commit()
         cur.close()
