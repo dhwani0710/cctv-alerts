@@ -6,6 +6,13 @@ import { useAuth } from '../context/AuthContext.jsx';
 const STATUS_LABEL = { high: 'Flagged', medium: 'Review', low: 'Clear' };
 const STATUS_PILL = { high: 'flag', medium: 'review', low: 'clear' };
 
+// local-time "today" as YYYY-MM-DD (toISOString would use UTC)
+function localTodayStr() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // Small helper so every fetch on this page reports a consistent, readable
 // error instead of a raw status code or a swallowed network exception.
 async function describeFetchError(res, fallback) {
@@ -102,6 +109,19 @@ export default function Records() {
   }
 
   async function handleExport() {
+    const today = localTodayStr();
+
+    // nothing to export
+    if (total === 0) {
+      setExportError('No records to export.');
+      return;
+    }
+    // a future date can only contain upcoming records
+    if (date && date > today) {
+      setExportError('No records to export for a future date.');
+      return;
+    }
+
     setExporting(true);
     setExportError(null);
     try {
@@ -109,9 +129,19 @@ export default function Records() {
       if (camera) params.append('camera', camera);
       if (status) params.append('status', status);
       if (date) params.append('date', date);
+      params.append('end_date', today); // never export anything after today
       const res = await apiFetch(`/records/export?${params}`);
       if (!res.ok) throw new Error(await describeFetchError(res, 'Export failed'));
       const blob = await res.blob();
+
+      // header-only (or empty) file means there was nothing to export
+      const text = await blob.text();
+      const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
+      if (lines.length <= 1) {
+        setExportError('No records to export.');
+        return;
+      }
+
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -166,6 +196,8 @@ export default function Records() {
   useEffect(() => { loadCameras(); }, [loadCameras]);
   useEffect(() => { loadRecords(); }, [loadRecords]);
   useEffect(() => { setPage(1); }, [camera, status, date]);
+  // a stale export message shouldn't outlive the filters it was about
+  useEffect(() => { setExportError(null); }, [camera, status, date]);
 
   return (
     <Shell active="records" title="Records">
@@ -194,9 +226,9 @@ export default function Records() {
         </div>
       )}
       {exportError && (
-        <div className="banner banner-error">
+        <div className="banner banner-error" role="alert">
           <span>{exportError}</span>
-          <button onClick={handleExport}>Retry</button>
+          <button onClick={() => setExportError(null)}>Dismiss</button>
         </div>
       )}
 
@@ -211,7 +243,12 @@ export default function Records() {
           <option value="flag">Flagged</option>
           <option value="review">Needs review</option>
         </select>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input
+          type="date"
+          value={date}
+          max={localTodayStr()}
+          onChange={(e) => setDate(e.target.value)}
+        />
         <div className="filter-actions">
           <label className="select-all">
             <input
@@ -228,7 +265,12 @@ export default function Records() {
             </button>
           )}
           {isAdmin && (
-            <button className="btn btn-brass" onClick={handleExport} disabled={exporting}>
+            <button
+              className="btn btn-brass"
+              onClick={handleExport}
+              disabled={exporting || loadingRecords || total === 0}
+              title={total === 0 ? 'No records to export' : 'Export CSV'}
+            >
               {exporting ? <><span className="spinner" /> Exporting…</> : 'Export CSV'}
             </button>
           )}

@@ -4275,3 +4275,144 @@
     min-height: 30px;
   }
 }
+
+/* =====================================================
+   24. TOPBAR USER BLOCK (name + role, per-role colours)
+   ===================================================== */
+.user-chip {
+  --role-c: var(--brass);
+  gap: 10px;
+  padding: 4px 14px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.user-chip.role-hr { --role-c: var(--sage); }
+.user-chip.role-guard { --role-c: #4F8FBF; }
+.user-chip.role-owner,
+.user-chip.role-ceo { --role-c: var(--brass); }
+
+.user-chip .avatar {
+  width: 32px;
+  height: 32px;
+  background: var(--role-c);
+  font-size: 12px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--role-c) 22%, transparent);
+}
+
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.user-chip .name {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.role-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--role-c);
+  font-weight: 600;
+}
+
+.topbar-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+}
+
+/* phone + landscape phone: avatar only, like before */
+@media (max-width: 767px) {
+  .user-meta,
+  .topbar-divider {
+    display: none;
+  }
+
+  .user-chip {
+    padding: 0;
+    border: none;
+    background: none;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 500px) and (hover: none) {
+  .user-meta,
+  .topbar-divider {
+    display: none;
+  }
+
+  .user-chip {
+    padding: 0;
+    border: none;
+    background: none;
+  }
+}
+
+/* =====================================================
+   25. SIGN OUT BUTTON (red border + red text, bolder on hover)
+   ===================================================== */
+.logout-btn {
+  height: 34px;
+  min-width: 90px;               /* stops the width jumping when the text gets bolder */
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--brick);
+  background: transparent;
+  color: var(--brick);
+}
+
+/* hover: bold text + bold (thicker) border; the extra 1px is a shadow, so nothing shifts */
+.logout-btn:hover {
+  font-weight: 800;
+  border-color: var(--brick);
+  color: var(--brick);
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--brick);
+}
+
+.logout-btn:active {
+  transform: translateY(1px);
+}
+
+.logout-btn:focus-visible {
+  outline: 2px solid var(--brick);
+  outline-offset: 3px;
+}
+
+/* dark theme: brighter red so it stays readable on the dark top bar */
+[data-theme="dark"] .logout-btn {
+  border-color: #FF6B57;
+  color: #FF6B57;
+}
+
+[data-theme="dark"] .logout-btn:hover {
+  border-color: #FF6B57;
+  color: #FF6B57;
+  box-shadow: 0 0 0 1px #FF6B57;
+}
+
+/* touch screens keep a finger-sized target */
+@media (pointer: coarse) {
+  .logout-btn {
+    height: 40px;
+  }
+}
