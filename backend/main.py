@@ -778,10 +778,17 @@ def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
     try:
         if os.path.exists(employee_folder):
             shutil.rmtree(employee_folder)
+        else:
+            print(f"[delete_employee] Folder not found: {employee_folder}")
     except Exception as e:
         print(f"[delete_employee] Face folder cleanup failed for '{emp['name']}': {e}")
     # Refresh first, so a cloud error below can't leave the deleted person matchable
     _clear_face_cache()
+    try:
+        from recognition import invalidate_gallery
+        invalidate_gallery()
+    except Exception as e:
+        print(f"[delete_employee] Gallery invalidate failed: {e}")
     try:
         storage.delete_prefix(f"{FACES_REMOTE}/{folder_name}")
     except Exception as e:
