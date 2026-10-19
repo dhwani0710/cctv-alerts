@@ -12,10 +12,10 @@ def log_audit_event(username: str, user_role: str, action: str, target_module: s
             cur = conn.cursor()
             cur.execute(
                 """
-                INSERT INTO audit_logs (user_id, username, user_role, action, target_module, details, proof_image, timestamp)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO audit_logs (user_id, username, user_role, action, target_module, details, proof_image, timestamp, office_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (user_id, username or "system", role_str, action, target_module, details, proof_image, datetime.now().isoformat())
+                (user_id, username or "system", role_str, action, target_module, details, proof_image, datetime.now().isoformat(), OFFICE_ID)
             )
             conn.commit()
             cur.close()

@@ -106,7 +106,6 @@ def update_currently_detected(name, camera_name, now):
         conn.commit()
         cur.close()
 
-
 def update_attendance(employee_id, now, camera_id, shift_start_dt=None):
     today = now.date().isoformat()
     zone_name = _get_camera_zone_name(camera_id)
@@ -213,10 +212,7 @@ def _load_cameras_from_db():
         return _camera_cache["data"]
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(
-            "SELECT id, name, rtsp_url, zone_name, enabled FROM cameras WHERE enabled = TRUE AND office_id = %s",
-            (OFFICE_ID,)
-        )
+        cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras WHERE enabled = TRUE AND office_id = %s", (OFFICE_ID,))
         rows = cur.fetchall()
         cur.close()
     cameras = [{"id": r["id"], "name": r["name"], "source": r["rtsp_url"], "zone_name": r["zone_name"] or r["id"]} for r in rows]

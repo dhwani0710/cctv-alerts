@@ -245,7 +245,7 @@ def init_db():
         """)
         cursor.execute("""
             INSERT INTO offices (id, name) VALUES (1, 'Main Office')
-            ON CONFLICT DO NOTHING
+            ON CONFLICT (id) DO NOTHING
         """)
         cursor.execute("""
             SELECT setval(pg_get_serial_sequence('offices','id'),

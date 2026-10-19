@@ -1,7 +1,12 @@
+import re
 import threading
 import time
 import config
 from database import get_db, OFFICE_ID
+
+# Office 1 keeps plain keys. Other offices store keys as "o2:<key>", "o3:<key>", ...
+_PFX = "" if OFFICE_ID == 1 else f"o{OFFICE_ID}:"
+_OTHER_OFFICE_RE = re.compile(r"^o\d+:")
 
 # Defaults come from config.py so there is one place to edit them.
 # Anything saved on the Settings page (stored in the app_settings table) overrides these.
@@ -32,7 +37,15 @@ def _fetch_saved():
         cur.execute("SELECT key, value FROM app_settings")
         rows = cur.fetchall()
         cur.close()
-    return {r["key"]: r["value"] for r in rows}
+    out = {}
+    for r in rows:
+        k = r["key"]
+        if _PFX:
+            if k.startswith(_PFX):
+                out[k[len(_PFX):]] = r["value"]
+        elif not _OTHER_OFFICE_RE.match(k):
+            out[k] = r["value"]
+    return out
 
 def _saved_settings():
     """Saved rows from the DB, cached for a few seconds. Never returns None."""
@@ -107,7 +120,7 @@ def set_setting(key, value):
             ON CONFLICT (key)
             DO UPDATE SET value = EXCLUDED.value
             """,
-            (key, str(value))
+            (_PFX + key, str(value))
         )
         conn.commit()
         cur.close()
