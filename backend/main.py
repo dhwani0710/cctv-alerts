@@ -20,7 +20,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel
 from database import init_db, get_db, OFFICE_ID
-from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, stop_all_cameras, get_tampered_cameras
+from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, stop_all_cameras, get_tampered_cameras, invalidate_employee_cache
+from recognition import invalidate_gallery, check_gallery_photo
 from datetime import datetime, timedelta
 import config
 from auth import verify_token, require_admin, require_hr, require_guard, require_staff, require_owner
@@ -393,6 +394,8 @@ def delete_user(user_id: int, current_user: dict = Depends(require_admin)):
 # --- Employee Management (Owner, CEO & HR) ---
 
 MAX_PHOTO_DIMENSION = 1024
+# Raise to 3 or more once the employee form can send several photos
+MIN_PHOTOS_PER_EMPLOYEE = 1
 
 def _save_resized_photo(upload_file, destination_path):
     with open(destination_path, "wb") as buffer:
@@ -408,6 +411,26 @@ def _clear_face_cache():
     for f in os.listdir(KNOWN_FACES_DIR):
         if f.startswith("representations_") or f.endswith(".pkl"):
             os.remove(os.path.join(KNOWN_FACES_DIR, f))
+    # Tell the recognizer the photos changed, and drop cached employee lookups
+    invalidate_gallery()
+    invalidate_employee_cache()
+
+def _move_over(src, dst):
+    try:
+        os.replace(src, dst)
+    except OSError:
+        shutil.copyfile(src, dst)
+        os.remove(src)
+
+def _same_path(a, b):
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+def _tmp_photo_path():
+    os.makedirs("snapshots", exist_ok=True)
+    return os.path.join("snapshots", f"tmp_{uuid.uuid4().hex}.jpg")
 
 def _upload_photo_async(local_path, remote_path):
     try:
@@ -449,8 +472,11 @@ async def add_employee(
 ):
     if shift_start == shift_end:
         raise HTTPException(status_code=400, detail="Shift start and end time cannot be the same.")
-    if len(photos) == 0:
-        raise HTTPException(status_code=400, detail="At least one photo is required.")
+    if len(photos) < MIN_PHOTOS_PER_EMPLOYEE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At least {MIN_PHOTOS_PER_EMPLOYEE} photo(s) required (different angles and lighting work best)."
+        )
 
     with get_db() as conn:
         cur = conn.cursor()
@@ -464,31 +490,52 @@ async def add_employee(
         raise HTTPException(status_code=409, detail=f"An employee named '{name.strip()}' already exists.")
 
     folder_name = _safe_folder_name(name)
+    employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
+    if os.path.isdir(employee_folder) and os.listdir(employee_folder):
+        raise HTTPException(status_code=409, detail="A face folder with this name already exists. Use a different name.")
     for photo in photos:
         _validate_photo_upload(photo)
-    employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
+
     os.makedirs(employee_folder, exist_ok=True)
-
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO employees (name, shift_start, shift_end, photo_filename, designation, office_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-            (name, shift_start, shift_end, "", designation, OFFICE_ID)
-        )
-        employee_id = cur.fetchone()["id"]
-
+    saved = []
+    try:
         for i, photo in enumerate(photos):
             filename = f"photo_{i+1}.jpg"
             photo_path = os.path.join(employee_folder, filename)
             _save_resized_photo(photo, photo_path)
-            threading.Thread(target=_upload_photo_async, args=(photo_path, f"{FACES_REMOTE}/{folder_name}/{filename}"), daemon=True).start()
-            cur.execute(
-                "INSERT INTO employee_photos (employee_id, filename) VALUES (%s, %s)",
-                (employee_id, filename)
-            )
+            saved.append((filename, photo_path))
 
-        conn.commit()
-        cur.close()
+        problems = []
+        for i, (_fn, photo_path) in enumerate(saved):
+            ok, reason = await run_in_threadpool(check_gallery_photo, photo_path)
+            if not ok:
+                problems.append(f"photo {i+1}: {reason}")
+        if problems:
+            raise HTTPException(status_code=400, detail="Some photos can't be used for recognition - " + "; ".join(problems))
+
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO employees (name, shift_start, shift_end, photo_filename, designation, office_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+                (name, shift_start, shift_end, "", designation, OFFICE_ID)
+            )
+            employee_id = cur.fetchone()["id"]
+            for filename, _p in saved:
+                cur.execute(
+                    "INSERT INTO employee_photos (employee_id, filename) VALUES (%s, %s)",
+                    (employee_id, filename)
+                )
+            conn.commit()
+            cur.close()
+    except HTTPException:
+        shutil.rmtree(employee_folder, ignore_errors=True)
+        raise
+    except Exception as e:
+        shutil.rmtree(employee_folder, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=f"Could not process photos: {e}")
+
+    for filename, photo_path in saved:
+        threading.Thread(target=_upload_photo_async, args=(photo_path, f"{FACES_REMOTE}/{folder_name}/{filename}"), daemon=True).start()
 
     _clear_face_cache()
 
@@ -532,48 +579,93 @@ async def update_employee(
             (name.strip(), employee_id, OFFICE_ID),
         )
         clash = cur.fetchone()
+        cur.execute("SELECT * FROM employees WHERE id = %s AND office_id = %s", (employee_id, OFFICE_ID))
+        emp = cur.fetchone()
         cur.close()
     if clash:
         raise HTTPException(status_code=409, detail=f"An employee named '{name.strip()}' already exists.")
+    if emp is None:
+        return {"message": "Employee not found"}
 
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM employees WHERE id = %s AND office_id = %s", (employee_id, OFFICE_ID))
-        emp = cur.fetchone()
-        if emp is None:
+    old_name = emp["name"]
+    old_folder_name = _safe_folder_name(old_name)
+    new_folder_name = _safe_folder_name(name)
+    old_folder = os.path.join(KNOWN_FACES_DIR, old_folder_name)
+    new_folder = os.path.join(KNOWN_FACES_DIR, new_folder_name)
+    renaming = old_folder_name != new_folder_name
+
+    if renaming and os.path.exists(new_folder) and not _same_path(old_folder, new_folder):
+        raise HTTPException(status_code=409, detail="A face folder with this name already exists. Choose a different name.")
+
+    # Check the new photo BEFORE changing anything
+    tmp_photo = None
+    if photo is not None and photo.filename:
+        _validate_photo_upload(photo)
+        tmp_photo = _tmp_photo_path()
+        try:
+            _save_resized_photo(photo, tmp_photo)
+        except Exception as e:
+            if os.path.exists(tmp_photo):
+                os.remove(tmp_photo)
+            raise HTTPException(status_code=400, detail=f"Could not read the photo: {e}")
+        ok, reason = await run_in_threadpool(check_gallery_photo, tmp_photo)
+        if not ok:
+            os.remove(tmp_photo)
+            raise HTTPException(status_code=400, detail=f"Photo can't be used for recognition: {reason}")
+
+    folder_renamed = False
+    if renaming and os.path.exists(old_folder):
+        try:
+            os.rename(old_folder, new_folder)
+            folder_renamed = True
+        except OSError as e:
+            if tmp_photo and os.path.exists(tmp_photo):
+                os.remove(tmp_photo)
+            raise HTTPException(status_code=500, detail=f"Could not rename the face folder: {e}")
+
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE employees SET name = %s, shift_start = %s, shift_end = %s, designation = %s WHERE id = %s AND office_id = %s",
+                (name, shift_start, shift_end, designation, employee_id, OFFICE_ID)
+            )
+            conn.commit()
             cur.close()
-            return {"message": "Employee not found"}
+    except Exception:
+        # Put things back so the folder and the database name stay in step
+        if folder_renamed:
+            try:
+                os.rename(new_folder, old_folder)
+            except OSError:
+                pass
+        if tmp_photo and os.path.exists(tmp_photo):
+            os.remove(tmp_photo)
+        raise
 
-        old_name = emp["name"]
-        if old_name != name:
-            old_folder_name = _safe_folder_name(old_name)
-            new_folder_name = _safe_folder_name(name)
-            old_folder = os.path.join(KNOWN_FACES_DIR, old_folder_name)
-            new_folder = os.path.join(KNOWN_FACES_DIR, new_folder_name)
-            if os.path.exists(old_folder) and old_folder_name != new_folder_name:
-                if os.path.exists(new_folder):
-                    shutil.rmtree(old_folder)
-                else:
-                    os.rename(old_folder, new_folder)
-                storage.delete_prefix(f"{FACES_REMOTE}/{old_folder_name}")
-                _clear_face_cache()
+    if folder_renamed:
+        for fn in os.listdir(new_folder):
+            if os.path.splitext(fn)[1].lower() in ALLOWED_PHOTO_EXTENSIONS:
+                threading.Thread(
+                    target=_upload_photo_async,
+                    args=(os.path.join(new_folder, fn), f"{FACES_REMOTE}/{new_folder_name}/{fn}"),
+                    daemon=True
+                ).start()
+        try:
+            storage.delete_prefix(f"{FACES_REMOTE}/{old_folder_name}")
+        except Exception as e:
+            print(f"[update_employee] Could not delete old cloud photos: {e}")
 
-        if photo is not None and photo.filename:
-            _validate_photo_upload(photo)
-            folder_name = _safe_folder_name(name)
-            employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
-            os.makedirs(employee_folder, exist_ok=True)
-            photo_path = os.path.join(employee_folder, "photo_1.jpg")
-            _save_resized_photo(photo, photo_path)
-            threading.Thread(target=_upload_photo_async, args=(photo_path, f"{FACES_REMOTE}/{folder_name}/photo_1.jpg"), daemon=True).start()
-            _clear_face_cache()
+    if tmp_photo:
+        os.makedirs(new_folder, exist_ok=True)
+        photo_path = os.path.join(new_folder, "photo_1.jpg")
+        _move_over(tmp_photo, photo_path)
+        threading.Thread(target=_upload_photo_async, args=(photo_path, f"{FACES_REMOTE}/{new_folder_name}/photo_1.jpg"), daemon=True).start()
 
-        cur.execute(
-            "UPDATE employees SET name = %s, shift_start = %s, shift_end = %s, designation = %s WHERE id = %s AND office_id = %s",
-            (name, shift_start, shift_end, designation, employee_id, OFFICE_ID)
-        )
-        conn.commit()
-        cur.close()
+    if renaming or tmp_photo:
+        _clear_face_cache()
+    else:
+        invalidate_employee_cache()
 
     log_audit_event(
         username=current_user.get("username"),
@@ -585,6 +677,87 @@ async def update_employee(
     )
 
     return {"message": f"Employee {name} updated successfully"}
+
+@app.post("/employees/{employee_id}/photos", dependencies=[Depends(require_hr)])
+async def add_employee_photos(
+    employee_id: int,
+    photos: List[UploadFile] = File(...),
+    current_user: dict = Depends(require_hr)
+):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, name FROM employees WHERE id = %s AND office_id = %s", (employee_id, OFFICE_ID))
+        emp = cur.fetchone()
+        cur.close()
+    if emp is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    folder_name = _safe_folder_name(emp["name"])
+    employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
+    os.makedirs(employee_folder, exist_ok=True)
+
+    used = []
+    for f in os.listdir(employee_folder):
+        m = re.match(r"photo_(\d+)\.jpg$", f)
+        if m:
+            used.append(int(m.group(1)))
+    next_index = max(used, default=0) + 1
+
+    accepted, rejected = [], []
+    for photo in photos:
+        label = photo.filename or "photo"
+        try:
+            _validate_photo_upload(photo)
+        except HTTPException as e:
+            rejected.append({"file": label, "reason": e.detail})
+            continue
+
+        tmp = _tmp_photo_path()
+        try:
+            _save_resized_photo(photo, tmp)
+            ok, reason = await run_in_threadpool(check_gallery_photo, tmp)
+        except Exception as e:
+            ok, reason = False, f"Could not read image: {e}"
+        if not ok:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            rejected.append({"file": label, "reason": reason})
+            continue
+
+        filename = f"photo_{next_index}.jpg"
+        next_index += 1
+        dest = os.path.join(employee_folder, filename)
+        _move_over(tmp, dest)
+        accepted.append((filename, dest))
+
+    if not accepted:
+        raise HTTPException(
+            status_code=400,
+            detail="No usable photos. " + "; ".join(f"{r['file']}: {r['reason']}" for r in rejected)
+        )
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        for filename, _dest in accepted:
+            cur.execute("INSERT INTO employee_photos (employee_id, filename) VALUES (%s, %s)", (employee_id, filename))
+        conn.commit()
+        cur.close()
+
+    for filename, dest in accepted:
+        threading.Thread(target=_upload_photo_async, args=(dest, f"{FACES_REMOTE}/{folder_name}/{filename}"), daemon=True).start()
+
+    _clear_face_cache()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="EMPLOYEE_PHOTOS_ADDED",
+        target_module="Employees",
+        details=f"Added {len(accepted)} photo(s) for '{emp['name']}' ({len(rejected)} rejected)",
+        user_id=current_user.get("user_id")
+    )
+
+    return {"message": f"{len(accepted)} photo(s) added", "accepted": len(accepted), "rejected": rejected}
 
 @app.delete("/employees/{employee_id}", dependencies=[Depends(require_hr)])
 def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
@@ -600,15 +773,19 @@ def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
         conn.commit()
         cur.close()
 
+    folder_name = _safe_folder_name(emp["name"])
+    employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
     try:
-        folder_name = _safe_folder_name(emp["name"])
-        employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
         if os.path.exists(employee_folder):
             shutil.rmtree(employee_folder)
-        storage.delete_prefix(f"{FACES_REMOTE}/{folder_name}")
-        _clear_face_cache()
     except Exception as e:
         print(f"[delete_employee] Face folder cleanup failed for '{emp['name']}': {e}")
+    # Refresh first, so a cloud error below can't leave the deleted person matchable
+    _clear_face_cache()
+    try:
+        storage.delete_prefix(f"{FACES_REMOTE}/{folder_name}")
+    except Exception as e:
+        print(f"[delete_employee] Cloud photo cleanup failed for '{emp['name']}': {e}")
 
     log_audit_event(
         username=current_user.get("username"),
@@ -635,6 +812,7 @@ ALLOWED_SETTING_KEYS = {
     "notify_person",
     "min_matching_photos",
     "match_distance_threshold",
+    "match_margin",
     "overstay_low_threshold_min",
     "overstay_medium_threshold_min",
     "alert_dedupe_window_sec",
@@ -681,15 +859,17 @@ def update_app_setting(payload: AppSettingRequest):
             raise HTTPException(status_code=400, detail=f"{key} cannot be negative")
         value = str(number)
 
-    elif key == "match_distance_threshold":
+    elif key in {"match_distance_threshold", "match_margin"}:
         if value != "":
             try:
-                threshold = float(value)
+                number = float(value)
             except ValueError:
-                raise HTTPException(status_code=400, detail="match_distance_threshold must be a number")
-            if threshold < 0:
-                raise HTTPException(status_code=400, detail="match_distance_threshold cannot be negative")
-            value = str(threshold)
+                raise HTTPException(status_code=400, detail=f"{key} must be a number")
+            if number < 0:
+                raise HTTPException(status_code=400, detail=f"{key} cannot be negative")
+            if key == "match_margin" and number > 1:
+                raise HTTPException(status_code=400, detail="match_margin must be between 0 and 1")
+            value = str(number)
 
     try:
         set_setting(key, value)
