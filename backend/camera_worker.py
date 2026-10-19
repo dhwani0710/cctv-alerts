@@ -303,29 +303,31 @@ def draw_oriented_bbox(img, box, label="", color=(0, 0, 255), thickness=2, corne
 def _check_animals(frame, camera_id, camera_name, zone_name):
     try:
         objects = detect_objects(frame)
+        animals = [o for o in objects if o["kind"] == "animal"]
+        if not animals:
+            _animal_streak[camera_id] = 0
+            return
+
+        # require repeated sightings before alerting, to cut one-frame false positives
+        streak = _animal_streak.get(camera_id, 0) + 1
+        _animal_streak[camera_id] = streak
+        if streak < ANIMAL_STREAK_REQUIRED:
+            return
+
+        snapshot = frame
+        for a in animals:
+            snapshot = draw_oriented_bbox(
+                snapshot, a["box"], label=f'{a["label"]} {a["conf"]:.2f}',
+                color=(255, 140, 0), pad_ratio=0.05,
+            )
+
+        kinds = ", ".join(sorted({a["label"] for a in animals}))
+        msg = f"[{camera_name}] Animal detected: {kinds}"
+        log_alert("Animal", "animal", "medium", msg, frame=snapshot, camera_name=camera_name, zone_name=zone_name)
     except Exception as e:
-        print(f"[camera_worker] Object detection error on '{camera_name}': {type(e).__name__}: {e}")
-        return
-
-    animals = [o for o in objects if o["kind"] == "animal"]
-    if not animals:
-        _animal_streak[camera_id] = 0
-        return
-
-    # require repeated sightings before alerting, to cut one-frame false positives
-    streak = _animal_streak.get(camera_id, 0) + 1
-    _animal_streak[camera_id] = streak
-    if streak < ANIMAL_STREAK_REQUIRED:
-        return
-
-    snapshot = frame
-    for a in animals:
-        snapshot = draw_oriented_bbox(snapshot, a["box"], label=f'{a["label"]} {a["conf"]:.2f}', color=(255, 140, 0))
-
-    kinds = ", ".join(sorted({a["label"] for a in animals}))
-    msg = f"[{camera_name}] Animal detected: {kinds}"
-    log_alert("Animal", "animal", "medium", msg, frame=snapshot, camera_name=camera_name, zone_name=zone_name)
-
+        # never let animal detection stop face recognition on this frame
+        print(f"[camera_worker] Animal check error on '{camera_name}': {type(e).__name__}: {e}")
+        
 def _process_frame(frame, camera_id, camera_name):
     now = datetime.now()
     zone_name = _get_camera_zone(camera_id)

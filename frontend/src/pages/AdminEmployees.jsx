@@ -58,6 +58,8 @@ export default function AdminEmployees() {
 
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const [deleting, setDeleting] = useState(false);
+
   const loadStaff = useCallback(async () => {
     try {
       const res = await apiFetch('/employees');
@@ -201,15 +203,14 @@ export default function AdminEmployees() {
   }
 
   async function confirmDelete() {
-    if (!deleteTarget) return;
+    if (!deleteTarget || deleting) return;
+
+    setDeleting(true);
 
     try {
-      const res = await apiFetch(
-        `/employees/${deleteTarget.id}`,
-        {
-          method: 'DELETE',
-        }
-      );
+      const res = await apiFetch(`/employees/${deleteTarget.id}`, {
+        method: 'DELETE',
+      });
 
       if (res.ok) {
         setDeleteTarget(null);
@@ -220,6 +221,8 @@ export default function AdminEmployees() {
     } catch (error) {
       console.error('Error removing employee:', error);
       alert('Failed to remove employee');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -531,10 +534,12 @@ export default function AdminEmployees() {
             ? `Are you sure you want to remove ${deleteTarget.name}? This cannot be undone.`
             : ''
         }
-        confirmLabel="Remove"
+        confirmLabel={deleting ? 'Removing…' : 'Remove'}
         danger
         onConfirm={confirmDelete}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
       />
     </Shell>
   );

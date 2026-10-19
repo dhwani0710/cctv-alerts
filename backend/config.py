@@ -31,8 +31,7 @@ ESCALATION_MEDIUM_TO_HIGH_SEC = 3600  # 60 min unacknowledged
 
 SNAPSHOT_RETENTION_DAYS = 30
 
-DETECTOR_BACKEND = "yolo"     # change to "dfine" or "rfdetr" to switch
-DFINE_MODEL = "ustc-community/dfine-nano-coco"   # or ".../dfine-small-coco"
-RFDETR_SIZE = "nano"
+YOLO_MODEL = "yolo26n.pt"
 DETECT_CONF = 0.5
-ANIMAL_STREAK_REQUIRED = 2
+ANIMAL_CONF = 0.7
+ANIMAL_STREAK_REQUIRED = 3

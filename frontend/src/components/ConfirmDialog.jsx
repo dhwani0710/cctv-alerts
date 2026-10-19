@@ -13,7 +13,7 @@ export default function ConfirmDialog({ open, title, message, confirmLabel = 'Co
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button className="btn btn-outline" onClick={onCancel} disabled={loading}>Cancel</button>
           <button className={danger ? 'btn btn-danger' : 'btn btn-brass'} onClick={onConfirm} disabled={loading}>
-            {loading ? <><span className="spinner" /> Deleting…</> : confirmLabel}
+            {loading ? <><span className="spinner" /> Removing…</> : confirmLabel}
           </button>
         </div>
       </div>
