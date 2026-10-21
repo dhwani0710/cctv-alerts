@@ -16,4 +16,4 @@ pyjwt==2.15.1
 numpy
 Pillow
 imageio-ffmpeg
-ultralytics
+ultralytics==8.4.175
