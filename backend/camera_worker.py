@@ -16,10 +16,6 @@ from recognition import recognize_faces
 from alerts import get_alert_priority, is_within_store_hours, log_alert, format_duration, get_shift_datetimes, escalate_stale_incidents
 from database import get_db, OFFICE_ID
 from video_recorder import get_recorder
-from object_detector import detect_objects
-
-ANIMAL_STREAK_REQUIRED = getattr(config, "ANIMAL_STREAK_REQUIRED", 2)
-_animal_streak = {}
 
 # ---- tunables (override in config.py if you like) ----
 MOTION_GATE_ENABLED = getattr(config, "MOTION_GATE_ENABLED", True)
@@ -318,69 +314,6 @@ def draw_oriented_bbox(img, box, label="", color=(0, 0, 255), thickness=2, corne
 
     return annotated
 
-def _check_animals(frame, camera_id, camera_name, zone_name):
-    try:
-        objects = detect_objects(frame)
-        animals = [o for o in objects if o["kind"] == "animal"]
-        if not animals:
-            _animal_streak[camera_id] = 0
-            return
-
-        # require repeated sightings before alerting, to cut one-frame false positives
-        streak = _animal_streak.get(camera_id, 0) + 1
-        _animal_streak[camera_id] = streak
-        if streak < ANIMAL_STREAK_REQUIRED:
-            return
-
-        snapshot = frame
-        for a in animals:
-            snapshot = draw_oriented_bbox(
-                snapshot, a["box"], label=f'{a["label"]} {a["conf"]:.2f}',
-                color=(255, 140, 0), pad_ratio=0.05,
-            )
-
-        kinds = ", ".join(sorted({a["label"] for a in animals}))
-        msg = f"[{camera_name}] Animal detected: {kinds}"
-        log_alert("Animal", "animal", "medium", msg, frame=snapshot, camera_name=camera_name, zone_name=zone_name)
-    except Exception as e:
-        # never let animal detection stop face recognition on this frame
-        print(f"[camera_worker] Animal check error on '{camera_name}': {type(e).__name__}: {e}")
-        
-def _result_status(item):
-    """matched | unknown | uncertain. Falls back to the old behaviour if recognition gives no status."""
-    if isinstance(item, dict):
-        status = item.get("status")
-        if status:
-            return status
-        return "unknown" if item.get("name") == "Unknown" else "matched"
-    return "unknown" if item == "Unknown" else "matched"
-
-
-def _confirmed_names(camera_id, matched_names):
-    """Records this pass and returns the names seen in at least RECOG_VOTE_MIN_HITS recent passes."""
-    now = time.monotonic()
-    with _vote_lock:
-        hist = _vote_history.setdefault(camera_id, deque(maxlen=RECOG_VOTE_HISTORY))
-        hist.append((now, set(matched_names)))
-        while hist and now - hist[0][0] > RECOG_VOTE_WINDOW_SEC:
-            hist.popleft()
-        counts = {}
-        for _ts, names in hist:
-            for n in names:
-                counts[n] = counts.get(n, 0) + 1
-    return {n for n, c in counts.items() if c >= RECOG_VOTE_MIN_HITS}
-
-
-def _record_unknown(camera_id):
-    """Records a pass with a real stranger face and returns how many such passes are in the window."""
-    now = time.monotonic()
-    with _vote_lock:
-        hits = _unknown_hits.setdefault(camera_id, deque())
-        hits.append(now)
-        while hits and now - hits[0] > UNKNOWN_WINDOW_SEC:
-            hits.popleft()
-        return len(hits)
-
 
 def _result_status(item):
     """matched | unknown | uncertain. Falls back to the old behaviour if recognition gives no status."""
@@ -433,7 +366,6 @@ def _process_frame(frame, camera_id, camera_name):
     if MOTION_GATE_ENABLED and not _motion_gate_allows(camera_id, frame):
         return
 
-    _check_animals(frame, camera_id, camera_name, zone_name) 
     detections = recognize_faces(frame)
     _set_had_faces(camera_id, bool(detections))
 
@@ -616,7 +548,6 @@ def _cleanup_camera_state(camera_id):
     recognition_in_progress.pop(camera_id, None)
     _tampered.pop(camera_id, None)
     _motion_state.pop(camera_id, None)
-    _animal_streak.pop(camera_id, None)
     with _vote_lock:
         _vote_history.pop(camera_id, None)
         _unknown_hits.pop(camera_id, None)

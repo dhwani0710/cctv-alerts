@@ -198,9 +198,6 @@ def login(payload: LoginRequest):
     if not user or not verify_password(payload.password, user["password_hash"]):
         return {"ok": False, "error": "Incorrect username or password"}
 
-    # office_id NULL = owner/ceo with access to all offices
-    if user["office_id"] is not None and user["office_id"] != OFFICE_ID:
-        return {"ok": False, "error": "No access to this office"}
     # guard must have an office. All other roles see all offices.
     if user["role"] == "guard" and user["office_id"] is None:
         return {"ok": False, "error": "No office assigned to this guard"}
@@ -445,7 +442,6 @@ def delete_user(user_id: int, current_user: dict = Depends(require_admin)):
     )
 
     return {"message": "User deleted successfully"}
-
 
 # --- Employee Management (Owner, CEO & HR) ---
 
@@ -1061,7 +1057,7 @@ def get_records(
             ORDER BY timestamp DESC
             LIMIT 1
         ) a ON true
-        WHERE i.office_id = %s
+        WHERE 1=1
     """
     clause, p = office_sql(office_id, "i.office_id")
     base_query += clause
@@ -1754,7 +1750,7 @@ def list_incidents(status: str = None, limit: int = 100, office_id: Optional[int
                  ORDER BY r.timestamp DESC LIMIT 1)
             ) AS snapshot_filename
         FROM incidents i
-        WHERE i.office_id = %s
+        WHERE 1=1
     """
     clause, p = office_sql(office_id, "i.office_id")
     query += clause
