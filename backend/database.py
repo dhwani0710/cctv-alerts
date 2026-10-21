@@ -339,9 +339,11 @@ def get_db():
     conn = None
     broken = False
     try:
-        for _ in range(3):
-            c = p.getconn()
+        last_err = None
+        for attempt in range(5):
+            c = None
             try:
+                c = p.getconn()
                 if c.closed:
                     raise psycopg2.OperationalError("closed")
                 if time.monotonic() - _last_used.get(id(c), 0) > 20:
@@ -350,11 +352,17 @@ def get_db():
                     c.rollback()
                 conn = c
                 break
-            except Exception:
-                _last_used.pop(id(c), None)
-                p.putconn(c, close=True)
+            except Exception as e:
+                last_err = e
+                if c is not None:
+                    _last_used.pop(id(c), None)
+                    try:
+                        p.putconn(c, close=True)
+                    except Exception:
+                        pass
+                time.sleep(min(2 ** attempt, 5) * 0.5)
         if conn is None:
-            raise psycopg2.OperationalError("no healthy db connection")
+            raise psycopg2.OperationalError(f"no healthy db connection: {last_err}")
         try:
             yield conn
         except (psycopg2.OperationalError, psycopg2.InterfaceError):
