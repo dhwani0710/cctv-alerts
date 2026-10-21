@@ -1,10 +1,18 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import Shell from '../components/Shell.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import useOffices from '../hooks/useOffices.js';
 
 const STATUS_LABEL = { high: 'Flagged', medium: 'Review', low: 'Clear' };
 const STATUS_PILL = { high: 'flag', medium: 'review', low: 'clear' };
+
+// local-time "today" as YYYY-MM-DD (toISOString would use UTC)
+function localTodayStr() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 // Small helper so every fetch on this page reports a consistent, readable
 // error instead of a raw status code or a swallowed network exception.
@@ -19,8 +27,10 @@ async function describeFetchError(res, fallback) {
 }
 
 export default function Records() {
-  const { session, apiFetch } = useAuth();
+  const { session, apiFetch, isSuperAdmin } = useAuth();
+  const { offices, officeName } = useOffices();
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
+  const [officeFilter, setOfficeFilter] = useState('');
   const [camera, setCamera] = useState('');
   const [status, setStatus] = useState('');
   const [date, setDate] = useState('');
@@ -42,6 +52,21 @@ export default function Records() {
   const [page, setPage] = useState(1);
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // Only super admins see the office column and picker; everyone else is
+  // already scoped to their own office by the backend.
+  const showOfficePicker = isSuperAdmin && offices.length > 1;
+  const colCount = showOfficePicker ? 10 : 9;
+
+  const visibleCameras = useMemo(
+    () => (officeFilter ? cameras.filter((c) => String(c.office_id) === officeFilter) : cameras),
+    [cameras, officeFilter]
+  );
+
+  function changeOffice(value) {
+    setOfficeFilter(value);
+    setCamera(''); // the selected camera may belong to a different office
+  }
 
   function toggleSelectAll(e) {
     const pageIds = records.map((r) => r.id);
@@ -102,16 +127,40 @@ export default function Records() {
   }
 
   async function handleExport() {
+    const today = localTodayStr();
+
+    // nothing to export
+    if (total === 0) {
+      setExportError('No records to export.');
+      return;
+    }
+    // a future date can only contain upcoming records
+    if (date && date > today) {
+      setExportError('No records to export for a future date.');
+      return;
+    }
+
     setExporting(true);
     setExportError(null);
     try {
       const params = new URLSearchParams();
+      if (isSuperAdmin && officeFilter) params.append('office_id', officeFilter);
       if (camera) params.append('camera', camera);
       if (status) params.append('status', status);
       if (date) params.append('date', date);
+      params.append('end_date', today); // never export anything after today
       const res = await apiFetch(`/records/export?${params}`);
       if (!res.ok) throw new Error(await describeFetchError(res, 'Export failed'));
       const blob = await res.blob();
+
+      // header-only (or empty) file means there was nothing to export
+      const text = await blob.text();
+      const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
+      if (lines.length <= 1) {
+        setExportError('No records to export.');
+        return;
+      }
+
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -144,6 +193,7 @@ export default function Records() {
     setRecordsError(null);
     try {
       const params = new URLSearchParams();
+      if (isSuperAdmin && officeFilter) params.append('office_id', officeFilter);
       if (camera) params.append('camera', camera);
       if (status) params.append('status', status);
       if (date) params.append('date', date);
@@ -161,11 +211,13 @@ export default function Records() {
     } finally {
       setLoadingRecords(false);
     }
-  }, [apiFetch, camera, status, date, page]);
+  }, [apiFetch, isSuperAdmin, officeFilter, camera, status, date, page]);
 
   useEffect(() => { loadCameras(); }, [loadCameras]);
   useEffect(() => { loadRecords(); }, [loadRecords]);
-  useEffect(() => { setPage(1); }, [camera, status, date]);
+  useEffect(() => { setPage(1); }, [officeFilter, camera, status, date]);
+  // a stale export message shouldn't outlive the filters it was about
+  useEffect(() => { setExportError(null); }, [officeFilter, camera, status, date]);
 
   return (
     <Shell active="records" title="Records">
@@ -194,16 +246,26 @@ export default function Records() {
         </div>
       )}
       {exportError && (
-        <div className="banner banner-error">
+        <div className="banner banner-error" role="alert">
           <span>{exportError}</span>
-          <button onClick={handleExport}>Retry</button>
+          <button onClick={() => setExportError(null)}>Dismiss</button>
         </div>
       )}
 
       <div className="filter-bar">
+        {showOfficePicker && (
+          <select value={officeFilter} onChange={(e) => changeOffice(e.target.value)}>
+            <option value="">All offices</option>
+            {offices.map((o) => <option key={o.id} value={String(o.id)}>{o.name}</option>)}
+          </select>
+        )}
         <select value={camera} onChange={(e) => setCamera(e.target.value)} disabled={!!camerasError}>
           <option value="">All cameras</option>
-          {cameras.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {visibleCameras.map((c) => (
+            <option key={c.id} value={c.id}>
+              {showOfficePicker && !officeFilter ? `${c.name} · ${officeName(c.office_id)}` : c.name}
+            </option>
+          ))}
         </select>
         <select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
@@ -211,7 +273,12 @@ export default function Records() {
           <option value="flag">Flagged</option>
           <option value="review">Needs review</option>
         </select>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input
+          type="date"
+          value={date}
+          max={localTodayStr()}
+          onChange={(e) => setDate(e.target.value)}
+        />
         <div className="filter-actions">
           <label className="select-all">
             <input
@@ -228,7 +295,12 @@ export default function Records() {
             </button>
           )}
           {isAdmin && (
-            <button className="btn btn-brass" onClick={handleExport} disabled={exporting}>
+            <button
+              className="btn btn-brass"
+              onClick={handleExport}
+              disabled={exporting || loadingRecords || total === 0}
+              title={total === 0 ? 'No records to export' : 'Export CSV'}
+            >
               {exporting ? <><span className="spinner" /> Exporting…</> : 'Export CSV'}
             </button>
           )}
@@ -250,6 +322,7 @@ export default function Records() {
                 </th>
                 <th style={{ textAlign: 'center' }}>Date</th>
                 <th style={{ textAlign: 'center' }}>Time</th>
+                {showOfficePicker && <th style={{ textAlign: 'center' }}>Office</th>}
                 <th style={{ textAlign: 'center' }}>Camera</th>
                 <th style={{ textAlign: 'center' }}>Zone</th>
                 <th style={{ textAlign: 'center' }}>Person</th>
@@ -261,14 +334,14 @@ export default function Records() {
             <tbody>
               {loadingRecords && (
                 <tr>
-                  <td colSpan={9} className="table-empty-state">
+                  <td colSpan={colCount} className="table-empty-state">
                     <span className="spinner" /> Loading records…
                   </td>
                 </tr>
               )}
               {!loadingRecords && recordsError && (
                 <tr>
-                  <td colSpan={9} className="table-empty-state">
+                  <td colSpan={colCount} className="table-empty-state">
                     <div className="banner banner-error" style={{ margin: '0 auto', display: 'inline-flex' }}>
                       <span>{recordsError}</span>
                       <button onClick={loadRecords}>Retry</button>
@@ -288,6 +361,9 @@ export default function Records() {
                   </td>
                   <td className="mono" data-label="Date">{new Date(r.timestamp).toLocaleDateString()}</td>
                   <td className="mono" data-label="Time">{new Date(r.timestamp).toLocaleTimeString()}</td>
+                  {showOfficePicker && (
+                    <td data-label="Office">{r.office_name || officeName(r.office_id)}</td>
+                  )}
                   <td data-label="Camera">{r.camera_name}</td>
                   <td data-label="Zone">{r.zone_name || '-'}</td>
                   <td data-label="Person">{(r.person_name || '').startsWith('Unknown@') ? 'Unknown' : (r.person_name || '')}</td>
@@ -297,7 +373,7 @@ export default function Records() {
                 </tr>
               ))}
               {!loadingRecords && !recordsError && records.length === 0 && (
-                <tr><td colSpan={9} className="table-empty-state">No records match these filters.</td></tr>
+                <tr><td colSpan={colCount} className="table-empty-state">No records match these filters.</td></tr>
               )}
             </tbody>
           </table>

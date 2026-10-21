@@ -13,18 +13,25 @@ const ALERT_TYPE_LABELS = {
   overstay: 'Overstay',
 };
 
-function formatIncident(a) {
-  const label = ALERT_TYPE_LABELS[a.alert_type] || a.alert_type;
-  const who = a.person_name.startsWith('Unknown@') ? 'Unknown person' : a.person_name;
-  return `${label} — ${who}`;
+// local-time "today" as YYYY-MM-DD (toISOString would use UTC, which is still
+// yesterday in India between midnight and 5:30 am)
+function localTodayStr() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function formatTime(iso) {
-  try {
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return iso;
-  }
+function formatIncident(a) {
+  const label = ALERT_TYPE_LABELS[a.alert_type] || a.alert_type;
+  const name = a.person_name || '';
+  const who = name.startsWith('Unknown@') ? 'Unknown person' : name;
+  return who ? `${label} — ${who}` : label;
+}
+
+function formatTime(value) {
+  const d = new Date(value);
+  if (!value || Number.isNaN(d.getTime())) return '–';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function GuardOverview() {
@@ -35,7 +42,7 @@ function GuardOverview() {
   const [recordsToday, setRecordsToday] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localTodayStr();
 
   const load = useCallback(async () => {
     try {
@@ -130,7 +137,7 @@ function GuardOverview() {
             <div className="log-row" key={r.id}>
               <div className={`log-dot ${r.priority === 'high' ? 'alert' : r.priority === 'medium' ? 'info' : ''}`} />
               <div className="log-time">{formatTime(r.timestamp)}</div>
-              <div className="log-text">{r.person_name.replace('@front', '')}</div>
+              <div className="log-text">{(r.person_name || '').replace('@front', '')}</div>
               <div className="log-tag">{r.camera_name}</div>
             </div>
           ))}
@@ -149,7 +156,7 @@ function StaffAttendanceOverview() {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localTodayStr();
 
   const loadAttendance = useCallback(async () => {
     try {
@@ -171,6 +178,12 @@ function StaffAttendanceOverview() {
     return () => clearInterval(interval);
   }, [loadAttendance]);
 
+  // Attendance rows can also be "pending" (shift not started) or absent.
+  // Only people who have actually been seen count as present.
+  const present = records
+    .filter((r) => r.status === 'present' || r.status === 'late')
+    .sort((a, b) => new Date(b.last_seen || 0) - new Date(a.last_seen || 0));
+
   return (
     <>
       <div className="page-head">
@@ -182,7 +195,7 @@ function StaffAttendanceOverview() {
       <div className="stat-grid">
         <div className="stat-card good">
           <span className="eyebrow">Employees present</span>
-          <div className="value">{loading ? '–' : records.length}</div>
+          <div className="value">{loading ? '–' : present.length}</div>
           <div className="delta">As of {formatTime(new Date().toISOString())}</div>
         </div>
       </div>
@@ -202,16 +215,16 @@ function StaffAttendanceOverview() {
             <Link className="link-btn" to="/attendance">View all →</Link>
           </div>
           {loading && <Loader compact />}
-          {records.slice(0, 5).map((r, i) => (
+          {present.slice(0, 5).map((r, i) => (
             <div className="log-row" key={i}>
               <div className="log-dot info" />
               <div className="log-time">{formatTime(r.last_seen)}</div>
               <div className="log-text">{r.name}</div>
-              <div className="log-tag">Present</div>
+              <div className="log-tag">{r.status === 'late' ? 'Late' : 'Present'}</div>
             </div>
           ))}
 
-          {records.length === 0 && !loading && (
+          {present.length === 0 && !loading && (
             <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>
               No one checked in yet today.
             </p>

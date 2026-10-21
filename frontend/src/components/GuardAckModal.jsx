@@ -1,8 +1,10 @@
 import { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import useOffices from '../hooks/useOffices.js';
 
 export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
-  const { session: user, apiFetch } = useAuth();
+  const { session: user, apiFetch, isSuperAdmin } = useAuth();
+  const { officeName } = useOffices();
   const [notes, setNotes] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [proofPreview, setProofPreview] = useState(null);
@@ -13,9 +15,22 @@ export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
   const role = (user?.role || '').toLowerCase();
   const isGuard = role === 'guard';
 
+  // Guards and owners only ever see their own office, so only a super admin
+  // (who can acknowledge across offices) needs to be told which one this is.
+  const officeLabel =
+    alert.office_name ||
+    (alert.office_id != null && isSuperAdmin ? officeName(alert.office_id) : '');
+
+  // Incidents carry last_seen, raw alerts carry timestamp
+  const seenAt = new Date(alert.last_seen || alert.timestamp);
+  const seenText = Number.isNaN(seenAt.getTime())
+    ? ''
+    : seenAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (proofPreview) URL.revokeObjectURL(proofPreview);
       setProofFile(file);
       const url = URL.createObjectURL(file);
       setProofPreview(url);
@@ -191,10 +206,13 @@ export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
               {alert.message}
             </div>
             <div style={{ color: 'var(--text-muted)', fontSize: 12.5, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {alert.person_name && (
-                <span>Target: <b style={{ color: 'var(--text)' }}>{alert.person_name}</b></span>
+              {officeLabel && (
+                <span>Office: <b style={{ color: 'var(--text)' }}>{officeLabel}</b></span>
               )}
-              <span>&bull; Detected {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+              {alert.person_name && (
+                <span>{officeLabel ? '\u2022 ' : ''}Target: <b style={{ color: 'var(--text)' }}>{alert.person_name}</b></span>
+              )}
+              {seenText && <span>&bull; Detected {seenText}</span>}
             </div>
           </div>
 

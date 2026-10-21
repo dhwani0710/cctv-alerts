@@ -4,6 +4,7 @@ import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import AddCameraModal from '../components/AddCameraModal.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useStatus } from '../context/StatusContext.jsx';
+import useOffices from '../hooks/useOffices.js';
 import { GuardAckModal } from '../components/GuardAckModal';
 import Loader from '../components/Loader.jsx';
 
@@ -118,7 +119,8 @@ function AlertThumb({ src, onClick }) {
 }
 
 export default function CamerasAlerts() {
-  const { session, apiFetch } = useAuth();
+  const { session, apiFetch, isSuperAdmin, canAccessOffice } = useAuth();
+  const { offices, officeName } = useOffices();
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const canAckAlerts = ['owner', 'ceo', 'admin', 'guard'].includes(session.role);
   const { cameras, refreshCameras, statusLoaded } = useStatus();
@@ -136,6 +138,7 @@ export default function CamerasAlerts() {
   const [editCamTarget, setEditCamTarget] = useState(null);
   const [deletingCam, setDeletingCam] = useState(false);
 
+  const [officeFilter, setOfficeFilter] = useState('all');
   const [zoneFilter, setZoneFilter] = useState('all');
   const [cols, setCols] = useState('auto');
   const [ratios, setRatios] = useState({});
@@ -190,26 +193,44 @@ export default function CamerasAlerts() {
 
   const detectedList = Object.values(detected);
 
+  // Only super admins can switch offices. Everyone else is already scoped by the backend.
+  const showOfficePicker = isSuperAdmin && offices.length > 1;
+  const showOfficeLabels = showOfficePicker && officeFilter === 'all';
+
+  const changeOffice = useCallback((value) => {
+    setOfficeFilter(value);
+    setZoneFilter('all'); // zones belong to an office, so reset the zone chip too
+  }, []);
+
+  const officeCameras = useMemo(
+    () => (officeFilter === 'all' ? cameras : cameras.filter((c) => String(c.office_id) === officeFilter)),
+    [cameras, officeFilter]
+  );
+  const visibleIncidents = useMemo(
+    () => (officeFilter === 'all' ? incidents : incidents.filter((a) => String(a.office_id) === officeFilter)),
+    [incidents, officeFilter]
+  );
+
   const zones = useMemo(
-    () => [...new Set(cameras.map((c) => c.zone_name).filter(Boolean))],
-    [cameras]
+    () => [...new Set(officeCameras.map((c) => c.zone_name).filter(Boolean))],
+    [officeCameras]
   );
   const filtered = useMemo(
-    () => (zoneFilter === 'all' ? cameras : cameras.filter((c) => c.zone_name === zoneFilter)),
-    [cameras, zoneFilter]
+    () => (zoneFilter === 'all' ? officeCameras : officeCameras.filter((c) => c.zone_name === zoneFilter)),
+    [officeCameras, zoneFilter]
   );
   const counts = useMemo(() => {
     const c = { online: 0, offline: 0, tampered: 0 };
-    cameras.forEach((cam) => { c[camStatus(cam)] += 1; });
+    officeCameras.forEach((cam) => { c[camStatus(cam)] += 1; });
     return c;
-  }, [cameras]);
+  }, [officeCameras]);
 
   const sortedIncidents = useMemo(
-    () => [...incidents].sort((a, b) => {
+    () => [...visibleIncidents].sort((a, b) => {
       const r = (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3);
       return r !== 0 ? r : new Date(b.last_seen) - new Date(a.last_seen);
     }),
-    [incidents]
+    [visibleIncidents]
   );
 
   /* Auto: pick by camera count, capped by width.
@@ -257,7 +278,7 @@ export default function CamerasAlerts() {
       <div className="page-head">
         <span className="eyebrow">Live Monitoring</span>
         <h1>Cameras & alerts</h1>
-        <p>{cameras.length} camera{cameras.length === 1 ? '' : 's'}, monitored continuously. Tap a camera to enlarge it.</p>
+        <p>{officeCameras.length} camera{officeCameras.length === 1 ? '' : 's'}, monitored continuously. Tap a camera to enlarge it.</p>
       </div>
 
       <div className="cag-layout">
@@ -271,6 +292,23 @@ export default function CamerasAlerts() {
               </button>
             )}
           </div>
+
+          {showOfficePicker && (
+            <div className="cag-toolbar">
+              <button className={`cag-chip ${officeFilter === 'all' ? 'active' : ''}`} onClick={() => changeOffice('all')}>
+                All offices
+              </button>
+              {offices.map((o) => (
+                <button
+                  key={o.id}
+                  className={`cag-chip ${officeFilter === String(o.id) ? 'active' : ''}`}
+                  onClick={() => changeOffice(String(o.id))}
+                >
+                  {o.name}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="cag-toolbar">
             <button className={`cag-chip ${zoneFilter === 'all' ? 'active' : ''}`} onClick={() => setZoneFilter('all')}>
@@ -347,9 +385,11 @@ export default function CamerasAlerts() {
                     <div className="cam-meta">
                       <div style={{ minWidth: 0 }}>
                         <div className="name">{c.name}</div>
-                        <div className="zone">{c.zone_name}</div>
+                        <div className="zone">
+                          {showOfficeLabels ? `${officeName(c.office_id)} · ` : ''}{c.zone_name}
+                        </div>
                       </div>
-                      {isAdmin && (
+                      {isAdmin && canAccessOffice(c.office_id) && (
                         <div className="cam-actions">
                           <button
                             className="btn btn-outline btn-sm"
@@ -372,7 +412,9 @@ export default function CamerasAlerts() {
             </div>
             {!statusLoaded && <Loader text="Loading cameras…" />}
             {statusLoaded && filtered.length === 0 && (
-              <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No cameras in this zone.</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>
+                {officeFilter !== 'all' && zoneFilter === 'all' ? 'No cameras in this office.' : 'No cameras in this zone.'}
+              </p>
             )}
           </div>
         </div>
@@ -400,7 +442,7 @@ export default function CamerasAlerts() {
           <div className="panel cag-alerts">
             <div className="panel-head" style={{ flexShrink: 0 }}>
               <h2>Alerts</h2>
-              <span className="cag-live-tag"><span className="rec-dot" />LIVE · {incidents.length}</span>
+              <span className="cag-live-tag"><span className="rec-dot" />LIVE · {visibleIncidents.length}</span>
             </div>
             <div className="cag-alerts-list">
               {sortedIncidents.map((a) => {
@@ -417,6 +459,7 @@ export default function CamerasAlerts() {
                       </div>
                       <div className="cag-inc-title">{alertTitle(a)}</div>
                       <div className="cag-inc-meta">
+                        {showOfficeLabels && a.office_id != null ? `${officeName(a.office_id)} · ` : ''}
                         {a.camera_name || '-'} · {a.zone_name || '-'} · ×{a.alert_count}
                       </div>
                       <div className="cag-inc-actions">
@@ -436,7 +479,7 @@ export default function CamerasAlerts() {
                 );
               })}
               {incLoading && <Loader compact />}
-              {!incLoading && incidents.length === 0 && (
+              {!incLoading && visibleIncidents.length === 0 && (
                 <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No active alerts.</p>
               )}
             </div>
@@ -479,7 +522,9 @@ export default function CamerasAlerts() {
             <div className="cam-lightbox-head">
               <div>
                 <div className="name">{selected.name}</div>
-                <div className="zone">{selected.zone_name}</div>
+                <div className="zone">
+                  {showOfficeLabels ? `${officeName(selected.office_id)} · ` : ''}{selected.zone_name}
+                </div>
               </div>
               <button className="cam-lightbox-close" onClick={() => setSelected(null)} aria-label="Close">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -543,7 +588,11 @@ export default function CamerasAlerts() {
       />
 
       {showAddCamera && (
-        <AddCameraModal onClose={() => setShowAddCamera(false)} onAdded={refreshCameras} />
+        <AddCameraModal
+          defaultOfficeId={officeFilter !== 'all' ? officeFilter : undefined}
+          onClose={() => setShowAddCamera(false)}
+          onAdded={refreshCameras}
+        />
       )}
       {editCamTarget && (
         <AddCameraModal

@@ -35,6 +35,8 @@ MIN_FACE_PX = int(os.getenv("RECOG_MIN_FACE_PX", "30"))
 MIN_FACE_ASPECT = float(os.getenv("RECOG_MIN_ASPECT", "0.6"))
 MAX_FACE_ASPECT = float(os.getenv("RECOG_MAX_ASPECT", "1.4"))
 LOG_CONFIDENCE = os.getenv("RECOG_LOG_CONFIDENCE", "0") == "1"
+# Uploaded gallery photos: minimum face width in pixels.
+GALLERY_MIN_FACE_PX = int(os.getenv("RECOG_GALLERY_MIN_PX", "80"))
 
 # ---- identification quality ----
 # Faces smaller than this (ORIGINAL frame pixels) are detected but not identified ("uncertain").
@@ -200,6 +202,41 @@ def _build_gallery():
         "index": {f: np.array(ix) for f, ix in index.items()},
         "counts": counts,
     }
+
+
+def _gallery_embedding_strict(path):
+    """Returns (embedding_or_None, reason). Used only to vet uploaded photos.
+    Rejects: unreadable image, no clear face, tiny face, more than one face."""
+    img = cv2.imread(path)
+    if img is None:
+        return None, "Could not read image"
+    try:
+        reps = _represent(img, GALLERY_DETECTOR)
+    except Exception as e:
+        return None, f"Face detection failed: {e}"
+
+    good = [
+        r for r in (reps or [])
+        if r.get("face_confidence", 0.0) > MIN_FACE_CONFIDENCE
+        and _plausible_face(r, img.shape, 1.0)
+    ]
+    if not good:
+        return None, "No clear face found"
+    if len(good) > 1:
+        return None, "More than one face in photo"
+
+    best = good[0]
+    if best["facial_area"]["w"] < GALLERY_MIN_FACE_PX:
+        return None, "Face too small"
+    return _unit(best["embedding"]), ""
+
+
+def check_gallery_photo(path):
+    """Used by the employee upload endpoints. Returns (ok, reason)."""
+    if DeepFace is None:
+        return True, ""
+    emb, reason = _gallery_embedding_strict(path)
+    return emb is not None, reason
 
 
 _ver_lock = threading.Lock()

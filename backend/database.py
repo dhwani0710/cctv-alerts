@@ -260,14 +260,17 @@ def init_db():
             cursor.execute(
                 f"CREATE INDEX IF NOT EXISTS idx_{t}_office ON {t} (office_id)"
             )
-        # users.office_id NULL = all offices (owner/ceo)
+        # users.office_id: only guards are tied to an office. All other roles = NULL = all offices.
         cursor.execute(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_id "
             "INTEGER REFERENCES offices(id)"
         )
-        cursor.execute(
-            "UPDATE users SET office_id = 1 WHERE role IN ('guard','hr') AND office_id IS NULL"
-        )
+        cursor.execute("UPDATE users SET office_id = NULL WHERE role <> 'guard'")
+        cursor.execute("UPDATE users SET office_id = 1 WHERE role = 'guard' AND office_id IS NULL")
+
+        # Camera health stored in DB so a central server can read it
+        cursor.execute("ALTER TABLE cameras ADD COLUMN IF NOT EXISTS last_heartbeat TEXT")
+        cursor.execute("ALTER TABLE cameras ADD COLUMN IF NOT EXISTS tampered BOOLEAN NOT NULL DEFAULT FALSE")
 
         # Indexes — created AFTER the tables exist
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts (timestamp DESC)")

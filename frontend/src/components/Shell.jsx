@@ -92,6 +92,14 @@ const NAV_ICONS = {
   ),
 };
 
+// display names for the role shown under the user's name in the top bar
+const ROLE_LABEL = {
+  owner: 'Owner',
+  ceo: 'CEO',
+  hr: 'HR',
+  guard: 'Security Guard',
+};
+
 function useClock() {
   const [time, setTime] = useState('');
 
@@ -125,7 +133,7 @@ export default function Shell({
   title,
   children,
 }) {
-  const { session, logout } = useAuth();
+  const { session, logout, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
@@ -137,6 +145,16 @@ export default function Shell({
 
   const role = session?.role || 'employee';
   const name = session?.username || 'User';
+  const roleLabel = ROLE_LABEL[role] || role;
+
+  // Which office this login belongs to. Super admins (ceo) are not tied to one.
+  const officeLabel =
+    session?.officeName ||
+    (isSuperAdmin
+      ? 'All offices'
+      : session?.officeId != null
+        ? `Office ${session.officeId}`
+        : '');
 
   const isAdmin = role === 'ceo' || role === 'owner';
   const isGuard = role === 'guard';
@@ -340,23 +358,23 @@ export default function Shell({
               {clock}
             </span>
 
-            <span
-              className={`role-badge ${
-                isAdmin ? 'admin' : ''
-              }`}
-            >
-              {role}
-            </span>
-
-            <div className="user-chip">
+            <div className={`user-chip role-${role}`}>
               <div className="avatar">
                 {initials(name)}
               </div>
 
-              <span className="name">
-                {name}
-              </span>
+              <div className="user-meta">
+                <span className="name">{name}</span>
+                <span
+                  className="role-label"
+                  title={officeLabel ? `${roleLabel} · ${officeLabel}` : roleLabel}
+                >
+                  {roleLabel}{officeLabel ? ` · ${officeLabel}` : ''}
+                </span>
+              </div>
             </div>
+
+            <span className="topbar-divider" aria-hidden="true" />
 
             <ThemeToggle />
 

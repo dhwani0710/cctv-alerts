@@ -116,11 +116,27 @@ def update_attendance(employee_id, now, camera_id, shift_start_dt=None):
         cur.close()
 
 
-# Heartbeats live in memory: only this process reads them.
-# (If you ever run several uvicorn workers, move them back to the DB.)
+# Heartbeats are kept in memory for this process AND written to the cameras table
+# (throttled) so a central server can show camera status for every office.
+def _persist_heartbeat(camera_id):
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE cameras SET last_heartbeat = %s, tampered = %s WHERE id = %s",
+                (datetime.utcnow().isoformat(), bool(_tampered.get(camera_id)), camera_id)
+            )
+            conn.commit()
+            cur.close()
+    except Exception as e:
+        print(f"[camera_worker] heartbeat persist failed: {e}")
+
+
 def update_camera_heartbeat(camera_id, now):
     with _heartbeat_lock:
         _heartbeats[camera_id] = now
+    if _should_run(("hb_db", camera_id), 10):
+        threading.Thread(target=_persist_heartbeat, args=(camera_id,), daemon=True).start()
 
 
 def get_camera_heartbeat(camera_id):
@@ -330,6 +346,42 @@ def _check_animals(frame, camera_id, camera_name, zone_name):
         # never let animal detection stop face recognition on this frame
         print(f"[camera_worker] Animal check error on '{camera_name}': {type(e).__name__}: {e}")
         
+def _result_status(item):
+    """matched | unknown | uncertain. Falls back to the old behaviour if recognition gives no status."""
+    if isinstance(item, dict):
+        status = item.get("status")
+        if status:
+            return status
+        return "unknown" if item.get("name") == "Unknown" else "matched"
+    return "unknown" if item == "Unknown" else "matched"
+
+
+def _confirmed_names(camera_id, matched_names):
+    """Records this pass and returns the names seen in at least RECOG_VOTE_MIN_HITS recent passes."""
+    now = time.monotonic()
+    with _vote_lock:
+        hist = _vote_history.setdefault(camera_id, deque(maxlen=RECOG_VOTE_HISTORY))
+        hist.append((now, set(matched_names)))
+        while hist and now - hist[0][0] > RECOG_VOTE_WINDOW_SEC:
+            hist.popleft()
+        counts = {}
+        for _ts, names in hist:
+            for n in names:
+                counts[n] = counts.get(n, 0) + 1
+    return {n for n, c in counts.items() if c >= RECOG_VOTE_MIN_HITS}
+
+
+def _record_unknown(camera_id):
+    """Records a pass with a real stranger face and returns how many such passes are in the window."""
+    now = time.monotonic()
+    with _vote_lock:
+        hits = _unknown_hits.setdefault(camera_id, deque())
+        hits.append(now)
+        while hits and now - hits[0] > UNKNOWN_WINDOW_SEC:
+            hits.popleft()
+        return len(hits)
+
+
 def _result_status(item):
     """matched | unknown | uncertain. Falls back to the old behaviour if recognition gives no status."""
     if isinstance(item, dict):

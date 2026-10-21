@@ -7,23 +7,30 @@ import Loader from '../components/Loader.jsx';
 
 const ROLE_OPTIONS = ['ceo', 'owner', 'guard', 'hr'];
 
+// Select values are strings; ids from the API may be numbers.
+const toId = (v) => (v === '' || v == null ? null : Number.isNaN(Number(v)) ? v : Number(v));
+
 export default function AdminUsers() {
-  const { session, apiFetch } = useAuth();
+  const { session, apiFetch, isSuperAdmin, officeId: myOfficeId } = useAuth();
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
 
   const [users, setUsers] = useState([]);
+  const [offices, setOffices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [username, setUsername] = useState('');
   const [role, setRole] = useState('guard');
+  const [newOfficeId, setNewOfficeId] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [addError, setAddError] = useState('');
 
   const [roleFilter, setRoleFilter] = useState('');
+  const [officeFilter, setOfficeFilter] = useState('');
 
   const [editTarget, setEditTarget] = useState(null);
   const [editRole, setEditRole] = useState('');
+  const [editOfficeId, setEditOfficeId] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [editError, setEditError] = useState('');
 
@@ -42,14 +49,43 @@ export default function AdminUsers() {
     }
   }, [apiFetch]);
 
+  const loadOffices = useCallback(async () => {
+    try {
+      const res = await apiFetch('/offices');
+      if (res.ok) setOffices(await res.json());
+    } catch {
+      /* offices stay empty; forms fall back to the user's own office */
+    }
+  }, [apiFetch]);
+
   useEffect(() => { loadUsers(); }, [loadUsers]);
+  useEffect(() => { loadOffices(); }, [loadOffices]);
+
+  const officeName = useCallback(
+    (id) => {
+      if (id == null || id === '') return 'All offices';
+      const found = offices.find((o) => String(o.id) === String(id));
+      if (found) return found.name;
+      if (String(id) === String(myOfficeId) && session.officeName) return session.officeName;
+      return `Office ${id}`;
+    },
+    [offices, myOfficeId, session.officeName]
+  );
 
   const roles = useMemo(() => Array.from(new Set(users.map((u) => u.role))), [users]);
 
   const filteredUsers = useMemo(
-    () => users.filter((u) => !roleFilter || u.role === roleFilter),
-    [users, roleFilter]
+    () => users.filter((u) => {
+      if (roleFilter && u.role !== roleFilter) return false;
+      if (officeFilter) {
+        if (officeFilter === 'all') return u.office_id == null;
+        if (String(u.office_id) !== officeFilter) return false;
+      }
+      return true;
+    }),
+    [users, roleFilter, officeFilter]
   );
+
   async function handleSubmit(e) {
     e.preventDefault();
     setAddError('');
@@ -63,14 +99,26 @@ export default function AdminUsers() {
       return;
     }
 
+    // Only guard is tied to an office. Every other role sees all offices.
+    const targetOffice = isSuperAdmin ? toId(newOfficeId) : myOfficeId;
+    if (role === 'guard' && targetOffice == null) {
+      setAddError('Select an office for this guard.');
+      return;
+    }
+
     const res = await apiFetch('/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: username.trim(), password, role }),
+      body: JSON.stringify({
+        username: username.trim(),
+        password,
+        role,
+        office_id: role === 'guard' ? targetOffice : null,
+      }),
     });
     const data = await res.json();
     if (res.ok) {
-      setUsername(''); setPassword(''); setConfirmPassword(''); setRole('guard');
+      setUsername(''); setPassword(''); setConfirmPassword(''); setRole('guard'); setNewOfficeId('');
       setShowAdd(false);
       loadUsers();
     } else {
@@ -81,6 +129,7 @@ export default function AdminUsers() {
   function openEdit(u) {
     setEditTarget(u);
     setEditRole(u.role);
+    setEditOfficeId(u.office_id == null ? '' : String(u.office_id));
     setEditPassword('');
     setEditError('');
   }
@@ -88,6 +137,16 @@ export default function AdminUsers() {
   async function confirmEdit() {
     setEditError('');
     const body = { role: editRole };
+
+    if (isSuperAdmin) {
+      const targetOffice = toId(editOfficeId);
+      if (editRole === 'guard' && targetOffice == null) {
+        setEditError('Select an office for this guard.');
+        return;
+      }
+      body.office_id = editRole === 'guard' ? targetOffice : null;
+    }
+
     if (editPassword) {
       if (editPassword.length < 6) {
         setEditError('Password must be at least 6 characters.');
@@ -127,7 +186,7 @@ export default function AdminUsers() {
     <Shell active="users" title="Users">
       <div className="page-head">
         <h1>Login accounts</h1>
-        <p>Create logins and manage roles for admin, hr, and guard accounts.</p>
+        <p>Create logins and manage roles. Guards are tied to one office. All other roles see all offices.</p>
       </div>
 
       <div className="filter-bar">
@@ -135,6 +194,14 @@ export default function AdminUsers() {
           <option value="">All roles</option>
           {roles.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
+
+        {isSuperAdmin && (
+          <select value={officeFilter} onChange={(e) => setOfficeFilter(e.target.value)}>
+            <option value="">All offices</option>
+            {offices.map((o) => <option key={o.id} value={String(o.id)}>{o.name}</option>)}
+            <option value="all">All-office roles (no office)</option>
+          </select>
+        )}
 
         {isAdmin && (
           <button className="btn btn-brass filter-end" onClick={() => setShowAdd((v) => !v)}>+ Create user</button>
@@ -152,6 +219,17 @@ export default function AdminUsers() {
               <select value={role} onChange={(e) => setRole(e.target.value)}>
                 {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
+            </div>
+            <div className="field">
+              <label>Office</label>
+              {isSuperAdmin ? (
+                <select value={newOfficeId} onChange={(e) => setNewOfficeId(e.target.value)} disabled={role !== 'guard'}>
+                  <option value="">{role !== 'guard' ? 'All offices' : 'Select office…'}</option>
+                  {offices.map((o) => <option key={o.id} value={String(o.id)}>{o.name}</option>)}
+                </select>
+              ) : (
+                <input value={officeName(myOfficeId)} disabled readOnly />
+              )}
             </div>
             <div className="field"><label>Password</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required /></div>
             <div className="field"><label>Confirm password</label><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" required /></div>
@@ -175,6 +253,7 @@ export default function AdminUsers() {
             <div className="avatar">{initials(u.username)}</div>
             <div className="name">{u.username}</div>
             <div className="role">{u.role}</div>
+            <div className="row"><span>Office</span><span>{officeName(u.office_id)}</span></div>
             <div className="row"><span>Created</span><span>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</span></div>
             {isAdmin && (
               <div className="actions">
@@ -201,6 +280,17 @@ export default function AdminUsers() {
                 <select value={editRole} onChange={(e) => setEditRole(e.target.value)}>
                   {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
+              </div>
+              <div className="field">
+                <label>Office</label>
+                {isSuperAdmin ? (
+                  <select value={editOfficeId} onChange={(e) => setEditOfficeId(e.target.value)} disabled={editRole !== 'guard'}>
+                    <option value="">{editRole !== 'guard' ? 'All offices' : 'Select office…'}</option>
+                    {offices.map((o) => <option key={o.id} value={String(o.id)}>{o.name}</option>)}
+                  </select>
+                ) : (
+                  <input value={officeName(editTarget.office_id)} disabled readOnly />
+                )}
               </div>
               <div className="field"><label>New password (optional)</label><input type="password" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Leave blank to keep current password" autoComplete="new-password" /></div>
               <div className="modal-actions">

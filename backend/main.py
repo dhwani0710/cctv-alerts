@@ -24,7 +24,7 @@ from camera_worker import start_camera_threads, get_current_frame, start_health_
 from recognition import invalidate_gallery, check_gallery_photo
 from datetime import datetime, timedelta
 import config
-from auth import verify_token, require_admin, require_hr, require_guard, require_staff, require_owner
+from auth import verify_token, require_admin, require_hr, require_guard, require_staff, require_owner, get_office_id, office_sql, enforce_write_office
 from auth_users import verify_password, create_token, hash_password, VALID_ROLES
 from app_settings import get_all_settings, set_setting
 from settings_store import load_settings, save_settings
@@ -36,7 +36,7 @@ from retention import start_retention_thread, start_daily_reset_thread
 # Set RUN_CAMERAS=false on cloud hosts (e.g. Render) where the cameras can't be reached
 RUN_CAMERAS = os.getenv("RUN_CAMERAS", "true").strip().lower() == "true"
 
-app = FastAPI(title="Jewellery Store Alert System")
+app = FastAPI(title="Jewellery Store Alert System", dependencies=[Depends(enforce_write_office)])
 
 app.add_middleware(
     CORSMiddleware,
@@ -114,17 +114,24 @@ class CreateUserRequest(BaseModel):
     username: str
     password: str
     role: str
+    office_id: Optional[int] = None  # required for guard, ignored otherwise
 
 class UpdateUserRequest(BaseModel):
     role: Optional[str] = None
     password: Optional[str] = None
+    office_id: Optional[int] = None
 
 class UpdateAccountRequest(BaseModel):
     username: str
 
 @app.get("/auth/me")
 def get_me(current_user: dict = Depends(verify_token)):
-    return current_user
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT office_id FROM users WHERE id = %s", (current_user["user_id"],))
+        row = cur.fetchone()
+        cur.close()
+    return {**current_user, "office_id": row["office_id"] if row else None}
 
 @app.put("/auth/me")
 def update_own_account(req: UpdateAccountRequest, current_user: dict = Depends(verify_token)):
@@ -194,6 +201,9 @@ def login(payload: LoginRequest):
     # office_id NULL = owner/ceo with access to all offices
     if user["office_id"] is not None and user["office_id"] != OFFICE_ID:
         return {"ok": False, "error": "No access to this office"}
+    # guard must have an office. All other roles see all offices.
+    if user["role"] == "guard" and user["office_id"] is None:
+        return {"ok": False, "error": "No office assigned to this guard"}
 
     token = create_token(user["id"], user["username"], user["role"], remember=payload.remember_me)
 
@@ -206,12 +216,40 @@ def login(payload: LoginRequest):
         user_id=user["id"]
     )
 
+    office_name = None
+    if user["office_id"] is not None:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM offices WHERE id = %s", (user["office_id"],))
+            o = cur.fetchone()
+            cur.close()
+        office_name = o["name"] if o else None
+
     return {
         "ok": True,
         "role": user["role"],
         "username": user["username"],
+        "office_id": user["office_id"],
+        "office_name": office_name,
         "token": token
     }
+
+# --- Offices ---
+
+@app.get("/offices")
+def list_offices(current_user: dict = Depends(verify_token)):
+    with get_db() as conn:
+        cur = conn.cursor()
+        if current_user.get("role") == "guard":
+            cur.execute(
+                "SELECT o.id, o.name, o.city FROM offices o JOIN users u ON u.office_id = o.id WHERE u.id = %s",
+                (current_user["user_id"],)
+            )
+        else:
+            cur.execute("SELECT id, name, city FROM offices ORDER BY id")
+        rows = cur.fetchall()
+        cur.close()
+    return [dict(r) for r in rows]
 
 # --- System Audit Log (Owner Exclusive) ---
 
@@ -221,10 +259,12 @@ def get_audit_logs(
     module: Optional[str] = None,
     date: Optional[str] = None,
     search: Optional[str] = None,
-    limit: int = 200
+    limit: int = 200,
+    office_id: Optional[int] = Depends(get_office_id)
 ):
-    query = "SELECT id, user_id, username, user_role, action, target_module, details, proof_image, timestamp FROM audit_logs WHERE office_id = %s"
-    params = [OFFICE_ID]
+    clause, p = office_sql(office_id)
+    query = "SELECT id, office_id, user_id, username, user_role, action, target_module, details, proof_image, timestamp FROM audit_logs WHERE 1=1" + clause
+    params = list(p)
     if role:
         query += " AND LOWER(user_role) = %s"
         params.append(role.lower())
@@ -253,16 +293,18 @@ def get_audit_logs(
 # --- Video Recordings ---
 
 @app.get("/recordings", dependencies=[Depends(verify_token)])
-def get_recordings(page: int = 1, limit: int = 10):
+def get_recordings(page: int = 1, limit: int = 10, office_id: Optional[int] = Depends(get_office_id)):
     offset = (page - 1) * limit
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) as count FROM recordings WHERE office_id = %s", (OFFICE_ID,))
+        cur.execute("SELECT COUNT(*) as count FROM recordings WHERE 1=1" + clause, tuple(p))
         total = cur.fetchone()["count"]
 
         cur.execute(
-            "SELECT id, camera_id, camera_name, zone_name, timestamp, video_url FROM recordings WHERE office_id = %s ORDER BY timestamp DESC LIMIT %s OFFSET %s", 
-            (OFFICE_ID, limit, offset)
+            "SELECT id, office_id, camera_id, camera_name, zone_name, timestamp, video_url FROM recordings WHERE 1=1"
+            + clause + " ORDER BY timestamp DESC LIMIT %s OFFSET %s",
+            tuple(p + [limit, offset])
         )
         rows = cur.fetchall()
         cur.close()
@@ -274,10 +316,7 @@ def get_recordings(page: int = 1, limit: int = 10):
 def list_users():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(
-            "SELECT id, username, role, created_at FROM users WHERE office_id = %s OR office_id IS NULL ORDER BY id",
-            (OFFICE_ID,)
-        )
+        cur.execute("SELECT id, username, role, office_id, created_at FROM users ORDER BY id")
         rows = cur.fetchall()
         cur.close()
         return [dict(r) for r in rows]
@@ -290,9 +329,17 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
         raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(VALID_ROLES)}")
     if not username or not payload.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
+    if role == "guard" and payload.office_id is None:
+        raise HTTPException(status_code=400, detail="Guard needs an office")
+    new_office = payload.office_id if role == "guard" else None
 
     with get_db() as conn:
         cur = conn.cursor()
+        if new_office is not None:
+            cur.execute("SELECT 1 FROM offices WHERE id = %s", (new_office,))
+            if not cur.fetchone():
+                cur.close()
+                raise HTTPException(status_code=400, detail="Unknown office")
         cur.execute("SELECT id FROM users WHERE username = %s", (username,))
         if cur.fetchone():
             cur.close()
@@ -300,7 +347,7 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
 
         cur.execute(
             "INSERT INTO users (username, password_hash, role, office_id) VALUES (%s, %s, %s, %s)",
-            (username, hash_password(payload.password), role, None if role in ("owner", "ceo") else OFFICE_ID)
+            (username, hash_password(payload.password), role, new_office)
         )
         conn.commit()
         cur.close()
@@ -310,7 +357,7 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
         user_role=current_user.get("role"),
         action="USER_CREATED",
         target_module="Users",
-        details=f"Created user account '{username}' with role '{role}'",
+        details=f"Created user account '{username}' with role '{role}'" + (f" (office {new_office})" if new_office else ""),
         user_id=current_user.get("user_id")
     )
 
@@ -318,43 +365,51 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
 
 @app.put("/users/{user_id}", dependencies=[Depends(require_admin)])
 def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depends(require_admin)):
-    updates = []
-    params = []
-    if req.role:
-        role = req.role.strip().lower()
-        if role not in VALID_ROLES:
-            raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(VALID_ROLES)}")
-        updates.append("role = %s")
-        params.append(role)
-        updates.append("office_id = %s")
-        params.append(None if role in ("owner", "ceo") else OFFICE_ID)
-    if req.password:
-        updates.append("password_hash = %s")
-        params.append(hash_password(req.password))
-
-    if not updates:
-        raise HTTPException(status_code=400, detail="No updates provided")
-
-    params.extend([user_id, OFFICE_ID])
     with get_db() as conn:
         cur = conn.cursor()
+        cur.execute("SELECT id, role, office_id FROM users WHERE id = %s", (user_id,))
+        u = cur.fetchone()
+        if not u:
+            cur.close()
+            raise HTTPException(status_code=404, detail="User not found")
+
+        new_role = req.role.strip().lower() if req.role else u["role"]
+        if new_role not in VALID_ROLES:
+            cur.close()
+            raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(VALID_ROLES)}")
+        if new_role == "guard":
+            new_office = req.office_id if req.office_id is not None else u["office_id"]
+            if new_office is None:
+                cur.close()
+                raise HTTPException(status_code=400, detail="Guard needs an office")
+            cur.execute("SELECT 1 FROM offices WHERE id = %s", (new_office,))
+            if not cur.fetchone():
+                cur.close()
+                raise HTTPException(status_code=400, detail="Unknown office")
+        else:
+            new_office = None
+
+        updates = ["role = %s", "office_id = %s"]
+        params = [new_role, new_office]
+        if req.password:
+            updates.append("password_hash = %s")
+            params.append(hash_password(req.password))
+        params.append(user_id)
+
         cur.execute(
-            f"UPDATE users SET {', '.join(updates)} WHERE id = %s AND (office_id = %s OR office_id IS NULL) RETURNING id, username, role",
+            f"UPDATE users SET {', '.join(updates)} WHERE id = %s RETURNING id, username, role, office_id",
             tuple(params)
         )
         updated = cur.fetchone()
         conn.commit()
         cur.close()
 
-    if not updated:
-        raise HTTPException(status_code=404, detail="User not found")
-
     log_audit_event(
         username=current_user.get("username"),
         user_role=current_user.get("role"),
         action="USER_UPDATED",
         target_module="Users",
-        details=f"Updated user ID {user_id} (username: {updated['username']}, role: {updated['role']})",
+        details=f"Updated user ID {user_id} (username: {updated['username']}, role: {updated['role']}, office: {updated['office_id']})",
         user_id=current_user.get("user_id")
     )
 
@@ -368,8 +423,8 @@ def delete_user(user_id: int, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, username, role FROM users WHERE id = %s AND (office_id = %s OR office_id IS NULL)",
-            (user_id, OFFICE_ID)
+            "SELECT id, username, role FROM users WHERE id = %s",
+            (user_id,)
         )
         u = cur.fetchone()
         if not u:
@@ -390,6 +445,7 @@ def delete_user(user_id: int, current_user: dict = Depends(require_admin)):
     )
 
     return {"message": "User deleted successfully"}
+
 
 # --- Employee Management (Owner, CEO & HR) ---
 
@@ -551,10 +607,11 @@ async def add_employee(
     return {"message": f"Employee {name} added successfully with {len(photos)} photo(s)"}
 
 @app.get("/employees", dependencies=[Depends(require_hr)])
-def list_employees():
+def list_employees(office_id: Optional[int] = Depends(get_office_id)):
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM employees WHERE office_id = %s ORDER BY id ASC", (OFFICE_ID,))
+        cur.execute("SELECT * FROM employees WHERE 1=1" + clause + " ORDER BY id ASC", tuple(p))
         rows = cur.fetchall()
         cur.close()
         return [dict(row) for row in rows]
@@ -985,7 +1042,14 @@ async def acknowledge_alert(
 # --- Records & Ledgers (Owner & CEO) ---
 
 @app.get("/records", dependencies=[Depends(verify_token)])
-def get_records(camera: str = None, status: str = None, date: str = None, page: int = 1, limit: int = 10):
+def get_records(
+    camera: str = None,
+    status: str = None,
+    date: str = None,
+    page: int = 1,
+    limit: int = 10,
+    office_id: Optional[int] = Depends(get_office_id)
+):
     offset = (page - 1) * limit
 
     base_query = """
@@ -999,7 +1063,9 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
         ) a ON true
         WHERE i.office_id = %s
     """
-    params = [OFFICE_ID]
+    clause, p = office_sql(office_id, "i.office_id")
+    base_query += clause
+    params = list(p)
 
     if camera:
         base_query += " AND (i.camera_name = %s OR i.camera_name LIKE %s)"
@@ -1019,7 +1085,7 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
 
     count_query = "SELECT COUNT(*) AS count " + base_query
     data_query = """
-        SELECT i.id, i.person_name, i.alert_type, i.priority, i.camera_name, i.zone_name,
+        SELECT i.id, i.office_id, i.person_name, i.alert_type, i.priority, i.camera_name, i.zone_name,
             i.first_seen, i.last_seen, i.alert_count, i.status,
             a.message, a.snapshot_filename
     """ + base_query + " ORDER BY i.last_seen DESC LIMIT %s OFFSET %s"
@@ -1093,9 +1159,15 @@ def clear_all_records(current_user: dict = Depends(require_admin)):
     return {"message": "All records cleared", "alerts_deleted": alerts_deleted, "incidents_deleted": incidents_deleted}
 
 @app.get("/records/export", dependencies=[Depends(require_staff)])
-def export_records(camera: str = None, status: str = None, date: str = None):
-    query = "SELECT person_name, alert_type, priority, message, timestamp, camera_name FROM alerts WHERE office_id = %s"
-    params = [OFFICE_ID]
+def export_records(
+    camera: str = None,
+    status: str = None,
+    date: str = None,
+    office_id: Optional[int] = Depends(get_office_id)
+):
+    clause, p = office_sql(office_id)
+    query = "SELECT person_name, alert_type, priority, message, timestamp, camera_name FROM alerts WHERE 1=1" + clause
+    params = list(p)
 
     if camera:
         query += " AND (camera_name = %s OR camera_name LIKE %s)"
@@ -1188,9 +1260,13 @@ def _resolve_attendance_range(start_date=None, end_date=None, date=None):
     today = datetime.now().date().isoformat()
     return today, today
 
-def _build_attendance_filters(employee_id=None, zone_name=None, status=None, search=None):
-    where_clauses = ["emp.office_id = %s"]
-    params = [OFFICE_ID]
+def _build_attendance_filters(employee_id=None, zone_name=None, status=None, search=None, office_id=None):
+    where_clauses = []
+    params = []
+
+    if office_id is not None:
+        where_clauses.append("emp.office_id = %s")
+        params.append(office_id)
 
     if employee_id:
         where_clauses.append("emp.id = %s")
@@ -1223,10 +1299,11 @@ def get_attendance(
     status: Optional[str] = None,
     search: Optional[str] = None,
     page: int = 1,
-    limit: int = 20
+    limit: int = 20,
+    office_id: Optional[int] = Depends(get_office_id)
 ):
     range_start, range_end = _resolve_attendance_range(start_date, end_date, date)
-    where_sql, filter_params = _build_attendance_filters(employee_id, zone_name, status, search)
+    where_sql, filter_params = _build_attendance_filters(employee_id, zone_name, status, search, office_id)
 
     base_from = (
         "FROM employees emp "
@@ -1244,7 +1321,7 @@ def get_attendance(
 
         offset = max(0, (page - 1) * limit)
         data_query = (
-            "SELECT emp.id as employee_id, emp.name, emp.designation, emp.shift_start, emp.shift_end, "
+            "SELECT emp.id as employee_id, emp.office_id, emp.name, emp.designation, emp.shift_start, emp.shift_end, "
             "d.day::date::text as attendance_date, "
             "a.first_seen, a.last_seen, "
             "a.zone_name, "
@@ -1291,10 +1368,11 @@ def export_attendance(
     zone_name: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
-    format: Optional[str] = "csv"
+    format: Optional[str] = "csv",
+    office_id: Optional[int] = Depends(get_office_id)
 ):
     range_start, range_end = _resolve_attendance_range(start_date, end_date, date)
-    where_sql, filter_params = _build_attendance_filters(employee_id, zone_name, status, search)
+    where_sql, filter_params = _build_attendance_filters(employee_id, zone_name, status, search, office_id)
 
     base_from = (
         "FROM employees emp "
@@ -1428,60 +1506,68 @@ def override_attendance(req: AttendanceOverrideRequest):
 
 # --- Guard Alert Protocol & Status (Owner, CEO & Guard) ---
 
-
 @app.get("/status", dependencies=[Depends(require_guard)])
-def get_status():
+def get_status(office_id: Optional[int] = Depends(get_office_id)):
     now = datetime.now()
     cutoff = now - timedelta(seconds=config.CURRENTLY_DETECTED_TIMEOUT_SEC)
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("""
-            SELECT person_name,
-                MAX(last_seen) AS last_seen,
-                STRING_AGG(camera_name, ', ') AS camera_name
-            FROM currently_detected
-            WHERE last_seen > %s AND office_id = %s
-            GROUP BY person_name
-            ORDER BY MAX(last_seen) DESC
-        """, (cutoff.isoformat(), OFFICE_ID))
+        cur.execute(
+            "SELECT office_id, person_name, MAX(last_seen) AS last_seen, STRING_AGG(camera_name, ', ') AS camera_name "
+            "FROM currently_detected WHERE last_seen > %s" + clause +
+            " GROUP BY office_id, person_name ORDER BY MAX(last_seen) DESC",
+            tuple([cutoff.isoformat()] + p)
+        )
         detected_rows = cur.fetchall()
 
         cur.execute(
-            "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, status, acknowledged_by, acknowledged_at, ack_proof_image, ack_notes FROM alerts WHERE office_id = %s ORDER BY timestamp DESC LIMIT 20",
-            (OFFICE_ID,)
+            "SELECT id, office_id, person_name, alert_type, priority, message, timestamp, snapshot_filename, status, "
+            "acknowledged_by, acknowledged_at, ack_proof_image, ack_notes FROM alerts WHERE 1=1" + clause +
+            " ORDER BY timestamp DESC LIMIT 50",
+            tuple(p)
         )
         alert_rows = cur.fetchall()
         cur.close()
 
-    detected = [{"name": r["person_name"], "camera": r["camera_name"], "last_seen": r["last_seen"]} for r in detected_rows]
+    detected = [{"name": r["person_name"], "camera": r["camera_name"], "last_seen": r["last_seen"], "office_id": r["office_id"]} for r in detected_rows]
     alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
 
 # --- Camera Streaming & Management ---
 
 @app.get("/cameras", dependencies=[Depends(require_guard)])
-def list_cameras():
-    now = datetime.now()
+def list_cameras(office_id: Optional[int] = Depends(get_office_id)):
+    now = datetime.utcnow()
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras WHERE office_id = %s", (OFFICE_ID,))
+        cur.execute(
+            "SELECT id, name, zone_name, enabled, office_id, last_heartbeat, tampered FROM cameras WHERE 1=1"
+            + clause + " ORDER BY office_id, id",
+            tuple(p)
+        )
         rows = cur.fetchall()
         cur.close()
-    heartbeats = get_all_camera_heartbeats()
-    tampered = get_tampered_cameras()
     result = []
     for cam in rows:
-        heartbeat = heartbeats.get(cam["id"])
-        is_live = heartbeat is not None and (now - heartbeat).total_seconds() <= config.CAMERA_OFFLINE_THRESHOLD_SEC
+        hb = None
+        if cam["last_heartbeat"]:
+            try:
+                hb = datetime.fromisoformat(cam["last_heartbeat"])
+            except ValueError:
+                hb = None
+        is_live = hb is not None and (now - hb).total_seconds() <= config.CAMERA_OFFLINE_THRESHOLD_SEC
         if not is_live:
             cam_status = "offline"
-        elif cam["id"] in tampered:
+        elif cam["tampered"]:
             cam_status = "tampered"
         else:
             cam_status = "online"
         result.append({
             "id": cam["id"], "name": cam["name"], "zone_name": cam["zone_name"],
             "enabled": cam["enabled"], "live": is_live, "status": cam_status,
+            "office_id": cam["office_id"],
         })
     return result
 
@@ -1595,8 +1681,6 @@ def _seed_cameras_from_config():
             conn.commit()
         cur.close()
 
-
-    
 # --- Zones ---
 
 class ZoneRequest(BaseModel):
@@ -1604,10 +1688,11 @@ class ZoneRequest(BaseModel):
     name: str
 
 @app.get("/zones", dependencies=[Depends(verify_token)])
-def list_zones():
+def list_zones(office_id: Optional[int] = Depends(get_office_id)):
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name FROM zones WHERE office_id = %s ORDER BY id", (OFFICE_ID,))
+        cur.execute("SELECT id, name, office_id FROM zones WHERE 1=1" + clause + " ORDER BY office_id, id", tuple(p))
         rows = cur.fetchall()
         cur.close()
     return [dict(r) for r in rows]
@@ -1657,7 +1742,7 @@ def delete_zone(zone_id: str, current_user: dict = Depends(require_admin)):
 # --- Incidents ---
 
 @app.get("/incidents", dependencies=[Depends(verify_token)])
-def list_incidents(status: str = None, limit: int = 100):
+def list_incidents(status: str = None, limit: int = 100, office_id: Optional[int] = Depends(get_office_id)):
     query = """
         SELECT i.*,
             COALESCE(
@@ -1671,7 +1756,9 @@ def list_incidents(status: str = None, limit: int = 100):
         FROM incidents i
         WHERE i.office_id = %s
     """
-    params = [OFFICE_ID]
+    clause, p = office_sql(office_id, "i.office_id")
+    query += clause
+    params = list(p)
     if status:
         query += " AND i.status = %s"
         params.append(status)
@@ -1704,48 +1791,51 @@ def update_incident(incident_id: int, payload: IncidentUpdateRequest):
 # --- Reporting ---
 
 @app.get("/reports/attendance-summary", dependencies=[Depends(require_staff)])
-def attendance_summary(start_date: str = None, end_date: str = None):
+def attendance_summary(start_date: str = None, end_date: str = None, office_id: Optional[int] = Depends(get_office_id)):
     start_date = start_date or datetime.now().date().isoformat()
     end_date = end_date or start_date
+    clause, p = office_sql(office_id, "e.office_id")
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT e.name, a.attendance_date, a.first_seen, a.last_seen FROM attendance a "
+            "SELECT e.office_id, e.name, a.attendance_date, a.first_seen, a.last_seen FROM attendance a "
             "JOIN employees e ON e.id = a.employee_id "
-            "WHERE a.attendance_date BETWEEN %s AND %s AND e.office_id = %s "
-            "ORDER BY a.attendance_date DESC, e.name",
-            (start_date, end_date, OFFICE_ID)
+            "WHERE a.attendance_date BETWEEN %s AND %s" + clause +
+            " ORDER BY a.attendance_date DESC, e.name",
+            tuple([start_date, end_date] + p)
         )
         rows = cur.fetchall()
         cur.close()
     return [dict(r) for r in rows]
 
 @app.get("/reports/alert-frequency", dependencies=[Depends(require_staff)])
-def alert_frequency(start_date: str = None, end_date: str = None):
+def alert_frequency(start_date: str = None, end_date: str = None, office_id: Optional[int] = Depends(get_office_id)):
     start_date = start_date or datetime.now().date().isoformat()
     end_date = end_date or start_date
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             "SELECT alert_type, priority, COUNT(*) as count FROM alerts "
-            "WHERE timestamp BETWEEN %s AND %s AND office_id = %s "
-            "GROUP BY alert_type, priority ORDER BY count DESC",
-            (f"{start_date}T00:00:00", f"{end_date}T23:59:59", OFFICE_ID)
+            "WHERE timestamp BETWEEN %s AND %s" + clause +
+            " GROUP BY alert_type, priority ORDER BY count DESC",
+            tuple([f"{start_date}T00:00:00", f"{end_date}T23:59:59"] + p)
         )
         rows = cur.fetchall()
         cur.close()
     return [dict(r) for r in rows]
 
 @app.get("/reports/incident-response-times", dependencies=[Depends(require_staff)])
-def incident_response_times(start_date: str = None, end_date: str = None):
+def incident_response_times(start_date: str = None, end_date: str = None, office_id: Optional[int] = Depends(get_office_id)):
     start_date = start_date or datetime.now().date().isoformat()
     end_date = end_date or start_date
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, person_name, alert_type, priority, status, first_seen, last_seen, alert_count "
-            "FROM incidents WHERE first_seen BETWEEN %s AND %s AND office_id = %s ORDER BY first_seen DESC",
-            (f"{start_date}T00:00:00", f"{end_date}T23:59:59", OFFICE_ID)
+            "SELECT id, office_id, person_name, alert_type, priority, status, first_seen, last_seen, alert_count "
+            "FROM incidents WHERE first_seen BETWEEN %s AND %s" + clause + " ORDER BY first_seen DESC",
+            tuple([f"{start_date}T00:00:00", f"{end_date}T23:59:59"] + p)
         )
         rows = cur.fetchall()
         cur.close()
@@ -1784,16 +1874,36 @@ async def _mjpeg_generator(camera_id, request):
             yield offline_bytes
             await asyncio.sleep(1.0)
 
-@app.get("/snapshots/{filename:path}", dependencies=[Depends(verify_token)])
-def get_snapshot(filename: str):
+def _guard_must_be_local(current_user, office_id):
+    """Local disk and live frames belong to this server's office only."""
+    if current_user.get("role") == "guard" and office_id != OFFICE_ID:
+        raise HTTPException(status_code=403, detail="Not available for your office on this server")
+
+@app.get("/snapshots/{filename:path}")
+def get_snapshot(filename: str, current_user: dict = Depends(verify_token), office_id: Optional[int] = Depends(get_office_id)):
+    _guard_must_be_local(current_user, office_id)
     base = os.path.realpath("snapshots")
     target = os.path.realpath(os.path.join(base, filename))
     if not target.startswith(base + os.sep) or not os.path.isfile(target):
         raise HTTPException(status_code=404, detail="Snapshot not found")
     return FileResponse(target, media_type="image/jpeg")
 
-@app.get("/media", dependencies=[Depends(verify_token)])
-def get_media(u: str):
+@app.get("/media")
+def get_media(u: str, current_user: dict = Depends(verify_token), office_id: Optional[int] = Depends(get_office_id)):
+    if current_user.get("role") == "guard":
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT 1 FROM alerts WHERE (snapshot_filename = %s OR ack_proof_image = %s) AND office_id = %s "
+                "UNION ALL SELECT 1 FROM alert_records WHERE snapshot_filename = %s AND office_id = %s "
+                "UNION ALL SELECT 1 FROM recordings WHERE video_url = %s AND office_id = %s "
+                "UNION ALL SELECT 1 FROM audit_logs WHERE proof_image = %s AND office_id = %s LIMIT 1",
+                (u, u, office_id, u, office_id, u, office_id, u, office_id)
+            )
+            ok = cur.fetchone()
+            cur.close()
+        if not ok:
+            raise HTTPException(status_code=404, detail="Media not found")
     signed = storage.signed_url_for(u)
     if not signed:
         raise HTTPException(status_code=404, detail="Media not found")
@@ -1803,8 +1913,9 @@ def get_media(u: str):
         headers={"Cache-Control": "private, max-age=3000"},
     )
 
-@app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_token)])
-async def video_feed(camera_id: str, request: Request):
+@app.get("/video_feed/{camera_id}")
+async def video_feed(camera_id: str, request: Request, current_user: dict = Depends(verify_token), office_id: Optional[int] = Depends(get_office_id)):
+    _guard_must_be_local(current_user, office_id)
     return StreamingResponse(
         _mjpeg_generator(camera_id, request),
         media_type="multipart/x-mixed-replace; boundary=frame",
