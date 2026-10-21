@@ -2,9 +2,13 @@ import os
 import time
 import threading
 from datetime import datetime, timedelta
-from database import get_db
+from urllib.parse import unquote
+from database import get_db, OFFICE_ID
 import config
 import storage
+
+RECORDING_RETENTION_DAYS = getattr(config, "RECORDING_RETENTION_DAYS", 7)
+RECORDING_BATCH = 100
 
 CLEANUP_STARTUP_DELAY_SEC = 120
 CLEANUP_INTERVAL_SEC = 24 * 60 * 60
@@ -39,9 +43,9 @@ def _cleanup_table(table, extra_where, cutoff):
             cur = conn.cursor()
             cur.execute(
                 f"SELECT id, snapshot_filename FROM {table} "
-                f"WHERE timestamp < %s AND snapshot_filename IS NOT NULL {extra_where} "
+                f"WHERE timestamp < %s AND snapshot_filename IS NOT NULL AND office_id = %s {extra_where} "
                 f"ORDER BY id LIMIT %s",
-                (cutoff, CLEANUP_BATCH),
+                (cutoff, OFFICE_ID, CLEANUP_BATCH),
             )
             rows = cur.fetchall()
             cur.close()
@@ -73,14 +77,67 @@ def _cleanup_old_snapshots():
         print(f"[retention] Cleaned up {total} old snapshot(s)")
 
 
+def _recording_key(video_url):
+    marker = f"/storage/v1/object/public/{storage.BUCKET}/"
+    if not video_url or marker not in video_url:
+        return None
+    key = unquote(video_url.split(marker, 1)[1].split("?", 1)[0])
+    return None if ".." in key else key
+
+
+def _cleanup_old_recordings():
+    cutoff = (datetime.now() - timedelta(days=RECORDING_RETENTION_DAYS)).isoformat()
+    total = 0
+    while True:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id, video_url FROM recordings "
+                "WHERE timestamp < %s AND office_id = %s ORDER BY id LIMIT %s",
+                (cutoff, OFFICE_ID, RECORDING_BATCH),
+            )
+            rows = cur.fetchall()
+            cur.close()
+
+        if not rows:
+            break
+
+        keys = [k for k in (_recording_key(r["video_url"]) for r in rows) if k]
+        if keys and storage.supabase:
+            try:
+                storage.supabase.storage.from_(storage.BUCKET).remove(keys)
+            except Exception as e:
+                # Keep DB rows so the next run retries these files
+                print(f"[retention] Recording storage delete failed: {e}")
+                break
+
+        ids = [r["id"] for r in rows]
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM recordings WHERE id = ANY(%s)", (ids,))
+            conn.commit()
+            cur.close()
+
+        total += len(rows)
+        if len(rows) < RECORDING_BATCH:
+            break
+
+    if total:
+        print(f"[retention] Deleted {total} recording(s) older than {RECORDING_RETENTION_DAYS} days")
+
+
 def _retention_loop():
-    # Run once shortly after startup (the old loop slept 24h first, so restarts meant it never ran)
+    # Run once shortly after startup, then daily
     time.sleep(CLEANUP_STARTUP_DELAY_SEC)
     while True:
         try:
             _cleanup_old_snapshots()
         except Exception as e:
-            print(f"[retention] Error: {e}")
+            print(f"[retention] Snapshot error: {e}")
+        try:
+            _cleanup_old_recordings()
+        except Exception as e:
+            print(f"[retention] Recording error: {e}")
         time.sleep(CLEANUP_INTERVAL_SEC)
 
 
@@ -100,12 +157,12 @@ def _clear_daily_alerts():
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO alert_records (person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_name, zone_name, incident_id)
-            SELECT person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_name, zone_name, incident_id
-            FROM alerts WHERE permanent = FALSE
-        """)
-        cur.execute("DELETE FROM alerts WHERE permanent = FALSE")
-        cur.execute("DELETE FROM currently_detected")
+            INSERT INTO alert_records (person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_name, zone_name, incident_id, office_id)
+            SELECT person_name, alert_type, priority, message, timestamp, snapshot_filename, camera_name, zone_name, incident_id, office_id
+            FROM alerts WHERE permanent = FALSE AND office_id = %s
+        """, (OFFICE_ID,))
+        cur.execute("DELETE FROM alerts WHERE permanent = FALSE AND office_id = %s", (OFFICE_ID,))
+        cur.execute("DELETE FROM currently_detected WHERE office_id = %s", (OFFICE_ID,))
         conn.commit()
         cur.close()
     print("[daily-reset] Archived and cleared non-permanent alerts, cleared currently_detected at 5:30 PM")

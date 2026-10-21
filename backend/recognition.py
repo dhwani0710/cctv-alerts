@@ -30,15 +30,21 @@ LIVE_DETECTOR = os.getenv("RECOG_LIVE_DETECTOR", "mtcnn")
 MAX_DETECT_WIDTH = int(os.getenv("RECOG_MAX_WIDTH", "960"))
 
 # ---- false-face filtering (fixes boxes on hands, mice, mousepads, etc.) ----
-# Faces scoring at or below this are ignored. 0.9 works well for mtcnn; set 0 to disable.
 MIN_FACE_CONFIDENCE = float(os.getenv("RECOG_MIN_CONFIDENCE", "0.9"))
-# Minimum face width/height in ORIGINAL frame pixels. Lower it if distant real faces get missed.
 MIN_FACE_PX = int(os.getenv("RECOG_MIN_FACE_PX", "30"))
-# Real faces are roughly square (width / height). Reject boxes outside this range.
 MIN_FACE_ASPECT = float(os.getenv("RECOG_MIN_ASPECT", "0.6"))
 MAX_FACE_ASPECT = float(os.getenv("RECOG_MAX_ASPECT", "1.4"))
-# Set RECOG_LOG_CONFIDENCE=1 to log every detection's confidence/size while tuning.
 LOG_CONFIDENCE = os.getenv("RECOG_LOG_CONFIDENCE", "0") == "1"
+
+# ---- identification quality ----
+# Faces smaller than this (ORIGINAL frame pixels) are detected but not identified ("uncertain").
+IDENTIFY_MIN_FACE_PX = int(os.getenv("RECOG_IDENTIFY_MIN_PX", "70"))
+# Face-crop sharpness (variance of Laplacian). 0 = disabled. Tune using RECOG_LOG_CONFIDENCE=1.
+MIN_SHARPNESS = float(os.getenv("RECOG_MIN_SHARPNESS", "0"))
+# Gallery photos: minimum face width in pixels.
+GALLERY_MIN_FACE_PX = int(os.getenv("RECOG_GALLERY_MIN_PX", "80"))
+# Bump when gallery acceptance rules change so the disk cache rebuilds itself.
+GALLERY_RULES_VERSION = 2
 
 DEFAULT_THRESHOLDS = {
     "VGG-Face": 0.68,
@@ -76,7 +82,11 @@ def _load_disk_cache():
     try:
         with open(_CACHE_FILE, "rb") as f:
             data = pickle.load(f)
-        if data.get("model") == MODEL_NAME and data.get("detector") == GALLERY_DETECTOR:
+        if (
+            data.get("model") == MODEL_NAME
+            and data.get("detector") == GALLERY_DETECTOR
+            and data.get("rules") == GALLERY_RULES_VERSION
+        ):
             return data.get("items", {})
     except Exception:
         pass
@@ -88,17 +98,60 @@ def _save_disk_cache(items):
         os.makedirs(KNOWN_FACES_DIR, exist_ok=True)
         tmp = _CACHE_FILE + ".tmp"
         with open(tmp, "wb") as f:
-            pickle.dump({"model": MODEL_NAME, "detector": GALLERY_DETECTOR, "items": items}, f)
+            pickle.dump(
+                {
+                    "model": MODEL_NAME,
+                    "detector": GALLERY_DETECTOR,
+                    "rules": GALLERY_RULES_VERSION,
+                    "items": items,
+                },
+                f,
+            )
         os.replace(tmp, _CACHE_FILE)
     except Exception as e:
         print(f"[recognition] Could not save gallery cache: {e}")
+
+
+def _gallery_embedding(path, strict=False):
+    """Returns (embedding_or_None, reason). Rejects photos with no clear face
+    (including DeepFace's whole-image fallback), tiny faces, and (strict) multiple faces."""
+    img = cv2.imread(path)
+    if img is None:
+        return None, "Could not read image"
+    try:
+        reps = _represent(img, GALLERY_DETECTOR)
+    except Exception as e:
+        return None, f"Face detection failed: {e}"
+
+    good = [
+        r for r in (reps or [])
+        if r.get("face_confidence", 0.0) > MIN_FACE_CONFIDENCE
+        and _plausible_face(r, img.shape, 1.0)
+    ]
+    if not good:
+        return None, "No clear face found"
+    if strict and len(good) > 1:
+        return None, "More than one face in photo"
+
+    best = max(good, key=lambda r: r["facial_area"]["w"] * r["facial_area"]["h"])
+    if best["facial_area"]["w"] < GALLERY_MIN_FACE_PX:
+        return None, "Face too small"
+    return _unit(best["embedding"]), ""
+
+
+def check_gallery_photo(path):
+    """Used by the upload endpoints. Returns (ok, reason)."""
+    if DeepFace is None:
+        return True, ""
+    emb, reason = _gallery_embedding(path, strict=True)
+    return emb is not None, reason
 
 
 def _build_gallery():
     started = time.time()
     old_items = _load_disk_cache()
     new_items = {}
-    vecs, folders, counts = [], [], {}
+    vecs, folders = [], []
     reused = embedded = 0
 
     for root, _dirs, files in os.walk(KNOWN_FACES_DIR):
@@ -106,7 +159,6 @@ def _build_gallery():
         if not images:
             continue
         folder = os.path.basename(root)
-        counts[folder] = len(images)
 
         for fn in images:
             path = os.path.join(root, fn)
@@ -121,14 +173,9 @@ def _build_gallery():
                 emb = cached[1]
                 reused += 1
             else:
-                emb = None
-                try:
-                    reps = _represent(path, GALLERY_DETECTOR)
-                    if reps:
-                        best = max(reps, key=lambda r: r["facial_area"]["w"] * r["facial_area"]["h"])
-                        emb = _unit(best["embedding"])
-                except Exception as e:
-                    print(f"[recognition] Could not embed {path}: {e}")
+                emb, reason = _gallery_embedding(path)
+                if emb is None:
+                    print(f"[recognition] Skipping gallery photo {path}: {reason}. Replace it with a clearer photo.")
                 embedded += 1
 
             new_items[path] = (sig, emb)
@@ -141,12 +188,14 @@ def _build_gallery():
     index = {}
     for i, f in enumerate(folders):
         index.setdefault(f, []).append(i)
+    # Count only USABLE photos, so "min matching photos" can't exceed what a person really has.
+    counts = {f: len(ix) for f, ix in index.items()}
 
     print(f"[recognition] Gallery ready: {len(vecs)} embeddings, {len(counts)} people "
           f"({reused} cached, {embedded} new) in {time.time() - started:.1f}s")
 
     return {
-        "has_photos": bool(counts),
+        "has_photos": bool(vecs),
         "vecs": np.vstack(vecs) if vecs else None,
         "index": {f: np.array(ix) for f, ix in index.items()},
         "counts": counts,
@@ -230,12 +279,20 @@ def invalidate_settings_cache():
 def _get_match_settings():
     now = time.time()
     if _settings_cache["vals"] is None or now - _settings_cache["ts"] > _SETTINGS_TTL:
-        min_matching = get_setting_int("min_matching_photos") or 2
+        min_matching = get_setting_int("min_matching_photos")
+        if min_matching is None:
+            min_matching = 2
+        min_matching = max(1, min_matching)
+
         max_distance = get_setting_float("match_distance_threshold")
         if max_distance is None:
             max_distance = DEFAULT_THRESHOLDS.get(MODEL_NAME, 0.4)
         max_distance = min(max_distance, 0.40)
-        margin = get_setting_float("match_margin") or 0.05
+
+        margin = get_setting_float("match_margin")
+        if margin is None:
+            margin = 0.05
+
         _settings_cache.update(ts=now, vals=(min_matching, max_distance, margin))
     return _settings_cache["vals"]
 
@@ -243,6 +300,7 @@ def _get_match_settings():
 # --------------------------------------------------------------- matching
 
 def _identify(emb, gallery, min_matching, max_distance, margin):
+    """Returns (name, status, closest). status: matched | unknown | uncertain."""
     dists = 1.0 - gallery["vecs"] @ emb      # both unit vectors -> cosine distance
     candidates = []
     closest = None
@@ -258,16 +316,16 @@ def _identify(emb, gallery, min_matching, max_distance, margin):
             candidates.append((folder, float(close.mean())))
 
     if not candidates:
-        return "Unknown", closest
+        return "Unknown", "unknown", closest
 
     candidates.sort(key=lambda c: c[1])
     best_folder, best_avg = candidates[0]
     if len(candidates) > 1 and (candidates[1][1] - best_avg) < margin:
-        logger.debug("Ambiguous: %s (%.3f) vs runner-up (%.3f), rejecting both",
+        logger.debug("Ambiguous: %s (%.3f) vs runner-up (%.3f), uncertain",
                      best_folder, best_avg, candidates[1][1])
-        return "Unknown", closest
+        return "Unknown", "uncertain", closest
 
-    return best_folder.replace("_", " ").strip(), closest
+    return best_folder.replace("_", " ").strip(), "matched", closest
 
 
 def _downscale(frame):
@@ -286,17 +344,13 @@ def _plausible_face(r, work_shape, scale):
     if w <= 0 or h <= 0:
         return False
 
-    # Size in ORIGINAL frame pixels
     if (w / scale) < MIN_FACE_PX or (h / scale) < MIN_FACE_PX:
         return False
 
-    # Faces are roughly square
     aspect = w / h
     if not (MIN_FACE_ASPECT <= aspect <= MAX_FACE_ASPECT):
         return False
 
-    # DeepFace returns the whole image as the "face" when nothing is detected
-    # (enforce_detection=False). Reject that fallback.
     work_h, work_w = work_shape[:2]
     if w >= 0.95 * work_w and h >= 0.95 * work_h:
         return False
@@ -304,10 +358,24 @@ def _plausible_face(r, work_shape, scale):
     return True
 
 
+def _sharpness(frame, box):
+    """Variance of the Laplacian of the face crop (original-resolution frame)."""
+    x, y, w, h = box
+    H, W = frame.shape[:2]
+    x0, y0 = max(0, x), max(0, y)
+    x1, y1 = min(W, x + w), min(H, y + h)
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+    gray = cv2.cvtColor(frame[y0:y1, x0:x1], cv2.COLOR_BGR2GRAY)
+    gray = cv2.resize(gray, (112, 112), interpolation=cv2.INTER_AREA)
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
 def recognize_faces(frame, with_boxes=False):
     """Takes a BGR frame (OpenCV) and returns a list of
-    {"name": <employee name or "Unknown">, "box": (x, y, w, h)} dicts,
-    one per detected face, with boxes in the original frame's coordinates.
+    {"name": <employee name or "Unknown">, "box": (x, y, w, h), "status": "matched"|"unknown"|"uncertain"}
+    dicts, one per detected face, with boxes in the original frame's coordinates.
+    "uncertain" = face too small/blurry or ambiguous between two people: do not treat as a stranger.
     An empty list means no faces were detected.
     (with_boxes is kept for backwards compatibility and ignored.)"""
     if DeepFace is None or frame is None:
@@ -327,7 +395,6 @@ def recognize_faces(frame, with_boxes=False):
             print(f"[recognition] detection conf={r.get('face_confidence')} "
                   f"size={a['w']}x{a['h']} (work px, scale={scale:.2f})")
 
-    # Missing confidence is treated as 0 (rejected), not as a perfect score.
     faces = [
         r for r in reps
         if r.get("face_confidence", 0.0) > MIN_FACE_CONFIDENCE
@@ -344,14 +411,28 @@ def recognize_faces(frame, with_boxes=False):
         a = r["facial_area"]
         box = (int(a["x"] / scale), int(a["y"] / scale), int(a["w"] / scale), int(a["h"] / scale))
 
-        if gallery["vecs"] is None:
-            name = "Unknown"
-        else:
-            name, closest = _identify(_unit(r["embedding"]), gallery, *settings)
-            if closest is not None and name != "Unknown":
-                logger.debug("Face -> %s | closest: %s, %d/%d photo(s) within %.2f, best %.3f",
-                             name, closest[0], closest[2], closest[3], settings[1], closest[1])
+        if min(box[2], box[3]) < IDENTIFY_MIN_FACE_PX:
+            if LOG_CONFIDENCE:
+                print(f"[recognition] uncertain: face too small to identify ({box[2]}x{box[3]}px)")
+            results.append({"name": "Unknown", "box": box, "status": "uncertain"})
+            continue
 
-        results.append({"name": name, "box": box})
+        if MIN_SHARPNESS > 0 or LOG_CONFIDENCE:
+            sharp = _sharpness(frame, box)
+            if LOG_CONFIDENCE:
+                print(f"[recognition] face sharpness={sharp:.1f} size={box[2]}x{box[3]}px")
+            if MIN_SHARPNESS > 0 and sharp < MIN_SHARPNESS:
+                results.append({"name": "Unknown", "box": box, "status": "uncertain"})
+                continue
+
+        if gallery["vecs"] is None:
+            name, status = "Unknown", "unknown"
+        else:
+            name, status, closest = _identify(_unit(r["embedding"]), gallery, *settings)
+            if closest is not None:
+                logger.debug("Face -> %s (%s) | closest: %s, %d/%d photo(s) within %.2f, best %.3f",
+                             name, status, closest[0], closest[2], closest[3], settings[1], closest[1])
+
+        results.append({"name": name, "box": box, "status": status})
 
     return results

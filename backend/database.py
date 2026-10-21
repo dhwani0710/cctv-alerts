@@ -11,8 +11,10 @@ from psycopg2 import pool
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
+OFFICE_ID = int(os.getenv("OFFICE_ID", "1"))
 
 print("[db] using:", DATABASE_URL.split("@")[-1] if DATABASE_URL else "NOT SET")
+print("[db] office id:", OFFICE_ID)
 
 _POOL_MAX = 40
 _pool_sem = threading.BoundedSemaphore(_POOL_MAX)
@@ -128,23 +130,25 @@ def init_db():
         cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS override_reason TEXT")
         cursor.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS is_override BOOLEAN DEFAULT FALSE")
 
-        # ---- currently_detected: one row per (person, camera) ----
+        # ---- currently_detected: one row per (office, person, camera) ----
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS currently_detected (
                 person_name TEXT NOT NULL,
                 camera_name TEXT NOT NULL,
-                last_seen TEXT NOT NULL,
-                PRIMARY KEY (person_name, camera_name)
+                last_seen TEXT NOT NULL
             )
         """)
         cursor.execute("ALTER TABLE currently_detected ADD COLUMN IF NOT EXISTS camera_name TEXT")
         cursor.execute("ALTER TABLE currently_detected DROP COLUMN IF EXISTS camera_id")
+        cursor.execute("ALTER TABLE currently_detected ADD COLUMN IF NOT EXISTS office_id INTEGER NOT NULL DEFAULT 1")
+        cursor.execute("ALTER TABLE currently_detected DROP CONSTRAINT IF EXISTS currently_detected_pkey")
+        cursor.execute("DROP INDEX IF EXISTS idx_cd_person_camera")
         cursor.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_cd_person_camera
-            ON currently_detected (person_name, camera_name)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_cd_office_person_camera
+            ON currently_detected (office_id, person_name, camera_name)
         """)
         # Clear stale "currently in view" rows left over from before a restart
-        cursor.execute("DELETE FROM currently_detected")
+        cursor.execute("DELETE FROM currently_detected WHERE office_id = %s", (OFFICE_ID,))
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS system_state (
@@ -231,6 +235,40 @@ def init_db():
             )
         """)
 
+        # ---- multi-office ----
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS offices (
+                id SERIAL PRIMARY KEY,
+                name TEXT UNIQUE NOT NULL,
+                city TEXT
+            )
+        """)
+        cursor.execute("""
+            INSERT INTO offices (id, name) VALUES (1, 'Main Office')
+            ON CONFLICT (id) DO NOTHING
+        """)
+        cursor.execute("""
+            SELECT setval(pg_get_serial_sequence('offices','id'),
+                          (SELECT MAX(id) FROM offices))
+        """)
+        for t in ("employees", "alerts", "alert_records", "attendance",
+                  "cameras", "zones", "incidents", "recordings", "audit_logs"):
+            cursor.execute(
+                f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS office_id "
+                f"INTEGER NOT NULL DEFAULT 1 REFERENCES offices(id)"
+            )
+            cursor.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{t}_office ON {t} (office_id)"
+            )
+        # users.office_id NULL = all offices (owner/ceo)
+        cursor.execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_id "
+            "INTEGER REFERENCES offices(id)"
+        )
+        cursor.execute(
+            "UPDATE users SET office_id = 1 WHERE role IN ('guard','hr') AND office_id IS NULL"
+        )
+
         # Indexes — created AFTER the tables exist
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts (timestamp DESC)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_last_seen ON incidents (last_seen DESC)")
@@ -301,9 +339,11 @@ def get_db():
     conn = None
     broken = False
     try:
-        for _ in range(3):
-            c = p.getconn()
+        last_err = None
+        for attempt in range(5):
+            c = None
             try:
+                c = p.getconn()
                 if c.closed:
                     raise psycopg2.OperationalError("closed")
                 if time.monotonic() - _last_used.get(id(c), 0) > 20:
@@ -312,11 +352,17 @@ def get_db():
                     c.rollback()
                 conn = c
                 break
-            except Exception:
-                _last_used.pop(id(c), None)
-                p.putconn(c, close=True)
+            except Exception as e:
+                last_err = e
+                if c is not None:
+                    _last_used.pop(id(c), None)
+                    try:
+                        p.putconn(c, close=True)
+                    except Exception:
+                        pass
+                time.sleep(min(2 ** attempt, 5) * 0.5)
         if conn is None:
-            raise psycopg2.OperationalError("no healthy db connection")
+            raise psycopg2.OperationalError(f"no healthy db connection: {last_err}")
         try:
             yield conn
         except (psycopg2.OperationalError, psycopg2.InterfaceError):
