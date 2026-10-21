@@ -245,7 +245,7 @@ def init_db():
         """)
         cursor.execute("""
             INSERT INTO offices (id, name) VALUES (1, 'Main Office')
-            ON CONFLICT DO NOTHING
+            ON CONFLICT (id) DO NOTHING
         """)
         cursor.execute("""
             SELECT setval(pg_get_serial_sequence('offices','id'),
@@ -260,14 +260,17 @@ def init_db():
             cursor.execute(
                 f"CREATE INDEX IF NOT EXISTS idx_{t}_office ON {t} (office_id)"
             )
-        # users.office_id NULL = all offices (owner/ceo)
+        # users.office_id: only guards are tied to an office. All other roles = NULL = all offices.
         cursor.execute(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_id "
             "INTEGER REFERENCES offices(id)"
         )
-        cursor.execute(
-            "UPDATE users SET office_id = 1 WHERE role IN ('guard','hr') AND office_id IS NULL"
-        )
+        cursor.execute("UPDATE users SET office_id = NULL WHERE role <> 'guard'")
+        cursor.execute("UPDATE users SET office_id = 1 WHERE role = 'guard' AND office_id IS NULL")
+
+        # Camera health stored in DB so a central server can read it
+        cursor.execute("ALTER TABLE cameras ADD COLUMN IF NOT EXISTS last_heartbeat TEXT")
+        cursor.execute("ALTER TABLE cameras ADD COLUMN IF NOT EXISTS tampered BOOLEAN NOT NULL DEFAULT FALSE")
 
         # Indexes — created AFTER the tables exist
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts (timestamp DESC)")
@@ -339,9 +342,11 @@ def get_db():
     conn = None
     broken = False
     try:
-        for _ in range(3):
-            c = p.getconn()
+        last_err = None
+        for attempt in range(5):
+            c = None
             try:
+                c = p.getconn()
                 if c.closed:
                     raise psycopg2.OperationalError("closed")
                 if time.monotonic() - _last_used.get(id(c), 0) > 20:
@@ -350,11 +355,17 @@ def get_db():
                     c.rollback()
                 conn = c
                 break
-            except Exception:
-                _last_used.pop(id(c), None)
-                p.putconn(c, close=True)
+            except Exception as e:
+                last_err = e
+                if c is not None:
+                    _last_used.pop(id(c), None)
+                    try:
+                        p.putconn(c, close=True)
+                    except Exception:
+                        pass
+                time.sleep(min(2 ** attempt, 5) * 0.5)
         if conn is None:
-            raise psycopg2.OperationalError("no healthy db connection")
+            raise psycopg2.OperationalError(f"no healthy db connection: {last_err}")
         try:
             yield conn
         except (psycopg2.OperationalError, psycopg2.InterfaceError):

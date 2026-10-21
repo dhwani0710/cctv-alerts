@@ -20,10 +20,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel
 from database import init_db, get_db, OFFICE_ID
-from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, stop_all_cameras, get_tampered_cameras
+from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, stop_all_cameras, get_tampered_cameras, invalidate_employee_cache
+from recognition import invalidate_gallery, check_gallery_photo
 from datetime import datetime, timedelta
 import config
-from auth import verify_token, require_admin, require_hr, require_guard, require_staff, require_owner
+from auth import verify_token, require_admin, require_hr, require_guard, require_staff, require_owner, get_office_id, office_sql, enforce_write_office
 from auth_users import verify_password, create_token, hash_password, VALID_ROLES
 from app_settings import get_all_settings, set_setting
 from settings_store import load_settings, save_settings
@@ -35,7 +36,7 @@ from retention import start_retention_thread, start_daily_reset_thread
 # Set RUN_CAMERAS=false on cloud hosts (e.g. Render) where the cameras can't be reached
 RUN_CAMERAS = os.getenv("RUN_CAMERAS", "true").strip().lower() == "true"
 
-app = FastAPI(title="Jewellery Store Alert System")
+app = FastAPI(title="Jewellery Store Alert System", dependencies=[Depends(enforce_write_office)])
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,6 +49,8 @@ app.add_middleware(
 )
 
 KNOWN_FACES_DIR = "known_faces"
+# storage.py adds the office prefix (o2/, o3/, ...) itself, so this stays plain
+FACES_REMOTE = "known_faces"
 
 def _make_offline_frame_bytes() -> bytes:
     image = Image.new("RGB", (640, 480), color=(0, 0, 0))
@@ -98,7 +101,7 @@ def shutdown():
 
 @app.get("/")
 def health_check():
-    return {"status": "backend is running"}
+    return {"status": "backend is running", "office_id": OFFICE_ID}
 
 # --- Auth Models & Endpoints ---
 
@@ -111,17 +114,24 @@ class CreateUserRequest(BaseModel):
     username: str
     password: str
     role: str
+    office_id: Optional[int] = None  # required for guard, ignored otherwise
 
 class UpdateUserRequest(BaseModel):
     role: Optional[str] = None
     password: Optional[str] = None
+    office_id: Optional[int] = None
 
 class UpdateAccountRequest(BaseModel):
     username: str
 
 @app.get("/auth/me")
 def get_me(current_user: dict = Depends(verify_token)):
-    return current_user
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT office_id FROM users WHERE id = %s", (current_user["user_id"],))
+        row = cur.fetchone()
+        cur.close()
+    return {**current_user, "office_id": row["office_id"] if row else None}
 
 @app.put("/auth/me")
 def update_own_account(req: UpdateAccountRequest, current_user: dict = Depends(verify_token)):
@@ -188,6 +198,10 @@ def login(payload: LoginRequest):
     if not user or not verify_password(payload.password, user["password_hash"]):
         return {"ok": False, "error": "Incorrect username or password"}
 
+    # guard must have an office. All other roles see all offices.
+    if user["role"] == "guard" and user["office_id"] is None:
+        return {"ok": False, "error": "No office assigned to this guard"}
+
     token = create_token(user["id"], user["username"], user["role"], remember=payload.remember_me)
 
     log_audit_event(
@@ -199,12 +213,40 @@ def login(payload: LoginRequest):
         user_id=user["id"]
     )
 
+    office_name = None
+    if user["office_id"] is not None:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM offices WHERE id = %s", (user["office_id"],))
+            o = cur.fetchone()
+            cur.close()
+        office_name = o["name"] if o else None
+
     return {
         "ok": True,
         "role": user["role"],
         "username": user["username"],
+        "office_id": user["office_id"],
+        "office_name": office_name,
         "token": token
     }
+
+# --- Offices ---
+
+@app.get("/offices")
+def list_offices(current_user: dict = Depends(verify_token)):
+    with get_db() as conn:
+        cur = conn.cursor()
+        if current_user.get("role") == "guard":
+            cur.execute(
+                "SELECT o.id, o.name, o.city FROM offices o JOIN users u ON u.office_id = o.id WHERE u.id = %s",
+                (current_user["user_id"],)
+            )
+        else:
+            cur.execute("SELECT id, name, city FROM offices ORDER BY id")
+        rows = cur.fetchall()
+        cur.close()
+    return [dict(r) for r in rows]
 
 # --- System Audit Log (Owner Exclusive) ---
 
@@ -214,10 +256,12 @@ def get_audit_logs(
     module: Optional[str] = None,
     date: Optional[str] = None,
     search: Optional[str] = None,
-    limit: int = 200
+    limit: int = 200,
+    office_id: Optional[int] = Depends(get_office_id)
 ):
-    query = "SELECT id, user_id, username, user_role, action, target_module, details, proof_image, timestamp FROM audit_logs WHERE 1=1"
-    params = []
+    clause, p = office_sql(office_id)
+    query = "SELECT id, office_id, user_id, username, user_role, action, target_module, details, proof_image, timestamp FROM audit_logs WHERE 1=1" + clause
+    params = list(p)
     if role:
         query += " AND LOWER(user_role) = %s"
         params.append(role.lower())
@@ -246,16 +290,18 @@ def get_audit_logs(
 # --- Video Recordings ---
 
 @app.get("/recordings", dependencies=[Depends(verify_token)])
-def get_recordings(page: int = 1, limit: int = 10):
+def get_recordings(page: int = 1, limit: int = 10, office_id: Optional[int] = Depends(get_office_id)):
     offset = (page - 1) * limit
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) as count FROM recordings")
+        cur.execute("SELECT COUNT(*) as count FROM recordings WHERE 1=1" + clause, tuple(p))
         total = cur.fetchone()["count"]
 
         cur.execute(
-            "SELECT id, camera_id, camera_name, zone_name, timestamp, video_url FROM recordings ORDER BY timestamp DESC LIMIT %s OFFSET %s", 
-            (limit, offset)
+            "SELECT id, office_id, camera_id, camera_name, zone_name, timestamp, video_url FROM recordings WHERE 1=1"
+            + clause + " ORDER BY timestamp DESC LIMIT %s OFFSET %s",
+            tuple(p + [limit, offset])
         )
         rows = cur.fetchall()
         cur.close()
@@ -267,7 +313,7 @@ def get_recordings(page: int = 1, limit: int = 10):
 def list_users():
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, username, role, created_at FROM users ORDER BY id")
+        cur.execute("SELECT id, username, role, office_id, created_at FROM users ORDER BY id")
         rows = cur.fetchall()
         cur.close()
         return [dict(r) for r in rows]
@@ -280,17 +326,25 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
         raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(VALID_ROLES)}")
     if not username or not payload.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
+    if role == "guard" and payload.office_id is None:
+        raise HTTPException(status_code=400, detail="Guard needs an office")
+    new_office = payload.office_id if role == "guard" else None
 
     with get_db() as conn:
         cur = conn.cursor()
+        if new_office is not None:
+            cur.execute("SELECT 1 FROM offices WHERE id = %s", (new_office,))
+            if not cur.fetchone():
+                cur.close()
+                raise HTTPException(status_code=400, detail="Unknown office")
         cur.execute("SELECT id FROM users WHERE username = %s", (username,))
         if cur.fetchone():
             cur.close()
             raise HTTPException(status_code=400, detail=f"Username '{username}' already exists")
 
         cur.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
-            (username, hash_password(payload.password), role)
+            "INSERT INTO users (username, password_hash, role, office_id) VALUES (%s, %s, %s, %s)",
+            (username, hash_password(payload.password), role, new_office)
         )
         conn.commit()
         cur.close()
@@ -300,7 +354,7 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
         user_role=current_user.get("role"),
         action="USER_CREATED",
         target_module="Users",
-        details=f"Created user account '{username}' with role '{role}'",
+        details=f"Created user account '{username}' with role '{role}'" + (f" (office {new_office})" if new_office else ""),
         user_id=current_user.get("user_id")
     )
 
@@ -308,38 +362,51 @@ def create_user(payload: CreateUserRequest, current_user: dict = Depends(require
 
 @app.put("/users/{user_id}", dependencies=[Depends(require_admin)])
 def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depends(require_admin)):
-    updates = []
-    params = []
-    if req.role:
-        role = req.role.strip().lower()
-        if role not in VALID_ROLES:
-            raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(VALID_ROLES)}")
-        updates.append("role = %s")
-        params.append(role)
-    if req.password:
-        updates.append("password_hash = %s")
-        params.append(hash_password(req.password))
-
-    if not updates:
-        raise HTTPException(status_code=400, detail="No updates provided")
-
-    params.append(user_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = %s RETURNING id, username, role", tuple(params))
+        cur.execute("SELECT id, role, office_id FROM users WHERE id = %s", (user_id,))
+        u = cur.fetchone()
+        if not u:
+            cur.close()
+            raise HTTPException(status_code=404, detail="User not found")
+
+        new_role = req.role.strip().lower() if req.role else u["role"]
+        if new_role not in VALID_ROLES:
+            cur.close()
+            raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(VALID_ROLES)}")
+        if new_role == "guard":
+            new_office = req.office_id if req.office_id is not None else u["office_id"]
+            if new_office is None:
+                cur.close()
+                raise HTTPException(status_code=400, detail="Guard needs an office")
+            cur.execute("SELECT 1 FROM offices WHERE id = %s", (new_office,))
+            if not cur.fetchone():
+                cur.close()
+                raise HTTPException(status_code=400, detail="Unknown office")
+        else:
+            new_office = None
+
+        updates = ["role = %s", "office_id = %s"]
+        params = [new_role, new_office]
+        if req.password:
+            updates.append("password_hash = %s")
+            params.append(hash_password(req.password))
+        params.append(user_id)
+
+        cur.execute(
+            f"UPDATE users SET {', '.join(updates)} WHERE id = %s RETURNING id, username, role, office_id",
+            tuple(params)
+        )
         updated = cur.fetchone()
         conn.commit()
         cur.close()
-
-    if not updated:
-        raise HTTPException(status_code=404, detail="User not found")
 
     log_audit_event(
         username=current_user.get("username"),
         user_role=current_user.get("role"),
         action="USER_UPDATED",
         target_module="Users",
-        details=f"Updated user ID {user_id} (username: {updated['username']}, role: {updated['role']})",
+        details=f"Updated user ID {user_id} (username: {updated['username']}, role: {updated['role']}, office: {updated['office_id']})",
         user_id=current_user.get("user_id")
     )
 
@@ -352,7 +419,10 @@ def delete_user(user_id: int, current_user: dict = Depends(require_admin)):
 
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, username, role FROM users WHERE id = %s", (user_id,))
+        cur.execute(
+            "SELECT id, username, role FROM users WHERE id = %s",
+            (user_id,)
+        )
         u = cur.fetchone()
         if not u:
             cur.close()
@@ -376,6 +446,8 @@ def delete_user(user_id: int, current_user: dict = Depends(require_admin)):
 # --- Employee Management (Owner, CEO & HR) ---
 
 MAX_PHOTO_DIMENSION = 1024
+# Raise to 3 or more once the employee form can send several photos
+MIN_PHOTOS_PER_EMPLOYEE = 1
 
 def _save_resized_photo(upload_file, destination_path):
     with open(destination_path, "wb") as buffer:
@@ -391,6 +463,26 @@ def _clear_face_cache():
     for f in os.listdir(KNOWN_FACES_DIR):
         if f.startswith("representations_") or f.endswith(".pkl"):
             os.remove(os.path.join(KNOWN_FACES_DIR, f))
+    # Tell the recognizer the photos changed, and drop cached employee lookups
+    invalidate_gallery()
+    invalidate_employee_cache()
+
+def _move_over(src, dst):
+    try:
+        os.replace(src, dst)
+    except OSError:
+        shutil.copyfile(src, dst)
+        os.remove(src)
+
+def _same_path(a, b):
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+def _tmp_photo_path():
+    os.makedirs("snapshots", exist_ok=True)
+    return os.path.join("snapshots", f"tmp_{uuid.uuid4().hex}.jpg")
 
 def _upload_photo_async(local_path, remote_path):
     try:
@@ -432,43 +524,70 @@ async def add_employee(
 ):
     if shift_start == shift_end:
         raise HTTPException(status_code=400, detail="Shift start and end time cannot be the same.")
-    if len(photos) == 0:
-        raise HTTPException(status_code=400, detail="At least one photo is required.")
+    if len(photos) < MIN_PHOTOS_PER_EMPLOYEE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At least {MIN_PHOTOS_PER_EMPLOYEE} photo(s) required (different angles and lighting work best)."
+        )
 
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id FROM employees WHERE LOWER(name) = LOWER(%s)", (name.strip(),))
+        cur.execute(
+            "SELECT id FROM employees WHERE LOWER(name) = LOWER(%s) AND office_id = %s",
+            (name.strip(), OFFICE_ID)
+        )
         existing = cur.fetchone()
         cur.close()
     if existing:
         raise HTTPException(status_code=409, detail=f"An employee named '{name.strip()}' already exists.")
 
     folder_name = _safe_folder_name(name)
+    employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
+    if os.path.isdir(employee_folder) and os.listdir(employee_folder):
+        raise HTTPException(status_code=409, detail="A face folder with this name already exists. Use a different name.")
     for photo in photos:
         _validate_photo_upload(photo)
-    employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
+
     os.makedirs(employee_folder, exist_ok=True)
-
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO employees (name, shift_start, shift_end, photo_filename, designation) VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (name, shift_start, shift_end, "", designation)
-        )
-        employee_id = cur.fetchone()["id"]
-
+    saved = []
+    try:
         for i, photo in enumerate(photos):
             filename = f"photo_{i+1}.jpg"
             photo_path = os.path.join(employee_folder, filename)
             _save_resized_photo(photo, photo_path)
-            threading.Thread(target=_upload_photo_async, args=(photo_path, f"known_faces/{folder_name}/{filename}"), daemon=True).start()
-            cur.execute(
-                "INSERT INTO employee_photos (employee_id, filename) VALUES (%s, %s)",
-                (employee_id, filename)
-            )
+            saved.append((filename, photo_path))
 
-        conn.commit()
-        cur.close()
+        problems = []
+        for i, (_fn, photo_path) in enumerate(saved):
+            ok, reason = await run_in_threadpool(check_gallery_photo, photo_path)
+            if not ok:
+                problems.append(f"photo {i+1}: {reason}")
+        if problems:
+            raise HTTPException(status_code=400, detail="Some photos can't be used for recognition - " + "; ".join(problems))
+
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO employees (name, shift_start, shift_end, photo_filename, designation, office_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+                (name, shift_start, shift_end, "", designation, OFFICE_ID)
+            )
+            employee_id = cur.fetchone()["id"]
+            for filename, _p in saved:
+                cur.execute(
+                    "INSERT INTO employee_photos (employee_id, filename) VALUES (%s, %s)",
+                    (employee_id, filename)
+                )
+            conn.commit()
+            cur.close()
+    except HTTPException:
+        shutil.rmtree(employee_folder, ignore_errors=True)
+        raise
+    except Exception as e:
+        shutil.rmtree(employee_folder, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=f"Could not process photos: {e}")
+
+    for filename, photo_path in saved:
+        threading.Thread(target=_upload_photo_async, args=(photo_path, f"{FACES_REMOTE}/{folder_name}/{filename}"), daemon=True).start()
 
     _clear_face_cache()
 
@@ -484,10 +603,11 @@ async def add_employee(
     return {"message": f"Employee {name} added successfully with {len(photos)} photo(s)"}
 
 @app.get("/employees", dependencies=[Depends(require_hr)])
-def list_employees():
+def list_employees(office_id: Optional[int] = Depends(get_office_id)):
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM employees ORDER BY id ASC")
+        cur.execute("SELECT * FROM employees WHERE 1=1" + clause + " ORDER BY id ASC", tuple(p))
         rows = cur.fetchall()
         cur.close()
         return [dict(row) for row in rows]
@@ -508,52 +628,97 @@ async def update_employee(
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id FROM employees WHERE LOWER(name) = LOWER(%s) AND id != %s",
-            (name.strip(), employee_id),
+            "SELECT id FROM employees WHERE LOWER(name) = LOWER(%s) AND id != %s AND office_id = %s",
+            (name.strip(), employee_id, OFFICE_ID),
         )
         clash = cur.fetchone()
+        cur.execute("SELECT * FROM employees WHERE id = %s AND office_id = %s", (employee_id, OFFICE_ID))
+        emp = cur.fetchone()
         cur.close()
     if clash:
         raise HTTPException(status_code=409, detail=f"An employee named '{name.strip()}' already exists.")
+    if emp is None:
+        return {"message": "Employee not found"}
 
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM employees WHERE id = %s", (employee_id,))
-        emp = cur.fetchone()
-        if emp is None:
+    old_name = emp["name"]
+    old_folder_name = _safe_folder_name(old_name)
+    new_folder_name = _safe_folder_name(name)
+    old_folder = os.path.join(KNOWN_FACES_DIR, old_folder_name)
+    new_folder = os.path.join(KNOWN_FACES_DIR, new_folder_name)
+    renaming = old_folder_name != new_folder_name
+
+    if renaming and os.path.exists(new_folder) and not _same_path(old_folder, new_folder):
+        raise HTTPException(status_code=409, detail="A face folder with this name already exists. Choose a different name.")
+
+    # Check the new photo BEFORE changing anything
+    tmp_photo = None
+    if photo is not None and photo.filename:
+        _validate_photo_upload(photo)
+        tmp_photo = _tmp_photo_path()
+        try:
+            _save_resized_photo(photo, tmp_photo)
+        except Exception as e:
+            if os.path.exists(tmp_photo):
+                os.remove(tmp_photo)
+            raise HTTPException(status_code=400, detail=f"Could not read the photo: {e}")
+        ok, reason = await run_in_threadpool(check_gallery_photo, tmp_photo)
+        if not ok:
+            os.remove(tmp_photo)
+            raise HTTPException(status_code=400, detail=f"Photo can't be used for recognition: {reason}")
+
+    folder_renamed = False
+    if renaming and os.path.exists(old_folder):
+        try:
+            os.rename(old_folder, new_folder)
+            folder_renamed = True
+        except OSError as e:
+            if tmp_photo and os.path.exists(tmp_photo):
+                os.remove(tmp_photo)
+            raise HTTPException(status_code=500, detail=f"Could not rename the face folder: {e}")
+
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE employees SET name = %s, shift_start = %s, shift_end = %s, designation = %s WHERE id = %s AND office_id = %s",
+                (name, shift_start, shift_end, designation, employee_id, OFFICE_ID)
+            )
+            conn.commit()
             cur.close()
-            return {"message": "Employee not found"}
+    except Exception:
+        # Put things back so the folder and the database name stay in step
+        if folder_renamed:
+            try:
+                os.rename(new_folder, old_folder)
+            except OSError:
+                pass
+        if tmp_photo and os.path.exists(tmp_photo):
+            os.remove(tmp_photo)
+        raise
 
-        old_name = emp["name"]
-        if old_name != name:
-            old_folder_name = _safe_folder_name(old_name)
-            new_folder_name = _safe_folder_name(name)
-            old_folder = os.path.join(KNOWN_FACES_DIR, old_folder_name)
-            new_folder = os.path.join(KNOWN_FACES_DIR, new_folder_name)
-            if os.path.exists(old_folder) and old_folder_name != new_folder_name:
-                if os.path.exists(new_folder):
-                    shutil.rmtree(old_folder)
-                else:
-                    os.rename(old_folder, new_folder)
-                storage.delete_prefix(f"known_faces/{old_folder_name}")
-                _clear_face_cache()
+    if folder_renamed:
+        for fn in os.listdir(new_folder):
+            if os.path.splitext(fn)[1].lower() in ALLOWED_PHOTO_EXTENSIONS:
+                threading.Thread(
+                    target=_upload_photo_async,
+                    args=(os.path.join(new_folder, fn), f"{FACES_REMOTE}/{new_folder_name}/{fn}"),
+                    daemon=True
+                ).start()
+        try:
+            storage.delete_prefix(f"{FACES_REMOTE}/{old_folder_name}")
+        except Exception as e:
+            print(f"[update_employee] Could not delete old cloud photos: {e}")
 
-        if photo is not None and photo.filename:
-            _validate_photo_upload(photo)
-            folder_name = _safe_folder_name(name)
-            employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
-            os.makedirs(employee_folder, exist_ok=True)
-            photo_path = os.path.join(employee_folder, "photo_1.jpg")
-            _save_resized_photo(photo, photo_path)
-            threading.Thread(target=_upload_photo_async, args=(photo_path, f"known_faces/{folder_name}/photo_1.jpg"), daemon=True).start()
-            _clear_face_cache()
+    if tmp_photo:
+        os.makedirs(new_folder, exist_ok=True)
+        photo_path = os.path.join(new_folder, "photo_1.jpg")
+        _move_over(tmp_photo, photo_path)
+        threading.Thread(target=_upload_photo_async, args=(photo_path, f"{FACES_REMOTE}/{new_folder_name}/photo_1.jpg"), daemon=True).start()
 
-        cur.execute(
-            "UPDATE employees SET name = %s, shift_start = %s, shift_end = %s, designation = %s WHERE id = %s",
-            (name, shift_start, shift_end, designation, employee_id)
-        )
-        conn.commit()
-        cur.close()
+    if renaming or tmp_photo:
+        _clear_face_cache()
+    else:
+        invalidate_employee_cache()
 
     log_audit_event(
         username=current_user.get("username"),
@@ -566,29 +731,121 @@ async def update_employee(
 
     return {"message": f"Employee {name} updated successfully"}
 
+@app.post("/employees/{employee_id}/photos", dependencies=[Depends(require_hr)])
+async def add_employee_photos(
+    employee_id: int,
+    photos: List[UploadFile] = File(...),
+    current_user: dict = Depends(require_hr)
+):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, name FROM employees WHERE id = %s AND office_id = %s", (employee_id, OFFICE_ID))
+        emp = cur.fetchone()
+        cur.close()
+    if emp is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    folder_name = _safe_folder_name(emp["name"])
+    employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
+    os.makedirs(employee_folder, exist_ok=True)
+
+    used = []
+    for f in os.listdir(employee_folder):
+        m = re.match(r"photo_(\d+)\.jpg$", f)
+        if m:
+            used.append(int(m.group(1)))
+    next_index = max(used, default=0) + 1
+
+    accepted, rejected = [], []
+    for photo in photos:
+        label = photo.filename or "photo"
+        try:
+            _validate_photo_upload(photo)
+        except HTTPException as e:
+            rejected.append({"file": label, "reason": e.detail})
+            continue
+
+        tmp = _tmp_photo_path()
+        try:
+            _save_resized_photo(photo, tmp)
+            ok, reason = await run_in_threadpool(check_gallery_photo, tmp)
+        except Exception as e:
+            ok, reason = False, f"Could not read image: {e}"
+        if not ok:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            rejected.append({"file": label, "reason": reason})
+            continue
+
+        filename = f"photo_{next_index}.jpg"
+        next_index += 1
+        dest = os.path.join(employee_folder, filename)
+        _move_over(tmp, dest)
+        accepted.append((filename, dest))
+
+    if not accepted:
+        raise HTTPException(
+            status_code=400,
+            detail="No usable photos. " + "; ".join(f"{r['file']}: {r['reason']}" for r in rejected)
+        )
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        for filename, _dest in accepted:
+            cur.execute("INSERT INTO employee_photos (employee_id, filename) VALUES (%s, %s)", (employee_id, filename))
+        conn.commit()
+        cur.close()
+
+    for filename, dest in accepted:
+        threading.Thread(target=_upload_photo_async, args=(dest, f"{FACES_REMOTE}/{folder_name}/{filename}"), daemon=True).start()
+
+    _clear_face_cache()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="EMPLOYEE_PHOTOS_ADDED",
+        target_module="Employees",
+        details=f"Added {len(accepted)} photo(s) for '{emp['name']}' ({len(rejected)} rejected)",
+        user_id=current_user.get("user_id")
+    )
+
+    return {"message": f"{len(accepted)} photo(s) added", "accepted": len(accepted), "rejected": rejected}
+
 @app.delete("/employees/{employee_id}", dependencies=[Depends(require_hr)])
 def delete_employee(employee_id: int, current_user: dict = Depends(require_hr)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM employees WHERE id = %s", (employee_id,))
+        cur.execute("SELECT * FROM employees WHERE id = %s AND office_id = %s", (employee_id, OFFICE_ID))
         emp = cur.fetchone()
         if emp is None:
             cur.close()
             return {"message": "Employee not found"}
 
-        cur.execute("DELETE FROM employees WHERE id = %s", (employee_id,))
+        cur.execute("DELETE FROM employees WHERE id = %s AND office_id = %s", (employee_id, OFFICE_ID))
         conn.commit()
         cur.close()
 
+    folder_name = _safe_folder_name(emp["name"])
+    employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
     try:
-        folder_name = _safe_folder_name(emp["name"])
-        employee_folder = os.path.join(KNOWN_FACES_DIR, folder_name)
         if os.path.exists(employee_folder):
             shutil.rmtree(employee_folder)
-        storage.delete_prefix(f"known_faces/{folder_name}")
-        _clear_face_cache()
+        else:
+            print(f"[delete_employee] Folder not found: {employee_folder}")
     except Exception as e:
         print(f"[delete_employee] Face folder cleanup failed for '{emp['name']}': {e}")
+    # Refresh first, so a cloud error below can't leave the deleted person matchable
+    _clear_face_cache()
+    try:
+        from recognition import invalidate_gallery
+        invalidate_gallery()
+    except Exception as e:
+        print(f"[delete_employee] Gallery invalidate failed: {e}")
+    try:
+        storage.delete_prefix(f"{FACES_REMOTE}/{folder_name}")
+    except Exception as e:
+        print(f"[delete_employee] Cloud photo cleanup failed for '{emp['name']}': {e}")
 
     log_audit_event(
         username=current_user.get("username"),
@@ -615,6 +872,7 @@ ALLOWED_SETTING_KEYS = {
     "notify_person",
     "min_matching_photos",
     "match_distance_threshold",
+    "match_margin",
     "overstay_low_threshold_min",
     "overstay_medium_threshold_min",
     "alert_dedupe_window_sec",
@@ -661,15 +919,17 @@ def update_app_setting(payload: AppSettingRequest):
             raise HTTPException(status_code=400, detail=f"{key} cannot be negative")
         value = str(number)
 
-    elif key == "match_distance_threshold":
+    elif key in {"match_distance_threshold", "match_margin"}:
         if value != "":
             try:
-                threshold = float(value)
+                number = float(value)
             except ValueError:
-                raise HTTPException(status_code=400, detail="match_distance_threshold must be a number")
-            if threshold < 0:
-                raise HTTPException(status_code=400, detail="match_distance_threshold cannot be negative")
-            value = str(threshold)
+                raise HTTPException(status_code=400, detail=f"{key} must be a number")
+            if number < 0:
+                raise HTTPException(status_code=400, detail=f"{key} cannot be negative")
+            if key == "match_margin" and number > 1:
+                raise HTTPException(status_code=400, detail="match_margin must be between 0 and 1")
+            value = str(number)
 
     try:
         set_setting(key, value)
@@ -747,18 +1007,18 @@ async def acknowledge_alert(
             """
             UPDATE incidents
             SET status = 'acknowledged'
-            WHERE id = %s
+            WHERE id = %s AND office_id = %s
             """,
-            (alert_id,)
+            (alert_id, OFFICE_ID)
         )
         
         cur.execute(
             """
             UPDATE alerts 
             SET status = 'acknowledged', acknowledged_by = %s, acknowledged_at = %s, ack_proof_image = %s, ack_notes = %s 
-            WHERE incident_id = %s OR id = %s
+            WHERE (incident_id = %s OR id = %s) AND office_id = %s
             """,
-            (current_user.get("username"), now_iso, proof_url, notes.strip(), alert_id, alert_id)
+            (current_user.get("username"), now_iso, proof_url, notes.strip(), alert_id, alert_id, OFFICE_ID)
         )
         conn.commit()
         cur.close()
@@ -778,7 +1038,14 @@ async def acknowledge_alert(
 # --- Records & Ledgers (Owner & CEO) ---
 
 @app.get("/records", dependencies=[Depends(verify_token)])
-def get_records(camera: str = None, status: str = None, date: str = None, page: int = 1, limit: int = 10):
+def get_records(
+    camera: str = None,
+    status: str = None,
+    date: str = None,
+    page: int = 1,
+    limit: int = 10,
+    office_id: Optional[int] = Depends(get_office_id)
+):
     offset = (page - 1) * limit
 
     base_query = """
@@ -792,7 +1059,9 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
         ) a ON true
         WHERE 1=1
     """
-    params = []
+    clause, p = office_sql(office_id, "i.office_id")
+    base_query += clause
+    params = list(p)
 
     if camera:
         base_query += " AND (i.camera_name = %s OR i.camera_name LIKE %s)"
@@ -812,7 +1081,7 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
 
     count_query = "SELECT COUNT(*) AS count " + base_query
     data_query = """
-        SELECT i.id, i.person_name, i.alert_type, i.priority, i.camera_name, i.zone_name,
+        SELECT i.id, i.office_id, i.person_name, i.alert_type, i.priority, i.camera_name, i.zone_name,
             i.first_seen, i.last_seen, i.alert_count, i.status,
             a.message, a.snapshot_filename
     """ + base_query + " ORDER BY i.last_seen DESC LIMIT %s OFFSET %s"
@@ -847,9 +1116,9 @@ def get_records(camera: str = None, status: str = None, date: str = None, page: 
 def delete_record(alert_id: int, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM alerts WHERE incident_id = %s", (alert_id,))
-        cur.execute("DELETE FROM alert_records WHERE incident_id = %s", (alert_id,))
-        cur.execute("DELETE FROM incidents WHERE id = %s", (alert_id,))
+        cur.execute("DELETE FROM alerts WHERE incident_id = %s AND office_id = %s", (alert_id, OFFICE_ID))
+        cur.execute("DELETE FROM alert_records WHERE incident_id = %s AND office_id = %s", (alert_id, OFFICE_ID))
+        cur.execute("DELETE FROM incidents WHERE id = %s AND office_id = %s", (alert_id, OFFICE_ID))
         deleted = cur.rowcount
         conn.commit()
         cur.close()
@@ -871,10 +1140,10 @@ def delete_record(alert_id: int, current_user: dict = Depends(require_admin)):
 def clear_all_records(current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM alerts")
+        cur.execute("DELETE FROM alerts WHERE office_id = %s", (OFFICE_ID,))
         alerts_deleted = cur.rowcount
-        cur.execute("DELETE FROM alert_records")
-        cur.execute("DELETE FROM incidents")
+        cur.execute("DELETE FROM alert_records WHERE office_id = %s", (OFFICE_ID,))
+        cur.execute("DELETE FROM incidents WHERE office_id = %s", (OFFICE_ID,))
         incidents_deleted = cur.rowcount
         conn.commit()
         cur.close()
@@ -886,9 +1155,15 @@ def clear_all_records(current_user: dict = Depends(require_admin)):
     return {"message": "All records cleared", "alerts_deleted": alerts_deleted, "incidents_deleted": incidents_deleted}
 
 @app.get("/records/export", dependencies=[Depends(require_staff)])
-def export_records(camera: str = None, status: str = None, date: str = None):
-    query = "SELECT person_name, alert_type, priority, message, timestamp, camera_name FROM alerts WHERE 1=1"
-    params = []
+def export_records(
+    camera: str = None,
+    status: str = None,
+    date: str = None,
+    office_id: Optional[int] = Depends(get_office_id)
+):
+    clause, p = office_sql(office_id)
+    query = "SELECT person_name, alert_type, priority, message, timestamp, camera_name FROM alerts WHERE 1=1" + clause
+    params = list(p)
 
     if camera:
         query += " AND (camera_name = %s OR camera_name LIKE %s)"
@@ -981,9 +1256,13 @@ def _resolve_attendance_range(start_date=None, end_date=None, date=None):
     today = datetime.now().date().isoformat()
     return today, today
 
-def _build_attendance_filters(employee_id=None, zone_name=None, status=None, search=None):
+def _build_attendance_filters(employee_id=None, zone_name=None, status=None, search=None, office_id=None):
     where_clauses = []
     params = []
+
+    if office_id is not None:
+        where_clauses.append("emp.office_id = %s")
+        params.append(office_id)
 
     if employee_id:
         where_clauses.append("emp.id = %s")
@@ -1016,10 +1295,11 @@ def get_attendance(
     status: Optional[str] = None,
     search: Optional[str] = None,
     page: int = 1,
-    limit: int = 20
+    limit: int = 20,
+    office_id: Optional[int] = Depends(get_office_id)
 ):
     range_start, range_end = _resolve_attendance_range(start_date, end_date, date)
-    where_sql, filter_params = _build_attendance_filters(employee_id, zone_name, status, search)
+    where_sql, filter_params = _build_attendance_filters(employee_id, zone_name, status, search, office_id)
 
     base_from = (
         "FROM employees emp "
@@ -1037,7 +1317,7 @@ def get_attendance(
 
         offset = max(0, (page - 1) * limit)
         data_query = (
-            "SELECT emp.id as employee_id, emp.name, emp.designation, emp.shift_start, emp.shift_end, "
+            "SELECT emp.id as employee_id, emp.office_id, emp.name, emp.designation, emp.shift_start, emp.shift_end, "
             "d.day::date::text as attendance_date, "
             "a.first_seen, a.last_seen, "
             "a.zone_name, "
@@ -1084,10 +1364,11 @@ def export_attendance(
     zone_name: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
-    format: Optional[str] = "csv"
+    format: Optional[str] = "csv",
+    office_id: Optional[int] = Depends(get_office_id)
 ):
     range_start, range_end = _resolve_attendance_range(start_date, end_date, date)
-    where_sql, filter_params = _build_attendance_filters(employee_id, zone_name, status, search)
+    where_sql, filter_params = _build_attendance_filters(employee_id, zone_name, status, search, office_id)
 
     base_from = (
         "FROM employees emp "
@@ -1167,7 +1448,7 @@ def export_attendance(
 def override_attendance(req: AttendanceOverrideRequest):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name FROM employees WHERE id = %s", (req.employee_id,))
+        cur.execute("SELECT id, name FROM employees WHERE id = %s AND office_id = %s", (req.employee_id, OFFICE_ID))
         emp = cur.fetchone()
         if not emp:
             cur.close()
@@ -1190,9 +1471,9 @@ def override_attendance(req: AttendanceOverrideRequest):
             )
         else:
             cur.execute(
-                "INSERT INTO attendance (employee_id, attendance_date, first_seen, last_seen, zone_name, status, override_reason, is_override) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)",
-                (req.employee_id, req.date, first_seen, last_seen, zone, status, reason)
+                "INSERT INTO attendance (office_id, employee_id, attendance_date, first_seen, last_seen, zone_name, status, override_reason, is_override) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)",
+                (OFFICE_ID, req.employee_id, req.date, first_seen, last_seen, zone, status, reason)
             )
 
         conn.commit()
@@ -1221,59 +1502,68 @@ def override_attendance(req: AttendanceOverrideRequest):
 
 # --- Guard Alert Protocol & Status (Owner, CEO & Guard) ---
 
-
 @app.get("/status", dependencies=[Depends(require_guard)])
-def get_status():
+def get_status(office_id: Optional[int] = Depends(get_office_id)):
     now = datetime.now()
     cutoff = now - timedelta(seconds=config.CURRENTLY_DETECTED_TIMEOUT_SEC)
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("""
-            SELECT person_name,
-                MAX(last_seen) AS last_seen,
-                STRING_AGG(camera_name, ', ') AS camera_name
-            FROM currently_detected
-            WHERE last_seen > %s
-            GROUP BY person_name
-            ORDER BY MAX(last_seen) DESC
-        """, (cutoff.isoformat(),))
+        cur.execute(
+            "SELECT office_id, person_name, MAX(last_seen) AS last_seen, STRING_AGG(camera_name, ', ') AS camera_name "
+            "FROM currently_detected WHERE last_seen > %s" + clause +
+            " GROUP BY office_id, person_name ORDER BY MAX(last_seen) DESC",
+            tuple([cutoff.isoformat()] + p)
+        )
         detected_rows = cur.fetchall()
 
         cur.execute(
-            "SELECT id, person_name, alert_type, priority, message, timestamp, snapshot_filename, status, acknowledged_by, acknowledged_at, ack_proof_image, ack_notes FROM alerts ORDER BY timestamp DESC LIMIT 20"
+            "SELECT id, office_id, person_name, alert_type, priority, message, timestamp, snapshot_filename, status, "
+            "acknowledged_by, acknowledged_at, ack_proof_image, ack_notes FROM alerts WHERE 1=1" + clause +
+            " ORDER BY timestamp DESC LIMIT 50",
+            tuple(p)
         )
         alert_rows = cur.fetchall()
         cur.close()
 
-    detected = [{"name": r["person_name"], "camera": r["camera_name"], "last_seen": r["last_seen"]} for r in detected_rows]
+    detected = [{"name": r["person_name"], "camera": r["camera_name"], "last_seen": r["last_seen"], "office_id": r["office_id"]} for r in detected_rows]
     alerts = [dict(r) for r in alert_rows]
     return {"currently_detected": detected, "recent_alerts": alerts}
 
 # --- Camera Streaming & Management ---
 
 @app.get("/cameras", dependencies=[Depends(require_guard)])
-def list_cameras():
-    now = datetime.now()
+def list_cameras(office_id: Optional[int] = Depends(get_office_id)):
+    now = datetime.utcnow()
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras")
+        cur.execute(
+            "SELECT id, name, zone_name, enabled, office_id, last_heartbeat, tampered FROM cameras WHERE 1=1"
+            + clause + " ORDER BY office_id, id",
+            tuple(p)
+        )
         rows = cur.fetchall()
         cur.close()
-    heartbeats = get_all_camera_heartbeats()
-    tampered = get_tampered_cameras()
     result = []
     for cam in rows:
-        heartbeat = heartbeats.get(cam["id"])
-        is_live = heartbeat is not None and (now - heartbeat).total_seconds() <= config.CAMERA_OFFLINE_THRESHOLD_SEC
+        hb = None
+        if cam["last_heartbeat"]:
+            try:
+                hb = datetime.fromisoformat(cam["last_heartbeat"])
+            except ValueError:
+                hb = None
+        is_live = hb is not None and (now - hb).total_seconds() <= config.CAMERA_OFFLINE_THRESHOLD_SEC
         if not is_live:
             cam_status = "offline"
-        elif cam["id"] in tampered:
+        elif cam["tampered"]:
             cam_status = "tampered"
         else:
             cam_status = "online"
         result.append({
             "id": cam["id"], "name": cam["name"], "zone_name": cam["zone_name"],
             "enabled": cam["enabled"], "live": is_live, "status": cam_status,
+            "office_id": cam["office_id"],
         })
     return result
 
@@ -1288,9 +1578,13 @@ class CameraRequest(BaseModel):
 def add_camera(payload: CameraRequest, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
+        cur.execute("SELECT 1 FROM cameras WHERE id = %s", (payload.id,))
+        if cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=400, detail=f"Camera ID '{payload.id}' is already in use. Choose a different ID.")
         cur.execute(
-            "INSERT INTO cameras (id, name, rtsp_url, zone_name, enabled) VALUES (%s, %s, %s, %s, %s)",
-            (payload.id, payload.name, payload.rtsp_url, payload.zone_name or payload.id, payload.enabled)
+            "INSERT INTO cameras (id, name, rtsp_url, zone_name, enabled, office_id) VALUES (%s, %s, %s, %s, %s, %s)",
+            (payload.id, payload.name, payload.rtsp_url, payload.zone_name or payload.id, payload.enabled, OFFICE_ID)
         )
         conn.commit()
         cur.close()
@@ -1319,8 +1613,8 @@ def update_camera(camera_id: str, payload: CameraRequest, current_user: dict = D
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE cameras SET name=%s, rtsp_url=%s, zone_name=%s, enabled=%s WHERE id=%s",
-            (payload.name, payload.rtsp_url, payload.zone_name or camera_id, payload.enabled, camera_id)
+            "UPDATE cameras SET name=%s, rtsp_url=%s, zone_name=%s, enabled=%s WHERE id=%s AND office_id=%s",
+            (payload.name, payload.rtsp_url, payload.zone_name or camera_id, payload.enabled, camera_id, OFFICE_ID)
         )
         conn.commit()
         cur.close()
@@ -1352,7 +1646,7 @@ def delete_camera(camera_id: str, current_user: dict = Depends(require_admin)):
     threading.Thread(target=stop_single_camera, args=(camera_id,), daemon=True).start()
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM cameras WHERE id = %s", (camera_id,))
+        cur.execute("DELETE FROM cameras WHERE id = %s AND office_id = %s", (camera_id, OFFICE_ID))
         conn.commit()
         cur.close()
 
@@ -1368,21 +1662,21 @@ def delete_camera(camera_id: str, current_user: dict = Depends(require_admin)):
     return {"message": "Camera deleted and disconnected"}
 
 def _seed_cameras_from_config():
+    if OFFICE_ID != 1:
+        return  # other offices add their own cameras from the Admin page
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) as count FROM cameras")
+        cur.execute("SELECT COUNT(*) as count FROM cameras WHERE office_id = %s", (OFFICE_ID,))
         count = cur.fetchone()["count"]
         if count == 0:
             for cam in config.CAMERAS:
                 cur.execute(
-                    "INSERT INTO cameras (id, name, rtsp_url, zone_name, enabled) VALUES (%s, %s, %s, %s, %s)",
-                    (cam["id"], cam["name"], cam["source"], cam.get("zone_name", cam.get("location", cam["id"])), True)
+                    "INSERT INTO cameras (id, name, rtsp_url, zone_name, enabled, office_id) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (cam["id"], cam["name"], cam["source"], cam.get("zone_name", cam.get("location", cam["id"])), True, OFFICE_ID)
                 )
             conn.commit()
         cur.close()
 
-
-    
 # --- Zones ---
 
 class ZoneRequest(BaseModel):
@@ -1390,10 +1684,11 @@ class ZoneRequest(BaseModel):
     name: str
 
 @app.get("/zones", dependencies=[Depends(verify_token)])
-def list_zones():
+def list_zones(office_id: Optional[int] = Depends(get_office_id)):
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, name FROM zones ORDER BY id")
+        cur.execute("SELECT id, name, office_id FROM zones WHERE 1=1" + clause + " ORDER BY office_id, id", tuple(p))
         rows = cur.fetchall()
         cur.close()
     return [dict(r) for r in rows]
@@ -1402,7 +1697,11 @@ def list_zones():
 def add_zone(payload: ZoneRequest, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("INSERT INTO zones (id, name) VALUES (%s, %s)", (payload.id, payload.name))
+        cur.execute("SELECT 1 FROM zones WHERE id = %s", (payload.id,))
+        if cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=400, detail=f"Zone ID '{payload.id}' is already in use. Choose a different ID.")
+        cur.execute("INSERT INTO zones (id, name, office_id) VALUES (%s, %s, %s)", (payload.id, payload.name, OFFICE_ID))
         conn.commit()
         cur.close()
 
@@ -1421,7 +1720,7 @@ def add_zone(payload: ZoneRequest, current_user: dict = Depends(require_admin)):
 def delete_zone(zone_id: str, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM zones WHERE id = %s", (zone_id,))
+        cur.execute("DELETE FROM zones WHERE id = %s AND office_id = %s", (zone_id, OFFICE_ID))
         conn.commit()
         cur.close()
 
@@ -1439,7 +1738,7 @@ def delete_zone(zone_id: str, current_user: dict = Depends(require_admin)):
 # --- Incidents ---
 
 @app.get("/incidents", dependencies=[Depends(verify_token)])
-def list_incidents(status: str = None, limit: int = 100):
+def list_incidents(status: str = None, limit: int = 100, office_id: Optional[int] = Depends(get_office_id)):
     query = """
         SELECT i.*,
             COALESCE(
@@ -1453,7 +1752,9 @@ def list_incidents(status: str = None, limit: int = 100):
         FROM incidents i
         WHERE 1=1
     """
-    params = []
+    clause, p = office_sql(office_id, "i.office_id")
+    query += clause
+    params = list(p)
     if status:
         query += " AND i.status = %s"
         params.append(status)
@@ -1478,7 +1779,7 @@ def update_incident(incident_id: int, payload: IncidentUpdateRequest):
         raise HTTPException(status_code=400, detail="Invalid status")
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("UPDATE incidents SET status = %s WHERE id = %s", (status, incident_id))
+        cur.execute("UPDATE incidents SET status = %s WHERE id = %s AND office_id = %s", (status, incident_id, OFFICE_ID))
         conn.commit()
         cur.close()
     return {"message": "Incident updated"}
@@ -1486,47 +1787,51 @@ def update_incident(incident_id: int, payload: IncidentUpdateRequest):
 # --- Reporting ---
 
 @app.get("/reports/attendance-summary", dependencies=[Depends(require_staff)])
-def attendance_summary(start_date: str = None, end_date: str = None):
+def attendance_summary(start_date: str = None, end_date: str = None, office_id: Optional[int] = Depends(get_office_id)):
     start_date = start_date or datetime.now().date().isoformat()
     end_date = end_date or start_date
+    clause, p = office_sql(office_id, "e.office_id")
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT e.name, a.attendance_date, a.first_seen, a.last_seen FROM attendance a "
+            "SELECT e.office_id, e.name, a.attendance_date, a.first_seen, a.last_seen FROM attendance a "
             "JOIN employees e ON e.id = a.employee_id "
-            "WHERE a.attendance_date BETWEEN %s AND %s ORDER BY a.attendance_date DESC, e.name",
-            (start_date, end_date)
+            "WHERE a.attendance_date BETWEEN %s AND %s" + clause +
+            " ORDER BY a.attendance_date DESC, e.name",
+            tuple([start_date, end_date] + p)
         )
         rows = cur.fetchall()
         cur.close()
     return [dict(r) for r in rows]
 
 @app.get("/reports/alert-frequency", dependencies=[Depends(require_staff)])
-def alert_frequency(start_date: str = None, end_date: str = None):
+def alert_frequency(start_date: str = None, end_date: str = None, office_id: Optional[int] = Depends(get_office_id)):
     start_date = start_date or datetime.now().date().isoformat()
     end_date = end_date or start_date
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             "SELECT alert_type, priority, COUNT(*) as count FROM alerts "
-            "WHERE timestamp BETWEEN %s AND %s "
-            "GROUP BY alert_type, priority ORDER BY count DESC",
-            (f"{start_date}T00:00:00", f"{end_date}T23:59:59")
+            "WHERE timestamp BETWEEN %s AND %s" + clause +
+            " GROUP BY alert_type, priority ORDER BY count DESC",
+            tuple([f"{start_date}T00:00:00", f"{end_date}T23:59:59"] + p)
         )
         rows = cur.fetchall()
         cur.close()
     return [dict(r) for r in rows]
 
 @app.get("/reports/incident-response-times", dependencies=[Depends(require_staff)])
-def incident_response_times(start_date: str = None, end_date: str = None):
+def incident_response_times(start_date: str = None, end_date: str = None, office_id: Optional[int] = Depends(get_office_id)):
     start_date = start_date or datetime.now().date().isoformat()
     end_date = end_date or start_date
+    clause, p = office_sql(office_id)
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, person_name, alert_type, priority, status, first_seen, last_seen, alert_count "
-            "FROM incidents WHERE first_seen BETWEEN %s AND %s ORDER BY first_seen DESC",
-            (f"{start_date}T00:00:00", f"{end_date}T23:59:59")
+            "SELECT id, office_id, person_name, alert_type, priority, status, first_seen, last_seen, alert_count "
+            "FROM incidents WHERE first_seen BETWEEN %s AND %s" + clause + " ORDER BY first_seen DESC",
+            tuple([f"{start_date}T00:00:00", f"{end_date}T23:59:59"] + p)
         )
         rows = cur.fetchall()
         cur.close()
@@ -1536,7 +1841,7 @@ def incident_response_times(start_date: str = None, end_date: str = None):
 def mark_permanent(alert_id: int, permanent: bool = True):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("UPDATE alerts SET permanent = %s WHERE id = %s", (permanent, alert_id))
+        cur.execute("UPDATE alerts SET permanent = %s WHERE id = %s AND office_id = %s", (permanent, alert_id, OFFICE_ID))
         updated = cur.rowcount
         conn.commit()
         cur.close()
@@ -1565,16 +1870,36 @@ async def _mjpeg_generator(camera_id, request):
             yield offline_bytes
             await asyncio.sleep(1.0)
 
-@app.get("/snapshots/{filename:path}", dependencies=[Depends(verify_token)])
-def get_snapshot(filename: str):
+def _guard_must_be_local(current_user, office_id):
+    """Local disk and live frames belong to this server's office only."""
+    if current_user.get("role") == "guard" and office_id != OFFICE_ID:
+        raise HTTPException(status_code=403, detail="Not available for your office on this server")
+
+@app.get("/snapshots/{filename:path}")
+def get_snapshot(filename: str, current_user: dict = Depends(verify_token), office_id: Optional[int] = Depends(get_office_id)):
+    _guard_must_be_local(current_user, office_id)
     base = os.path.realpath("snapshots")
     target = os.path.realpath(os.path.join(base, filename))
     if not target.startswith(base + os.sep) or not os.path.isfile(target):
         raise HTTPException(status_code=404, detail="Snapshot not found")
     return FileResponse(target, media_type="image/jpeg")
 
-@app.get("/media", dependencies=[Depends(verify_token)])
-def get_media(u: str):
+@app.get("/media")
+def get_media(u: str, current_user: dict = Depends(verify_token), office_id: Optional[int] = Depends(get_office_id)):
+    if current_user.get("role") == "guard":
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT 1 FROM alerts WHERE (snapshot_filename = %s OR ack_proof_image = %s) AND office_id = %s "
+                "UNION ALL SELECT 1 FROM alert_records WHERE snapshot_filename = %s AND office_id = %s "
+                "UNION ALL SELECT 1 FROM recordings WHERE video_url = %s AND office_id = %s "
+                "UNION ALL SELECT 1 FROM audit_logs WHERE proof_image = %s AND office_id = %s LIMIT 1",
+                (u, u, office_id, u, office_id, u, office_id, u, office_id)
+            )
+            ok = cur.fetchone()
+            cur.close()
+        if not ok:
+            raise HTTPException(status_code=404, detail="Media not found")
     signed = storage.signed_url_for(u)
     if not signed:
         raise HTTPException(status_code=404, detail="Media not found")
@@ -1584,8 +1909,9 @@ def get_media(u: str):
         headers={"Cache-Control": "private, max-age=3000"},
     )
 
-@app.get("/video_feed/{camera_id}", dependencies=[Depends(verify_token)])
-async def video_feed(camera_id: str, request: Request):
+@app.get("/video_feed/{camera_id}")
+async def video_feed(camera_id: str, request: Request, current_user: dict = Depends(verify_token), office_id: Optional[int] = Depends(get_office_id)):
+    _guard_must_be_local(current_user, office_id)
     return StreamingResponse(
         _mjpeg_generator(camera_id, request),
         media_type="multipart/x-mixed-replace; boundary=frame",

@@ -8,6 +8,7 @@ import React, {
 import Shell from '../components/Shell.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import useOffices from '../hooks/useOffices.js';
 import { initials } from '../data/mockData.js';
 import Loader from '../components/Loader.jsx';
 
@@ -25,7 +26,8 @@ function classifyShift(shift) {
 }
 
 export default function AdminEmployees() {
-  const { session, apiFetch } = useAuth();
+  const { session, apiFetch, isSuperAdmin, officeId: myOfficeId } = useAuth();
+  const { offices, officeName } = useOffices();
 
   const isAdmin =
     session.role === 'ceo' ||
@@ -45,10 +47,12 @@ export default function AdminEmployees() {
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [photos, setPhotos] = useState([]);
+  const [newOfficeId, setNewOfficeId] = useState('');
 
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [shiftFilter, setShiftFilter] = useState('');
+  const [officeFilter, setOfficeFilter] = useState('');
 
   const [editTarget, setEditTarget] = useState(null);
   const [editName, setEditName] = useState('');
@@ -57,6 +61,16 @@ export default function AdminEmployees() {
   const [editPhoto, setEditPhoto] = useState(null);
 
   const [deleteTarget, setDeleteTarget] = useState(null);
+
+  // Only super admins can switch offices. Everyone else is already scoped by the backend.
+  const showOfficePicker = isSuperAdmin && offices.length > 1;
+
+  // With a single office there is nothing to choose, so preselect it.
+  useEffect(() => {
+    if (isSuperAdmin && offices.length === 1 && !newOfficeId) {
+      setNewOfficeId(String(offices[0].id));
+    }
+  }, [isSuperAdmin, offices, newOfficeId]);
 
   const loadStaff = useCallback(async () => {
     try {
@@ -70,6 +84,7 @@ export default function AdminEmployees() {
             id: employee.id,
             name: employee.name,
             role: employee.designation || 'Staff',
+            office_id: employee.office_id ?? null,
             shift_start: employee.shift_start,
             shift_end: employee.shift_end,
             shift: `${employee.shift_start} – ${employee.shift_end}`,
@@ -97,6 +112,7 @@ export default function AdminEmployees() {
   const filteredStaff = useMemo(() => {
     return staff.filter(
       (employee) =>
+        (!officeFilter || String(employee.office_id) === officeFilter) &&
         (!roleFilter || employee.role === roleFilter) &&
         (!shiftFilter ||
           classifyShift(employee.shift) === shiftFilter) &&
@@ -105,7 +121,7 @@ export default function AdminEmployees() {
             .toLowerCase()
             .includes(search.toLowerCase()))
     );
-  }, [staff, search, roleFilter, shiftFilter]);
+  }, [staff, search, roleFilter, shiftFilter, officeFilter]);
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -113,6 +129,13 @@ export default function AdminEmployees() {
     event.preventDefault();
 
     if (submitting) return;
+
+    // Non-super-admins can only add employees to their own office.
+    const targetOffice = isSuperAdmin ? newOfficeId : myOfficeId;
+    if (targetOffice == null || targetOffice === '') {
+      alert('Select an office for this employee.');
+      return;
+    }
 
     setSubmitting(true);
 
@@ -122,6 +145,7 @@ export default function AdminEmployees() {
     formData.append('designation', role);
     formData.append('shift_start', start);
     formData.append('shift_end', end);
+    formData.append('office_id', String(targetOffice));
 
     for (let index = 0; index < photos.length; index += 1) {
       formData.append('photos', photos[index]);
@@ -141,6 +165,7 @@ export default function AdminEmployees() {
         setStart('');
         setEnd('');
         setPhotos([]);
+        setNewOfficeId('');
         setShowAdd(false);
 
         await loadStaff();
@@ -172,6 +197,8 @@ export default function AdminEmployees() {
     formData.append('designation', editTarget.role);
     formData.append('shift_start', editStart);
     formData.append('shift_end', editEnd);
+    // The office is not sent on edit: moving an employee would orphan their
+    // attendance history and face data in the old office.
 
     if (editPhoto) {
       formData.append('photo', editPhoto);
@@ -243,6 +270,20 @@ export default function AdminEmployees() {
           onChange={(event) => setSearch(event.target.value)}
         />
 
+        {showOfficePicker && (
+          <select
+            value={officeFilter}
+            onChange={(event) => setOfficeFilter(event.target.value)}
+          >
+            <option value="">All offices</option>
+            {offices.map((o) => (
+              <option key={o.id} value={String(o.id)}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        )}
+
         <select
           value={roleFilter}
           onChange={(event) => setRoleFilter(event.target.value)}
@@ -306,6 +347,27 @@ export default function AdminEmployees() {
                 placeholder="Sales Associate"
                 required
               />
+            </div>
+
+            <div className="field">
+              <label>Office</label>
+
+              {isSuperAdmin ? (
+                <select
+                  value={newOfficeId}
+                  onChange={(event) => setNewOfficeId(event.target.value)}
+                  required
+                >
+                  <option value="">Select office…</option>
+                  {offices.map((o) => (
+                    <option key={o.id} value={String(o.id)}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input value={officeName(myOfficeId)} disabled readOnly />
+              )}
             </div>
 
             <div className="field">
@@ -390,6 +452,13 @@ export default function AdminEmployees() {
               {employee.role}
             </div>
 
+            {showOfficePicker && (
+              <div className="row">
+                <span>Office</span>
+                <span>{officeName(employee.office_id)}</span>
+              </div>
+            )}
+
             <div className="row">
               <span>Shift</span>
               <span>{employee.shift}</span>
@@ -459,6 +528,12 @@ export default function AdminEmployees() {
                     setEditName(event.target.value)
                   }
                 />
+              </div>
+
+              <div className="field">
+                <label>Office</label>
+
+                <input value={officeName(editTarget.office_id)} disabled readOnly />
               </div>
 
               <div className="pair-grid">

@@ -8,11 +8,13 @@ import cv2
 import threading
 import time
 import numpy as np
+import re
+import config
+from collections import deque
 from datetime import datetime, timedelta
 from recognition import recognize_faces
 from alerts import get_alert_priority, is_within_store_hours, log_alert, format_duration, get_shift_datetimes, escalate_stale_incidents
 from database import get_db, OFFICE_ID
-import config
 from video_recorder import get_recorder
 
 # ---- tunables (override in config.py if you like) ----
@@ -24,6 +26,14 @@ RECORDER_PUSH_FPS = 10
 CURRENTLY_DETECTED_WRITE_EVERY_SEC = 3
 ATTENDANCE_WRITE_EVERY_SEC = 20
 EMPLOYEE_CACHE_TTL_SEC = 15
+
+RECOG_VOTE_HISTORY = getattr(config, "RECOG_VOTE_HISTORY", 3)
+RECOG_VOTE_MIN_HITS = getattr(config, "RECOG_VOTE_MIN_HITS", 2)
+RECOG_VOTE_WINDOW_SEC = getattr(config, "RECOG_VOTE_WINDOW_SEC", 12)
+UNKNOWN_WINDOW_SEC = getattr(config, "UNKNOWN_WINDOW_SEC", 15)
+RECOGNITION_ACTIVE_INTERVAL_SEC = getattr(config, "RECOGNITION_ACTIVE_INTERVAL_SEC", 1.5)
+# Set LOG_RECOGNITION_PASSES=1 in the environment to print one line per recognition pass (for tuning)
+LOG_RECOGNITION_PASSES = os.getenv("LOG_RECOGNITION_PASSES", "0") == "1"
 
 frame_locks = {}
 latest_frames = {}
@@ -37,7 +47,6 @@ _tampered = {}
 
 _heartbeats = {}
 _heartbeat_lock = threading.Lock()
-_streak_is_zero = {}
 _motion_state = {}
 
 _throttle = {}
@@ -45,6 +54,10 @@ _throttle_lock = threading.Lock()
 
 _employee_cache = {}
 _employee_cache_lock = threading.Lock()
+
+_vote_history = {}
+_unknown_hits = {}
+_vote_lock = threading.Lock()
 
 
 def _should_run(key, every_sec):
@@ -59,32 +72,6 @@ def _should_run(key, every_sec):
 
 def get_tampered_cameras():
     return {cid for cid, v in list(_tampered.items()) if v}
-
-
-def get_unknown_streak(camera_id):
-    location = _get_camera_location(camera_id)
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT value FROM system_state WHERE key = %s", (f"unknown_streak_{OFFICE_ID}_{location}",))
-        row = cur.fetchone()
-        cur.close()
-        return int(row["value"]) if row else 0
-
-
-def set_unknown_streak(camera_id, value):
-    location = _get_camera_location(camera_id)
-    if value == 0 and _streak_is_zero.get(location) is True:
-        return  # already zero, skip the DB write
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO system_state (key, value) VALUES (%s, %s) "
-            "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
-            (f"unknown_streak_{OFFICE_ID}_{location}", str(value))
-        )
-        conn.commit()
-        cur.close()
-    _streak_is_zero[location] = (value == 0)
 
 
 def update_currently_detected(name, camera_name, now):
@@ -106,7 +93,6 @@ def update_currently_detected(name, camera_name, now):
         conn.commit()
         cur.close()
 
-
 def update_attendance(employee_id, now, camera_id, shift_start_dt=None):
     today = now.date().isoformat()
     zone_name = _get_camera_zone_name(camera_id)
@@ -126,11 +112,27 @@ def update_attendance(employee_id, now, camera_id, shift_start_dt=None):
         cur.close()
 
 
-# Heartbeats live in memory: only this process reads them.
-# (If you ever run several uvicorn workers, move them back to the DB.)
+# Heartbeats are kept in memory for this process AND written to the cameras table
+# (throttled) so a central server can show camera status for every office.
+def _persist_heartbeat(camera_id):
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE cameras SET last_heartbeat = %s, tampered = %s WHERE id = %s",
+                (datetime.utcnow().isoformat(), bool(_tampered.get(camera_id)), camera_id)
+            )
+            conn.commit()
+            cur.close()
+    except Exception as e:
+        print(f"[camera_worker] heartbeat persist failed: {e}")
+
+
 def update_camera_heartbeat(camera_id, now):
     with _heartbeat_lock:
         _heartbeats[camera_id] = now
+    if _should_run(("hb_db", camera_id), 10):
+        threading.Thread(target=_persist_heartbeat, args=(camera_id,), daemon=True).start()
 
 
 def get_camera_heartbeat(camera_id):
@@ -148,6 +150,14 @@ def invalidate_employee_cache():
         _employee_cache.clear()
 
 
+_SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_\-]")
+
+
+def _folder_key(name):
+    cleaned = _SAFE_NAME_RE.sub("_", (name or "").strip().replace(" ", "_"))
+    return cleaned.replace("_", " ").strip().lower()
+
+
 def _get_employee_by_name(name):
     now = time.monotonic()
     with _employee_cache_lock:
@@ -158,6 +168,14 @@ def _get_employee_by_name(name):
         cur = conn.cursor()
         cur.execute("SELECT * FROM employees WHERE name = %s AND office_id = %s", (name, OFFICE_ID))
         row = cur.fetchone()
+        if row is None:
+            # recognition returns the folder name, which has punctuation replaced by underscores
+            cur.execute("SELECT * FROM employees WHERE office_id = %s", (OFFICE_ID,))
+            key = _folder_key(name)
+            for r in cur.fetchall():
+                if _folder_key(r["name"]) == key:
+                    row = r
+                    break
         cur.close()
     emp = dict(row) if row else None
     with _employee_cache_lock:
@@ -213,10 +231,7 @@ def _load_cameras_from_db():
         return _camera_cache["data"]
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(
-            "SELECT id, name, rtsp_url, zone_name, enabled FROM cameras WHERE enabled = TRUE AND office_id = %s",
-            (OFFICE_ID,)
-        )
+        cur.execute("SELECT id, name, rtsp_url, zone_name, enabled FROM cameras WHERE enabled = TRUE AND office_id = %s", (OFFICE_ID,))
         rows = cur.fetchall()
         cur.close()
     cameras = [{"id": r["id"], "name": r["name"], "source": r["rtsp_url"], "zone_name": r["zone_name"] or r["id"]} for r in rows]
@@ -300,6 +315,42 @@ def draw_oriented_bbox(img, box, label="", color=(0, 0, 255), thickness=2, corne
     return annotated
 
 
+def _result_status(item):
+    """matched | unknown | uncertain. Falls back to the old behaviour if recognition gives no status."""
+    if isinstance(item, dict):
+        status = item.get("status")
+        if status:
+            return status
+        return "unknown" if item.get("name") == "Unknown" else "matched"
+    return "unknown" if item == "Unknown" else "matched"
+
+
+def _confirmed_names(camera_id, matched_names):
+    """Records this pass and returns the names seen in at least RECOG_VOTE_MIN_HITS recent passes."""
+    now = time.monotonic()
+    with _vote_lock:
+        hist = _vote_history.setdefault(camera_id, deque(maxlen=RECOG_VOTE_HISTORY))
+        hist.append((now, set(matched_names)))
+        while hist and now - hist[0][0] > RECOG_VOTE_WINDOW_SEC:
+            hist.popleft()
+        counts = {}
+        for _ts, names in hist:
+            for n in names:
+                counts[n] = counts.get(n, 0) + 1
+    return {n for n, c in counts.items() if c >= RECOG_VOTE_MIN_HITS}
+
+
+def _record_unknown(camera_id):
+    """Records a pass with a real stranger face and returns how many such passes are in the window."""
+    now = time.monotonic()
+    with _vote_lock:
+        hits = _unknown_hits.setdefault(camera_id, deque())
+        hits.append(now)
+        while hits and now - hits[0] > UNKNOWN_WINDOW_SEC:
+            hits.popleft()
+        return len(hits)
+
+
 def _process_frame(frame, camera_id, camera_name):
     now = datetime.now()
     zone_name = _get_camera_zone(camera_id)
@@ -318,23 +369,37 @@ def _process_frame(frame, camera_id, camera_name):
     detections = recognize_faces(frame)
     _set_had_faces(camera_id, bool(detections))
 
-    if not detections:
-        # No faces this pass: reset the unknown streak so isolated false
-        # detections can't pile up over hours into a "stranger" alert.
-        set_unknown_streak(camera_id, 0)
+    parsed = []
+    for item in detections:
+        name = item.get("name") if isinstance(item, dict) else item
+        box = item.get("box") if isinstance(item, dict) else (0, 0, 0, 0)
+        parsed.append((name, box, _result_status(item)))
+
+    # Record every pass (even with no faces) so a name must really repeat before we act on it.
+    matched_names = {n for n, _b, s in parsed if s == "matched"}
+    confirmed = _confirmed_names(camera_id, matched_names)
+
+    if LOG_RECOGNITION_PASSES:
+        print(f"[camera_worker] {camera_name}: matched={sorted(matched_names)} "
+              f"unknown={sum(1 for _n, _b, s in parsed if s == 'unknown')} "
+              f"uncertain={sum(1 for _n, _b, s in parsed if s == 'uncertain')} "
+              f"confirmed={sorted(confirmed)}")
+
+    if not parsed:
         return
 
     any_unknown = False
     unknown_boxes = []
 
-    for item in detections:
-        name = item.get("name") if isinstance(item, dict) else item
-        box = item.get("box") if isinstance(item, dict) else (0, 0, 0, 0)
-
-        if name == "Unknown":
+    for name, box, status in parsed:
+        if status == "unknown":
             any_unknown = True
             if box and sum(box) > 0:
                 unknown_boxes.append(box)
+            continue
+        if status == "uncertain":
+            continue
+        if name not in confirmed:
             continue
 
         try:
@@ -373,13 +438,10 @@ def _process_frame(frame, camera_id, camera_name):
         recorder = get_recorder(camera_id, camera_name)
         recorder.trigger_unknown(zone_name, snapshot_frame=snapshot_frame)
 
-        streak = get_unknown_streak(camera_id) + 1
-        set_unknown_streak(camera_id, streak)
-        if streak >= config.UNKNOWN_STREAK_THRESHOLD:
+        count = _record_unknown(camera_id)
+        if count >= config.UNKNOWN_STREAK_THRESHOLD:
             msg = f"[{camera_name}] Unrecognized face detected"
             log_alert("Unknown", "stranger", "high", msg, frame=snapshot_frame, camera_name=camera_name, zone_name=zone_name)
-    else:
-        set_unknown_streak(camera_id, 0)
 
 
 def _recognition_worker(frame, camera_id, camera_name):
@@ -462,7 +524,10 @@ def _camera_loop(camera_config, stop_event):
             update_camera_heartbeat(camera_id, datetime.now())
             last_heartbeat = time.time()
 
-        if time.time() - last_recognition > config.RECOGNITION_INTERVAL_SEC:
+        # Check more often while a face is in view so a name can be confirmed quickly
+        had_faces = _motion_state.get(camera_id, {}).get("had_faces", False)
+        interval = RECOGNITION_ACTIVE_INTERVAL_SEC if had_faces else config.RECOGNITION_INTERVAL_SEC
+        if time.time() - last_recognition > interval:
             start_new = False
             with recognition_locks[camera_id]:
                 if not recognition_in_progress[camera_id]:
@@ -483,6 +548,9 @@ def _cleanup_camera_state(camera_id):
     recognition_in_progress.pop(camera_id, None)
     _tampered.pop(camera_id, None)
     _motion_state.pop(camera_id, None)
+    with _vote_lock:
+        _vote_history.pop(camera_id, None)
+        _unknown_hits.pop(camera_id, None)
 
 
 def start_camera_threads():

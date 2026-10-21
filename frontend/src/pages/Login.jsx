@@ -5,7 +5,7 @@ import { useAuth, dashboardFor } from '../context/AuthContext.jsx';
 const MSG_BAD_LOGIN = 'Incorrect Security ID or password. Try again.';
 const MSG_NO_SERVER = "Can't reach the server. Check your network connection and try again.";
 
-export default function Login() {
+export function Login() {
   const { login, session } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState(() => localStorage.getItem('vaultwatch_remembered_username') || '');
@@ -181,3 +181,5 @@ export default function Login() {
     </div>
   );
 }
+
+export default Login;

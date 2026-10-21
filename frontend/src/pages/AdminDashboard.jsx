@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useStatus } from '../context/StatusContext.jsx';
+import useOffices from '../hooks/useOffices.js';
 import Loader from '../components/Loader.jsx';
 
 const ALERT_TYPE_LABELS = {
@@ -57,48 +58,111 @@ function StatCard({ icon, label, value, sub, tone = '' }) {
 
 /* ---------- page ---------- */
 export default function AdminDashboard() {
-  const { apiFetch } = useAuth();
+  const { apiFetch, isSuperAdmin } = useAuth();
   const { status, cameras } = useStatus();
+  const { offices, officeName } = useOffices();
 
+  const [officeFilter, setOfficeFilter] = useState(''); // '' = all offices
   const [employeeCount, setEmployeeCount] = useState(0);
-  const [cameraCount, setCameraCount] = useState({ live: 0, total: 0 });
   const [records, setRecords] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const reqId = useRef(0);
+
+  // Only super admins can switch offices. Everyone else is already scoped by the backend.
+  const showOfficePicker = isSuperAdmin && offices.length > 1;
+  const showOfficeLabels = showOfficePicker && !officeFilter;
 
   const load = useCallback(async () => {
+    const id = ++reqId.current;
+    const officeParam = isSuperAdmin && officeFilter ? `office_id=${encodeURIComponent(officeFilter)}` : '';
+    const withOffice = (path) => {
+      if (!officeParam) return path;
+      return `${path}${path.includes('?') ? '&' : '?'}${officeParam}`;
+    };
+
     try {
       const [empRes, recRes, incRes] = await Promise.all([
-        apiFetch('/employees'),
-        apiFetch('/records?limit=10'),
-        apiFetch('/incidents?status=new'),
+        apiFetch(withOffice('/employees')),
+        apiFetch(withOffice('/records?limit=10')),
+        apiFetch(withOffice('/incidents?status=new')),
       ]);
-      if (empRes.ok) setEmployeeCount((await empRes.json()).length);
-      if (recRes.ok) setRecords((await recRes.json()).records || []);
-      if (incRes.ok) setIncidents(await incRes.json());
+      const emp = empRes.ok ? await empRes.json() : null;
+      const rec = recRes.ok ? await recRes.json() : null;
+      const inc = incRes.ok ? await incRes.json() : null;
+
+      // The office was switched while this request was in flight; let the newer one win.
+      if (id !== reqId.current) return;
+
+      if (emp) setEmployeeCount(emp.length);
+      if (rec) setRecords(rec.records || []);
+      if (inc) setIncidents(inc);
     } finally {
-      setLoading(false);
+      if (id === reqId.current) setLoading(false);
     }
-  }, [apiFetch]);
+  }, [apiFetch, isSuperAdmin, officeFilter]);
 
   useEffect(() => {
+    setLoading(true); // also runs when the office changes, so old numbers never flash
     load();
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
   }, [load]);
 
-  useEffect(() => {
-    setCameraCount({ live: cameras.filter((c) => c.live).length, total: cameras.length });
+  const visibleCameras = useMemo(
+    () => (officeFilter ? cameras.filter((c) => String(c.office_id) === officeFilter) : cameras),
+    [cameras, officeFilter]
+  );
+
+  const cameraCount = useMemo(
+    () => ({ live: visibleCameras.filter((c) => c.live).length, total: visibleCameras.length }),
+    [visibleCameras]
+  );
+
+  const visibleIncidents = useMemo(
+    () => (
+      officeFilter
+        ? incidents.filter((a) => a.office_id == null || String(a.office_id) === officeFilter)
+        : incidents
+    ),
+    [incidents, officeFilter]
+  );
+
+  // /status only reports a camera name per detection, so map camera -> office.
+  const cameraOffice = useMemo(() => {
+    const m = {};
+    cameras.forEach((c) => { m[c.name] = c.office_id; m[c.id] = c.office_id; });
+    return m;
   }, [cameras]);
 
-  const highAlerts = incidents.filter((a) => a.priority === 'high').length;
+  const staffOnShift = useMemo(() => {
+    const list = status.currently_detected || [];
+    if (!officeFilter) return list.length;
+    return list.filter((d) => String(d.office_id ?? cameraOffice[d.camera]) === officeFilter).length;
+  }, [status.currently_detected, officeFilter, cameraOffice]);
+
+  const highAlerts = visibleIncidents.filter((a) => a.priority === 'high').length;
 
   return (
     <Shell active="dashboard" dark title="Overview">
       <div className="page-head">
         <h1>Good to see you</h1>
-        <p>Here's what's happening at your store today.</p>
+        <p>
+          {officeFilter
+            ? `Here's what's happening at ${officeName(officeFilter)} today.`
+            : "Here's what's happening at your store today."}
+        </p>
       </div>
+
+      {showOfficePicker && (
+        <div className="filter-bar">
+          <select value={officeFilter} onChange={(e) => setOfficeFilter(e.target.value)}>
+            <option value="">All offices</option>
+            {offices.map((o) => <option key={o.id} value={String(o.id)}>{o.name}</option>)}
+          </select>
+        </div>
+      )}
+
       {loading ? <Loader /> : (<>
         <div className="stat-grid">
           <StatCard
@@ -110,14 +174,14 @@ export default function AdminDashboard() {
           <StatCard
             icon={icons.bell}
             label="Active alerts"
-            value={incidents.length}
+            value={visibleIncidents.length}
             sub={`${highAlerts} high severity`}
             tone={highAlerts > 0 ? 'warn' : ''}
           />
           <StatCard
             icon={icons.users}
             label="Staff on shift"
-            value={status.currently_detected.length}
+            value={staffOnShift}
             sub={`of ${employeeCount} total employees`}
           />
           <StatCard icon={icons.records} label="Records today" value={records.length} />
@@ -130,7 +194,7 @@ export default function AdminDashboard() {
             <Link className="link-btn" to="/cameras-alerts">View all →</Link>
           </div>
 
-          {incidents.length > 0 ? (
+          {visibleIncidents.length > 0 ? (
             <div className="table-wrap">
               <table className="records compact">
                 <thead>
@@ -143,27 +207,31 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {incidents.slice(0, 5).map((a) => (
-                    <tr key={a.id}>
-                      <td className="alert-time-cell mono">
-                        <span className={`log-dot p-${a.priority}`} />
-                        {formatTime(a.last_seen)}
-                      </td>
-                      <td className="cell-ellipsis">
-                        {formatIncident(a)}
-                        <span className="alert-count">×{a.alert_count}</span>
-                        {/* phone only: camera and zone move under the title */}
-                        <span className="alert-sub">
-                          {a.camera_name || '-'} · {a.zone_name || '-'}
-                        </span>
-                      </td>
-                      <td className="col-hide-sm">{a.camera_name || '-'}</td>
-                      <td className="col-hide-sm">{a.zone_name || '-'}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        <span className={`pill p-${a.priority}`}>{a.priority}</span>
-                      </td>
-                    </tr>
-                  ))}
+                  {visibleIncidents.slice(0, 5).map((a) => {
+                    const officePrefix =
+                      showOfficeLabels && a.office_id != null ? `${officeName(a.office_id)} · ` : '';
+                    return (
+                      <tr key={a.id}>
+                        <td className="alert-time-cell mono">
+                          <span className={`log-dot p-${a.priority}`} />
+                          {formatTime(a.last_seen)}
+                        </td>
+                        <td className="cell-ellipsis">
+                          {formatIncident(a)}
+                          <span className="alert-count">×{a.alert_count}</span>
+                          {/* phone only: camera and zone move under the title */}
+                          <span className="alert-sub">
+                            {officePrefix}{a.camera_name || '-'} · {a.zone_name || '-'}
+                          </span>
+                        </td>
+                        <td className="col-hide-sm">{officePrefix}{a.camera_name || '-'}</td>
+                        <td className="col-hide-sm">{a.zone_name || '-'}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          <span className={`pill p-${a.priority}`}>{a.priority}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
