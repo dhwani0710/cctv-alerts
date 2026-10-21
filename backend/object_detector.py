@@ -4,10 +4,10 @@ import config
 
 YOLO_MODEL = getattr(config, "YOLO_MODEL", "yolo26n.pt")
 DETECT_CONF = getattr(config, "DETECT_CONF", 0.5)      # people
-ANIMAL_CONF = getattr(config, "ANIMAL_CONF", 0.7)      # animals need higher confidence (keep >= DETECT_CONF)
+ANIMAL_CONF = getattr(config, "ANIMAL_CONF", 0.9)      # animals need higher confidence (keep >= DETECT_CONF)
 
 PERSON = "person"
-ANIMALS = {"bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"}
+ANIMALS = {"bird", "cat", "dog","mouse"}
 
 _lock = threading.Lock()   # one inference at a time; camera threads share the model
 _model = None

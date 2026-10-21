@@ -17,3 +17,4 @@ numpy
 Pillow
 imageio-ffmpeg
 ultralytics==8.4.175
+git+https://github.com/ultralytics/CLIP.git
