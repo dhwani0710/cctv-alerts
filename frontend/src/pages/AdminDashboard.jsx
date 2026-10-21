@@ -21,6 +21,9 @@ function formatIncident(a) {
     return `Stranger - ${name.split('@')[1]}`;
   }
   const label = ALERT_TYPE_LABELS[a.alert_type] || a.alert_type;
+  if (a.alert_type === 'animal') {
+    return label;
+  }
   return `${label} — ${name}`;
 }
 

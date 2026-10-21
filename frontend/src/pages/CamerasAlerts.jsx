@@ -227,13 +227,8 @@ export default function CamerasAlerts() {
   }, [officeCameras]);
 
   const sortedIncidents = useMemo(
-    () => [...incidents].sort((a, b) => {
-      const animalFirst = (b.alert_type === 'animal') - (a.alert_type === 'animal');
-      if (animalFirst !== 0) return animalFirst;
-      const r = (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3);
-      return r !== 0 ? r : new Date(b.last_seen) - new Date(a.last_seen);
-    }),
-    [visibleIncidents]
+    () => [...incidents].sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen)),
+    [incidents]
   );
 
   /* Auto: pick by camera count, capped by width.
