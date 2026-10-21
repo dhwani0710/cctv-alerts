@@ -16,6 +16,7 @@ const ALERT_TYPE_LABELS = {
   camera_tamper: 'Possible camera tampering',
   early_arrival: 'Early arrival',
   overstay: 'Overstay',
+    animal: 'Animal detected',
 };
 const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
 const ZONE_COLORS = ['#C2703D', '#4F8FBF', '#57795F', '#9B6BC2', '#B8902F', '#BF4F7A'];
@@ -226,7 +227,9 @@ export default function CamerasAlerts() {
   }, [officeCameras]);
 
   const sortedIncidents = useMemo(
-    () => [...visibleIncidents].sort((a, b) => {
+    () => [...incidents].sort((a, b) => {
+      const animalFirst = (b.alert_type === 'animal') - (a.alert_type === 'animal');
+      if (animalFirst !== 0) return animalFirst;
       const r = (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3);
       return r !== 0 ? r : new Date(b.last_seen) - new Date(a.last_seen);
     }),

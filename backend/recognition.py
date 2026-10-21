@@ -328,7 +328,7 @@ def _get_match_settings():
 
         margin = get_setting_float("match_margin")
         if margin is None:
-            margin = 0.05
+            margin = 0.08
 
         _settings_cache.update(ts=now, vals=(min_matching, max_distance, margin))
     return _settings_cache["vals"]
@@ -466,9 +466,9 @@ def recognize_faces(frame, with_boxes=False):
             name, status = "Unknown", "unknown"
         else:
             name, status, closest = _identify(_unit(r["embedding"]), gallery, *settings)
-            if closest is not None:
-                logger.debug("Face -> %s (%s) | closest: %s, %d/%d photo(s) within %.2f, best %.3f",
-                             name, status, closest[0], closest[2], closest[3], settings[1], closest[1])
+            if closest:
+                print(f"[recognition] RESULT {name} ({status}) closest={closest[0]} "
+                      f"dist={closest[1]:.3f} close_photos={closest[2]}/{closest[3]}")
 
         results.append({"name": name, "box": box, "status": status})
 

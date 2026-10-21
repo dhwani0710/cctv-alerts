@@ -16,6 +16,13 @@ from recognition import recognize_faces
 from alerts import get_alert_priority, is_within_store_hours, log_alert, format_duration, get_shift_datetimes, escalate_stale_incidents
 from database import get_db, OFFICE_ID
 from video_recorder import get_recorder
+from object_detector import detect_objects
+
+ANIMAL_WINDOW = getattr(config, "ANIMAL_WINDOW", 5)                # look at the last 5 checks
+ANIMAL_HITS_REQUIRED = getattr(config, "ANIMAL_HITS_REQUIRED", 2)  # animal in at least 2 of them
+ANIMAL_COOLDOWN_SEC = getattr(config, "ANIMAL_COOLDOWN_SEC", 60)   # at most 1 alert per minute per camera
+_animal_hist = {}
+_animal_last_alert = {}
 
 # ---- tunables (override in config.py if you like) ----
 MOTION_GATE_ENABLED = getattr(config, "MOTION_GATE_ENABLED", True)
@@ -314,7 +321,40 @@ def draw_oriented_bbox(img, box, label="", color=(0, 0, 255), thickness=2, corne
 
     return annotated
 
+def _check_animals(frame, camera_id, camera_name, zone_name):
+    try:
+        objects = detect_objects(frame)
+        animals = [o for o in objects if o["kind"] == "animal"]
 
+        hist = _animal_hist.setdefault(camera_id, deque(maxlen=ANIMAL_WINDOW))
+        hist.append(bool(animals))
+        if animals:
+            print(f"[animal-debug] {camera_name}: {[(a['label'], round(a['conf'], 2)) for a in animals]} hits {sum(hist)}/{ANIMAL_HITS_REQUIRED}")
+        if not animals or sum(hist) < ANIMAL_HITS_REQUIRED:
+            return
+
+        now = time.time()
+        since_last = now - _animal_last_alert.get(camera_id, 0)
+        if since_last < ANIMAL_COOLDOWN_SEC:
+            print(f"[animal-debug] suppressed by cooldown ({int(since_last)}s since last alert)")
+            return
+        _animal_last_alert[camera_id] = now
+        hist.clear()
+
+        snapshot = frame
+        for a in animals:
+            snapshot = draw_oriented_bbox(snapshot, a["box"], label=f'{a["label"]} {a["conf"]:.2f}',
+                                          color=(255, 140, 0), pad_ratio=0.05)
+        kinds = ", ".join(sorted({a["label"] for a in animals}))
+        msg = f"[{camera_name}] Animal detected: {kinds}"
+
+        print(f"[animal-debug] calling log_alert for: {kinds}")
+        log_alert("Animal", "animal", "medium", msg, frame=snapshot, camera_name=camera_name, zone_name=zone_name)
+        print(f"[animal-debug] ALERT logged: {msg}")
+
+    except Exception as e:
+        print(f"[camera_worker] Animal check error on '{camera_name}': {type(e).__name__}: {e}")    
+                
 def _result_status(item):
     """matched | unknown | uncertain. Falls back to the old behaviour if recognition gives no status."""
     if isinstance(item, dict):
@@ -548,6 +588,8 @@ def _cleanup_camera_state(camera_id):
     recognition_in_progress.pop(camera_id, None)
     _tampered.pop(camera_id, None)
     _motion_state.pop(camera_id, None)
+    _animal_hist.pop(camera_id, None)
+    _animal_last_alert.pop(camera_id, None)
     with _vote_lock:
         _vote_history.pop(camera_id, None)
         _unknown_hits.pop(camera_id, None)

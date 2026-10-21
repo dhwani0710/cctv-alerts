@@ -12,6 +12,7 @@ const ALERT_TYPE_LABELS = {
   camera_tamper: 'Possible camera tampering',
   early_arrival: 'Early arrival',
   overstay: 'Overstay',
+  animal: 'Animal detected',
 };
 
 function formatIncident(a) {
