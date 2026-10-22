@@ -431,7 +431,546 @@ const AD_CSS = `
 /*  Page                                                               */
 /* ------------------------------------------------------------------ */
 
-export const AuditLogPage = () => {
-  const { session, apiFetch } = useAuth();
-  return null;
+const parseTs = (ts) => {
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime()) ? null : d;
 };
+
+// EDIT THIS if proof images load from another route (see note below)
+const proofPath = (name) => `/proof/${encodeURIComponent(name)}`;
+
+const TONE_META = [
+  { tone: 'danger', label: 'Critical', color: 'var(--ad-danger)' },
+  { tone: 'warn', label: 'Alerts', color: 'var(--ad-warn)' },
+  { tone: 'ok', label: 'Added', color: 'var(--ad-ok)' },
+  { tone: 'info', label: 'Changes', color: 'var(--ad-info)' },
+  { tone: 'muted', label: 'Other', color: 'var(--ad-muted)' },
+];
+
+export const AuditLogPage = () => {
+  const { apiFetch, isSuperAdmin } = useAuth();
+  const { offices, officeName } = useOffices();
+
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const [roleF, setRoleF] = useState('');
+  const [moduleF, setModuleF] = useState('');
+  const [date, setDate] = useState('');
+  const [office, setOffice] = useState('');
+  const [search, setSearch] = useState('');
+  const [q, setQ] = useState('');
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [proof, setProof] = useState(null);
+  const reqId = useRef(0);
+
+  const showOfficePicker = !!isSuperAdmin && (offices || []).length > 1;
+  const colCount = showOfficePicker ? 7 : 6;
+  const FETCH_LIMIT = 1000;
+
+  // debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setQ(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const load = useCallback(async () => {
+    const id = ++reqId.current;
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (roleF) params.append('role', roleF);
+      if (moduleF) params.append('module', moduleF);
+      if (date) params.append('date', date);
+      if (q) params.append('search', q);
+      if (isSuperAdmin && office) params.append('office_id', office);
+      params.append('limit', String(FETCH_LIMIT));
+      const res = await apiFetch(`/audit-logs?${params}`);
+      if (!res.ok) {
+        let msg = `Failed to load audit logs (${res.status})`;
+        try {
+          const b = await res.json();
+          if (b?.detail) msg = String(b.detail);
+        } catch { /* not JSON */ }
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      if (id !== reqId.current) return;
+      setRows(Array.isArray(data) ? data : data.items || []);
+    } catch (e) {
+      if (id !== reqId.current) return;
+      setRows([]);
+      setError(e.message || 'Failed to load audit logs.');
+    } finally {
+      if (id === reqId.current) setLoading(false);
+    }
+  }, [apiFetch, roleF, moduleF, date, office, q, isSuperAdmin]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); }, [roleF, moduleF, date, office, q, pageSize]);
+
+  /* ---------- stats ---------- */
+  const stats = useMemo(() => {
+    const todayKey = dayKey(new Date());
+    const hours = Array(24).fill(0);
+    const roles = {};
+    const tones = { danger: 0, warn: 0, ok: 0, info: 0, muted: 0 };
+    const actors = new Set();
+    let today = 0;
+    let proofs = 0;
+    rows.forEach((r) => {
+      const d = parseTs(r.timestamp);
+      if (d) {
+        hours[d.getHours()] += 1;
+        if (dayKey(d) === todayKey) today += 1;
+      }
+      const role = String(r.user_role || 'system').toLowerCase();
+      roles[role] = (roles[role] || 0) + 1;
+      tones[actionTone(r.action)] += 1;
+      if (r.username) actors.add(r.username);
+      if (r.proof_image) proofs += 1;
+    });
+    const peak = Math.max(0, ...hours);
+    const roleList = Object.entries(roles).sort((a, b) => b[1] - a[1]);
+    return { hours, peak, roleList, tones, actors: actors.size, today, proofs };
+  }, [rows]);
+
+  const donut = useMemo(() => {
+    const R = 40;
+    const C = 2 * Math.PI * R;
+    const total = rows.length;
+    let offset = 0;
+    const segs = TONE_META.filter((t) => stats.tones[t.tone] > 0).map((t) => {
+      const len = total ? (stats.tones[t.tone] / total) * C : 0;
+      const seg = { ...t, len, offset, count: stats.tones[t.tone] };
+      offset += len;
+      return seg;
+    });
+    return { R, C, segs };
+  }, [rows.length, stats.tones]);
+
+  /* ---------- paging + grouping ---------- */
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const safePage = Math.min(page, totalPages);
+  const start = (safePage - 1) * pageSize;
+  const pageRows = rows.slice(start, start + pageSize);
+
+  const groups = useMemo(() => {
+    const out = [];
+    const map = new Map();
+    pageRows.forEach((r) => {
+      const d = parseTs(r.timestamp);
+      const key = d ? dayKey(d) : 'unknown';
+      if (!map.has(key)) {
+        const g = {
+          key,
+          label: d
+            ? d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+            : 'Unknown date',
+          items: [],
+        };
+        map.set(key, g);
+        out.push(g);
+      }
+      map.get(key).items.push(r);
+    });
+    return out;
+  }, [pageRows]);
+
+  /* ---------- proof lightbox ---------- */
+  const closeProof = useCallback(() => {
+    setProof((p) => {
+      if (p?.src && p.src.startsWith('blob:')) URL.revokeObjectURL(p.src);
+      return null;
+    });
+  }, []);
+
+  const openProof = async (name) => {
+    setProof({ name, src: null, loading: true, error: null });
+    try {
+      if (/^https?:\/\//i.test(name)) {
+        setProof({ name, src: name, loading: false, error: null });
+        return;
+      }
+      const res = await apiFetch(proofPath(name));
+      if (!res.ok) throw new Error(`Image not found (${res.status})`);
+      const blob = await res.blob();
+      setProof({ name, src: URL.createObjectURL(blob), loading: false, error: null });
+    } catch (e) {
+      setProof({ name, src: null, loading: false, error: e.message || 'Could not load image.' });
+    }
+  };
+
+  useEffect(() => {
+    if (!proof) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') closeProof(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [proof, closeProof]);
+
+  const clearFilters = () => {
+    setRoleF(''); setModuleF(''); setDate(''); setOffice(''); setSearch(''); setQ('');
+  };
+
+  const fmtTime = (ts) => {
+    const d = parseTs(ts);
+    return d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : String(ts || '-');
+  };
+
+  const from = rows.length ? start + 1 : 0;
+  const to = Math.min(start + pageSize, rows.length);
+
+  return (
+    <Shell active="audit-logs" title="System Audit">
+      <div className="ad-root">
+        <style>{AD_CSS}</style>
+
+        <div className="page-head">
+          <span className="eyebrow">Accountability</span>
+          <h1>System audit</h1>
+          <p>Who did what, when, and with what proof.</p>
+        </div>
+
+        <div className="filter-bar">
+          <input
+            className="ad-search"
+            type="search"
+            placeholder="Search user, action or details"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={controlStyle}
+          />
+          {showOfficePicker && (
+            <select value={office} onChange={(e) => setOffice(e.target.value)} style={controlStyle}>
+              <option value="">All offices</option>
+              {offices.map((o) => <option key={o.id} value={String(o.id)}>{o.name}</option>)}
+            </select>
+          )}
+          <select value={roleF} onChange={(e) => setRoleF(e.target.value)} style={controlStyle}>
+            {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+          <select value={moduleF} onChange={(e) => setModuleF(e.target.value)} style={controlStyle}>
+            <option value="">All modules</option>
+            {MODULES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+          <input
+            className="ad-date"
+            type="date"
+            value={date}
+            max={dayKey(new Date())}
+            onChange={(e) => setDate(e.target.value)}
+            style={controlStyle}
+          />
+          <div className="ad-btn-row">
+            <button className="btn btn-outline" onClick={clearFilters}>Clear</button>
+            <button className="btn btn-brass" onClick={load} disabled={loading}>
+              <Icon name="refresh" /> {loading ? 'Loading…' : 'Refresh'}
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="banner banner-error" role="alert">
+            <span>{error}</span>
+            <button onClick={load}>Retry</button>
+          </div>
+        )}
+
+        {/* Summary strip */}
+        <div className="ad-stats">
+          <div className="ad-stat">
+            <div className="ad-stat-top"><span>Entries</span><Icon name="list" /></div>
+            <div className="ad-stat-value">{rows.length}</div>
+            <div className="ad-stat-hint">{rows.length >= FETCH_LIMIT ? `Latest ${FETCH_LIMIT} shown` : 'Matching filters'}</div>
+          </div>
+          <div className="ad-stat">
+            <div className="ad-stat-top"><span>Today</span><Icon name="calendar" /></div>
+            <div className="ad-stat-value">{stats.today}</div>
+            <div className="ad-stat-hint">Local time</div>
+          </div>
+          <div className="ad-stat">
+            <div className="ad-stat-top"><span>Critical</span><Icon name="alert" /></div>
+            <div className={`ad-stat-value${stats.tones.danger ? ' is-danger' : ''}`}>{stats.tones.danger}</div>
+            <div className="ad-stat-hint">Deletes, failures, denials</div>
+          </div>
+          <div className="ad-stat">
+            <div className="ad-stat-top"><span>Users</span><Icon name="users" /></div>
+            <div className="ad-stat-value">{stats.actors}</div>
+            <div className="ad-stat-hint">Distinct actors</div>
+          </div>
+          <div className="ad-stat">
+            <div className="ad-stat-top"><span>With proof</span><Icon name="camera" /></div>
+            <div className="ad-stat-value">{stats.proofs}</div>
+            <div className="ad-stat-hint">Entries with image</div>
+          </div>
+        </div>
+
+        {/* Charts */}
+        <div className="ad-charts">
+          <div className="ad-card">
+            <h3>Activity by hour</h3>
+            <p className="ad-sub">Entries per hour of day</p>
+            {rows.length === 0 ? (
+              <p className="ad-empty">No data.</p>
+            ) : (
+              <>
+                <div className="ad-hours">
+                  {stats.hours.map((n, h) => {
+                    const cls = n === 0 ? 'empty' : n === stats.peak ? 'peak' : '';
+                    const pct = stats.peak ? Math.max(4, (n / stats.peak) * 100) : 4;
+                    return (
+                      <div key={h} className={`ad-hour ${cls}`} title={`${pad(h)}:00 — ${n}`}>
+                        <span className="ad-hour-bar" style={{ height: `${pct}%` }} />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="ad-hour-axis">
+                  {stats.hours.map((_, h) => <span key={h}>{h % 6 === 0 ? pad(h) : ''}</span>)}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="ad-card">
+            <h3>By role</h3>
+            <p className="ad-sub">Who generates activity</p>
+            {stats.roleList.length === 0 ? (
+              <p className="ad-empty">No data.</p>
+            ) : (
+              <div className="ad-rows">
+                {stats.roleList.map(([role, n]) => (
+                  <div key={role} className="ad-row">
+                    <span className="ad-ellip">{ROLE_LABEL[role] || role}</span>
+                    <span className="ad-track">
+                      <span
+                        className="ad-fill"
+                        style={{ width: `${(n / stats.roleList[0][1]) * 100}%`, background: roleColor(role) }}
+                      />
+                    </span>
+                    <span className="ad-count">{n}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="ad-card">
+            <h3>By action type</h3>
+            <p className="ad-sub">Share of all entries</p>
+            {rows.length === 0 ? (
+              <p className="ad-empty">No data.</p>
+            ) : (
+              <div className="ad-donut-wrap">
+                <div className="ad-donut">
+                  <svg className="ad-donut-svg" viewBox="0 0 100 100" aria-hidden="true">
+                    <circle cx="50" cy="50" r={donut.R} fill="none" stroke="var(--ad-border)" strokeWidth="14" />
+                    {donut.segs.map((s) => (
+                      <circle
+                        key={s.tone}
+                        cx="50" cy="50" r={donut.R} fill="none"
+                        stroke={s.color} strokeWidth="14"
+                        strokeDasharray={`${s.len} ${donut.C - s.len}`}
+                        strokeDashoffset={-s.offset}
+                      />
+                    ))}
+                  </svg>
+                  <div className="ad-donut-center">
+                    <div>
+                      <div className="ad-donut-total">{rows.length}</div>
+                      <div className="ad-donut-cap">entries</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="ad-legend">
+                  {donut.segs.map((s) => (
+                    <div key={s.tone} className="ad-legend-item">
+                      <span className="ad-dot" style={{ background: s.color }} />
+                      <span className="ad-ellip" style={{ flex: 1 }}>{s.label}</span>
+                      <span className="ad-count">{s.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Ledger */}
+        <div className="ad-card" style={{ padding: 0 }}>
+          <div className="ad-ledger-head">
+            <div>
+              <h3>Ledger</h3>
+              <p className="ad-sub">Newest first, grouped by day</p>
+            </div>
+            <span className="ad-status">
+              <Icon name="lock" size={14} />
+              {loading ? 'Updating…' : `${from}–${to} of ${rows.length}`}
+            </span>
+          </div>
+
+          <div className={`ad-scroll${loading ? ' ad-loading' : ''}`}>
+            <table className="ad-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Actor</th>
+                  <th>Action</th>
+                  <th>Module</th>
+                  {showOfficePicker && <th>Office</th>}
+                  <th>Details</th>
+                  <th>Proof</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!loading && !error && rows.length === 0 && (
+                  <tr>
+                    <td colSpan={colCount} className="ad-empty" style={{ padding: 24, textAlign: 'center' }}>
+                      No audit entries match these filters.
+                    </td>
+                  </tr>
+                )}
+                {loading && rows.length === 0 && (
+                  <tr>
+                    <td colSpan={colCount} className="ad-empty" style={{ padding: 24, textAlign: 'center' }}>
+                      Loading audit log…
+                    </td>
+                  </tr>
+                )}
+                {groups.map((g) => (
+                  <React.Fragment key={g.key}>
+                    <tr className="ad-day">
+                      <td colSpan={colCount}>
+                        <div className="ad-day-inner">
+                          <span>{g.label}</span>
+                          <span className="ad-day-count">{g.items.length} on this page</span>
+                        </div>
+                      </td>
+                    </tr>
+                    {g.items.map((r) => {
+                      const role = String(r.user_role || 'system').toLowerCase();
+                      return (
+                        <tr key={r.id} className="ad-item">
+                          <td className="ad-time" data-label="Time">{fmtTime(r.timestamp)}</td>
+                          <td data-label="Actor">
+                            <div className="ad-actor-name">{r.username || 'System'}</div>
+                            <div className="ad-role" style={{ color: roleColor(role) }}>
+                              {ROLE_LABEL[role] || role}
+                            </div>
+                          </td>
+                          <td data-label="Action">
+                            <span className={`ad-tag tone-${actionTone(r.action)}`}>{r.action}</span>
+                          </td>
+                          <td className="ad-module" data-label="Module">{r.target_module}</td>
+                          {showOfficePicker && (
+                            <td className="ad-module" data-label="Office">{officeName(r.office_id)}</td>
+                          )}
+                          <td className="ad-details" data-label="Details">{r.details}</td>
+                          <td data-label="Proof">
+                            {r.proof_image ? (
+                              <button
+                                type="button"
+                                className="ad-proof"
+                                onClick={() => openProof(r.proof_image)}
+                                aria-label="View proof image"
+                              >
+                                <Icon name="camera" size={16} />
+                              </button>
+                            ) : (
+                              <span className="ad-module">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="ad-pager">
+            <div className="ad-pager-left">
+              <span>{rows.length ? `Showing ${from}–${to} of ${rows.length}` : 'No entries'}</span>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                Rows
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  style={{ ...controlStyle, height: 30 }}
+                >
+                  {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="ad-pager-right">
+              <button
+                className="ad-page-btn"
+                disabled={safePage === 1}
+                onClick={() => setPage(safePage - 1)}
+              >
+                Prev
+              </button>
+              {buildPages(safePage, totalPages).map((p, i) =>
+                p === '…' ? (
+                  <span key={`g${i}`} className="ad-page-gap">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    className={`ad-page-btn ad-page-num${p === safePage ? ' active' : ''}`}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
+              <span className="ad-page-of">Page {safePage} of {totalPages}</span>
+              <button
+                className="ad-page-btn"
+                disabled={safePage === totalPages}
+                onClick={() => setPage(safePage + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Lightbox */}
+        {proof && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={closeProof}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 1000,
+              background: 'rgba(0,0,0,.78)',
+              display: 'grid', placeItems: 'center', padding: 16,
+            }}
+          >
+            <div
+              className="ad-card"
+              onClick={(e) => e.stopPropagation()}
+              style={{ maxWidth: 'min(92vw, 900px)', textAlign: 'center' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                <h3 className="ad-ellip">Proof image</h3>
+                <button className="btn btn-outline btn-sm" onClick={closeProof}>Close</button>
+              </div>
+              {proof.loading && <p className="ad-empty">Loading image…</p>}
+              {proof.error && <p className="ad-empty" style={{ color: 'var(--ad-danger)' }}>{proof.error}</p>}
+              {proof.src && <img className="ad-lightbox-img" src={proof.src} alt="Proof" />}
+            </div>
+          </div>
+        )}
+      </div>
+    </Shell>
+  );
+};
+
+export default AuditLogPage;
