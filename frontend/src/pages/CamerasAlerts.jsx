@@ -231,6 +231,8 @@ export default function CamerasAlerts() {
     [incidents]
   );
 
+  console.log('alerts top5', sortedIncidents.slice(0, 5).map(a => [a.id, a.camera_name, a.last_seen]));
+  
   /* Auto: pick by camera count, capped by width.
      1x / 2x / 3x / 4x: always exactly what the user picked. */
   const autoCap = gridWidth
