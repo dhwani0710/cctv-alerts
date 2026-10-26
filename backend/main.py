@@ -412,36 +412,42 @@ def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depen
 
     return dict(updated)
 
-@app.delete("/users/{user_id}", dependencies=[Depends(require_admin)])
-def delete_user(user_id: int, current_user: dict = Depends(require_admin)):
-    if str(user_id) == str(current_user.get("user_id")):
-        raise HTTPException(status_code=400, detail="You cannot delete your own account")
-
+@app.delete("/records", dependencies=[Depends(require_admin)])
+def clear_all_records(current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(
-            "SELECT id, username, role FROM users WHERE id = %s",
-            (user_id,)
-        )
-        u = cur.fetchone()
-        if not u:
-            cur.close()
-            raise HTTPException(status_code=404, detail="User not found")
-
-        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        cur.execute("DELETE FROM alerts WHERE office_id = %s", (OFFICE_ID,))
+        alerts_deleted = cur.rowcount
+        cur.execute("DELETE FROM alert_records WHERE office_id = %s", (OFFICE_ID,))
+        cur.execute("DELETE FROM incidents WHERE office_id = %s", (OFFICE_ID,))
+        incidents_deleted = cur.rowcount
         conn.commit()
+
+        # anything still left belongs to other offices
+        cur.execute("SELECT COUNT(*) AS n FROM incidents")
+        incidents_remaining = cur.fetchone()["n"]
         cur.close()
+
+    print(
+        f"[clear_records] server OFFICE_ID={OFFICE_ID}: deleted {alerts_deleted} alerts, "
+        f"{incidents_deleted} incidents; {incidents_remaining} incidents remain",
+        flush=True,
+    )
 
     log_audit_event(
         username=current_user.get("username"),
         user_role=current_user.get("role"),
-        action="USER_DELETED",
-        target_module="Users",
-        details=f"Deleted user account '{u['username']}' (role: {u['role']})",
-        user_id=current_user.get("user_id")
+        action="RECORDS_CLEARED",
+        target_module="Records",
+        details=f"Cleared all records ({alerts_deleted} alerts, {incidents_deleted} incidents)",
+        user_id=current_user.get("user_id"),
     )
-
-    return {"message": "User deleted successfully"}
+    return {
+        "message": "All records cleared",
+        "alerts_deleted": alerts_deleted,
+        "incidents_deleted": incidents_deleted,
+        "incidents_remaining": incidents_remaining,
+    }
 
 # --- Employee Management (Owner, CEO & HR) ---
 

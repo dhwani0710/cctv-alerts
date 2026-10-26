@@ -29,7 +29,7 @@ const thresholdPairs = (t) => [
 ];
 
 export default function Settings() {
-  const { session, updateSession } = useAuth();
+  const { session, updateSession, apiFetch } = useAuth();
   const token = session?.token;
 
   const isAdmin = session?.role === 'ceo' || session?.role === 'owner';
@@ -91,6 +91,7 @@ export default function Settings() {
   // Clear records
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearingRecords, setClearingRecords] = useState(false);
+  const [clearError, setClearError] = useState('');
 
   // Account
   const [accountName, setAccountName] = useState('');
@@ -119,10 +120,10 @@ export default function Settings() {
   const settingsLocked = !settingsLoaded || settingsError;
   const storeHoursLocked = !storeHoursLoaded || storeHoursError;
 
-  function showMessage(text, isError = false) {
+  function showMessage(text, isError = false, duration = 2500) {
     setMessage(text);
     setMessageIsError(isError);
-    setTimeout(() => setMessage(''), 2500);
+    setTimeout(() => setMessage(''), duration);
   }
 
   // ---------- LOAD APP SETTINGS ----------
@@ -469,24 +470,40 @@ export default function Settings() {
 
   async function clearRecords() {
     setClearingRecords(true);
+    setClearError('');
 
     try {
-      const res = await fetch(`${API_BASE}/records`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // apiFetch is the same helper the Records page uses, so the clear goes to
+      // the same server (and office context) that the Records table reads from
+      const res = await apiFetch('/records', { method: 'DELETE' });
 
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Failed to clear records');
+        throw new Error(data.detail || `Clear failed (HTTP ${res.status})`);
       }
 
-      const data = await res.json();
+      // ask how many records are still listed (other offices can't be cleared from here)
+      let remaining = 0;
+      try {
+        const check = await apiFetch('/records?limit=1');
+        const checkData = await check.json().catch(() => ({}));
+        remaining = checkData.total || 0;
+      } catch {
+        // ignore, the clear itself already succeeded
+      }
+
       setConfirmClear(false);
-      showMessage(`Cleared ${data.alerts_deleted} alert(s) and ${data.incidents_deleted} incident(s).`);
+      showMessage(
+        `Cleared ${data.alerts_deleted} alert(s) and ${data.incidents_deleted} incident(s).` +
+          (remaining
+            ? ` ${remaining} record(s) remain: they belong to other offices or were just logged by live cameras.`
+            : ''),
+        false,
+        8000
+      );
     } catch (err) {
       console.error(err);
-      showMessage(err.message || 'Failed to clear records.', true);
+      setClearError(err.message || 'Failed to clear records.');
     } finally {
       setClearingRecords(false);
     }
@@ -971,7 +988,10 @@ export default function Settings() {
                         <button
                           type="button"
                           className="vscode-danger-btn"
-                          onClick={() => setConfirmClear(true)}
+                          onClick={() => {
+                            setClearError('');
+                            setConfirmClear(true);
+                          }}
                         >
                           Clear records
                         </button>
@@ -989,13 +1009,22 @@ export default function Settings() {
                           <button
                             type="button"
                             className="vscode-outline-btn"
-                            onClick={() => setConfirmClear(false)}
+                            onClick={() => {
+                              setClearError('');
+                              setConfirmClear(false);
+                            }}
                           >
                             Cancel
                           </button>
                         </div>
                       )}
                     </div>
+
+                    {clearError && (
+                      <p role="alert" style={{ color: '#e5533d', marginTop: 12 }}>
+                        {clearError}
+                      </p>
+                    )}
                   </section>
                 </div>
               )}
