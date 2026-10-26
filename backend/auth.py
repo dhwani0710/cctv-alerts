@@ -86,18 +86,24 @@ def get_office_id(
     except ValueError:
         raise HTTPException(status_code=400, detail="Bad office id")
 
-
 def enforce_write_office(
     request: Request,
     authorization: Optional[str] = Header(None),
     x_office_id: Optional[str] = Header(None),
     office_id: Optional[str] = Query(None),
 ):
-    """Global guard: writes only hit this server's own office."""
+    """Global guard: writes only hit this server's own office.
+    Owner and CEO may write to any office, except employee/attendance paths
+    (those need this server's local face photos)."""
     if request.method not in ("POST", "PUT", "DELETE"):
         return
     path = request.url.path
     if path.startswith("/auth/") or path.startswith("/users"):
+        return
+    payload = verify_token(authorization, None)
+    if payload.get("role") in ("owner", "ceo") and not (
+        path.startswith("/employees") or path.startswith("/attendance")
+    ):
         return
     target = get_office_id(authorization, None, x_office_id, office_id)
     if target is not None and target != OFFICE_ID:

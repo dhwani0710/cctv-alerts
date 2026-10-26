@@ -3,7 +3,6 @@ import { useAuth } from './AuthContext.jsx';
 
 const StatusContext = createContext(null);
 
-// Roles allowed by the backend on /status and /cameras (require_guard)
 const POLLING_ROLES = ['owner', 'ceo', 'guard'];
 
 export function StatusProvider({ children }) {
@@ -37,6 +36,10 @@ export function StatusProvider({ children }) {
     } catch { }
   }, [apiFetch, canPoll]);
 
+  const removeCamera = useCallback((id) => {
+    setCameras((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
   useEffect(() => {
     if (!canPoll) { setStatusLoaded(true); return; }
     poll();
@@ -48,7 +51,7 @@ export function StatusProvider({ children }) {
   const hasHighAlert = recentAlerts.some((a) => a.priority === 'high');
 
   return (
-    <StatusContext.Provider value={{ status, recentAlerts, hasHighAlert, currentlyDetected: status.currently_detected || [], cameras, refreshCameras, statusLoaded }}>
+    <StatusContext.Provider value={{ status, recentAlerts, hasHighAlert, currentlyDetected: status.currently_detected || [], cameras, refreshCameras, removeCamera, statusLoaded }}>
       {children}
     </StatusContext.Provider>
   );

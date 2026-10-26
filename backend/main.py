@@ -410,42 +410,29 @@ def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depen
 
     return dict(updated)
 
-@app.delete("/records", dependencies=[Depends(require_admin)])
-def clear_all_records(current_user: dict = Depends(require_admin)):
+@app.delete("/records/{alert_id}", dependencies=[Depends(require_admin)])
+def delete_record(alert_id: int, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM alerts WHERE office_id = %s", (OFFICE_ID,))
-        alerts_deleted = cur.rowcount
-        cur.execute("DELETE FROM alert_records WHERE office_id = %s", (OFFICE_ID,))
-        cur.execute("DELETE FROM incidents WHERE office_id = %s", (OFFICE_ID,))
-        incidents_deleted = cur.rowcount
+        cur.execute("DELETE FROM alerts WHERE incident_id = %s", (alert_id,))
+        cur.execute("DELETE FROM alert_records WHERE incident_id = %s", (alert_id,))
+        cur.execute("DELETE FROM incidents WHERE id = %s", (alert_id,))
+        deleted = cur.rowcount
         conn.commit()
-
-        # anything still left belongs to other offices
-        cur.execute("SELECT COUNT(*) AS n FROM incidents")
-        incidents_remaining = cur.fetchone()["n"]
         cur.close()
-
-    print(
-        f"[clear_records] server OFFICE_ID={OFFICE_ID}: deleted {alerts_deleted} alerts, "
-        f"{incidents_deleted} incidents; {incidents_remaining} incidents remain",
-        flush=True,
-    )
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="Record not found")
 
     log_audit_event(
         username=current_user.get("username"),
         user_role=current_user.get("role"),
-        action="RECORDS_CLEARED",
+        action="RECORD_DELETED",
         target_module="Records",
-        details=f"Cleared all records ({alerts_deleted} alerts, {incidents_deleted} incidents)",
-        user_id=current_user.get("user_id"),
+        details=f"Deleted record/alert #{alert_id}",
+        user_id=current_user.get("user_id")
     )
-    return {
-        "message": "All records cleared",
-        "alerts_deleted": alerts_deleted,
-        "incidents_deleted": incidents_deleted,
-        "incidents_remaining": incidents_remaining,
-    }
+
+    return {"message": "Record deleted"}
 
 # --- Employee Management (Owner, CEO & HR) ---
 
@@ -1004,25 +991,19 @@ async def acknowledge_alert(
             proof_url = f"/snapshots/acknowledgments/{safe_fn}"
 
     now_iso = datetime.now().isoformat()
+    clause, p = _scope(current_user)
     with get_db() as conn:
         cur = conn.cursor()
-        
+
         cur.execute(
-            """
-            UPDATE incidents
-            SET status = 'acknowledged'
-            WHERE id = %s AND office_id = %s
-            """,
-            (alert_id, OFFICE_ID)
+            "UPDATE incidents SET status = 'acknowledged' WHERE id = %s" + clause,
+            tuple([alert_id] + p)
         )
-        
+
         cur.execute(
-            """
-            UPDATE alerts 
-            SET status = 'acknowledged', acknowledged_by = %s, acknowledged_at = %s, ack_proof_image = %s, ack_notes = %s 
-            WHERE (incident_id = %s OR id = %s) AND office_id = %s
-            """,
-            (current_user.get("username"), now_iso, proof_url, notes.strip(), alert_id, alert_id, OFFICE_ID)
+            "UPDATE alerts SET status = 'acknowledged', acknowledged_by = %s, acknowledged_at = %s, "
+            "ack_proof_image = %s, ack_notes = %s WHERE (incident_id = %s OR id = %s)" + clause,
+            tuple([current_user.get("username"), now_iso, proof_url, notes.strip(), alert_id, alert_id] + p)
         )
         conn.commit()
         cur.close()
@@ -1536,6 +1517,14 @@ def get_status(office_id: Optional[int] = Depends(get_office_id)):
 
 # --- Camera Streaming & Management ---
 
+def _is_super(user):
+    return (user.get("role") or "").lower() in ("owner", "ceo")
+
+def _scope(user, col="office_id"):
+    if _is_super(user):
+        return "", []
+    return f" AND {col} = %s", [OFFICE_ID]
+
 @app.get("/cameras", dependencies=[Depends(require_guard)])
 def list_cameras(office_id: Optional[int] = Depends(get_office_id)):
     now = datetime.utcnow()
@@ -1577,23 +1566,29 @@ class CameraRequest(BaseModel):
     rtsp_url: str
     zone_name: str = None
     enabled: bool = True
+    office_id: Optional[int] = None
 
 @app.post("/cameras", dependencies=[Depends(require_admin)])
 def add_camera(payload: CameraRequest, current_user: dict = Depends(require_admin)):
+    target = payload.office_id if payload.office_id is not None else OFFICE_ID
     with get_db() as conn:
         cur = conn.cursor()
+        cur.execute("SELECT 1 FROM offices WHERE id = %s", (target,))
+        if not cur.fetchone():
+            cur.close()
+            raise HTTPException(status_code=400, detail="Unknown office")
         cur.execute("SELECT 1 FROM cameras WHERE id = %s", (payload.id,))
         if cur.fetchone():
             cur.close()
             raise HTTPException(status_code=400, detail=f"Camera ID '{payload.id}' is already in use. Choose a different ID.")
         cur.execute(
             "INSERT INTO cameras (id, name, rtsp_url, zone_name, enabled, office_id) VALUES (%s, %s, %s, %s, %s, %s)",
-            (payload.id, payload.name, payload.rtsp_url, payload.zone_name or payload.id, payload.enabled, OFFICE_ID)
+            (payload.id, payload.name, payload.rtsp_url, payload.zone_name or payload.id, payload.enabled, target)
         )
         conn.commit()
         cur.close()
 
-    if payload.enabled:
+    if payload.enabled and target == OFFICE_ID:
         threading.Thread(target=start_single_camera, args=({
             "id": payload.id,
             "name": payload.name,
@@ -1606,33 +1601,40 @@ def add_camera(payload: CameraRequest, current_user: dict = Depends(require_admi
         user_role=current_user.get("role"),
         action="CAMERA_ADDED",
         target_module="Cameras",
-        details=f"Added camera '{payload.name}' ({payload.id}) at zone '{payload.zone_name}'",
+        details=f"Added camera '{payload.name}' ({payload.id}) at zone '{payload.zone_name}' in office {target}",
         user_id=current_user.get("user_id")
     )
 
-    return {"message": "Camera added and connected"}
+    return {"message": "Camera added and connected" if target == OFFICE_ID else "Camera saved. Restart that office's server to connect it."}
 
 @app.put("/cameras/{camera_id}", dependencies=[Depends(require_admin)])
 def update_camera(camera_id: str, payload: CameraRequest, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
+        cur.execute("SELECT office_id FROM cameras WHERE id = %s", (camera_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            raise HTTPException(status_code=404, detail="Camera not found")
+        cam_office = row["office_id"]
         cur.execute(
-            "UPDATE cameras SET name=%s, rtsp_url=%s, zone_name=%s, enabled=%s WHERE id=%s AND office_id=%s",
-            (payload.name, payload.rtsp_url, payload.zone_name or camera_id, payload.enabled, camera_id, OFFICE_ID)
+            "UPDATE cameras SET name=%s, rtsp_url=%s, zone_name=%s, enabled=%s WHERE id=%s",
+            (payload.name, payload.rtsp_url, payload.zone_name or camera_id, payload.enabled, camera_id)
         )
         conn.commit()
         cur.close()
 
-    def _reconnect():
-        stop_single_camera(camera_id)
-        if payload.enabled:
-            start_single_camera({
-                "id": camera_id,
-                "name": payload.name,
-                "source": payload.rtsp_url,
-                "zone_name": payload.zone_name or camera_id,
-            })
-    threading.Thread(target=_reconnect, daemon=True).start()
+    if cam_office == OFFICE_ID:
+        def _reconnect():
+            stop_single_camera(camera_id)
+            if payload.enabled:
+                start_single_camera({
+                    "id": camera_id,
+                    "name": payload.name,
+                    "source": payload.rtsp_url,
+                    "zone_name": payload.zone_name or camera_id,
+                })
+        threading.Thread(target=_reconnect, daemon=True).start()
 
     log_audit_event(
         username=current_user.get("username"),
@@ -1643,27 +1645,39 @@ def update_camera(camera_id: str, payload: CameraRequest, current_user: dict = D
         user_id=current_user.get("user_id")
     )
 
-    return {"message": "Camera updated and reconnected"}
+    return {"message": "Camera updated"}
 
 @app.delete("/cameras/{camera_id}", dependencies=[Depends(require_admin)])
 def delete_camera(camera_id: str, current_user: dict = Depends(require_admin)):
-    threading.Thread(target=stop_single_camera, args=(camera_id,), daemon=True).start()
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM cameras WHERE id = %s AND office_id = %s", (camera_id, OFFICE_ID))
+        cur.execute("SELECT office_id FROM cameras WHERE id = %s", (camera_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            raise HTTPException(status_code=404, detail="Camera not found")
+        cam_office = row["office_id"]
+        cur.execute("DELETE FROM cameras WHERE id = %s", (camera_id,))
+        deleted = cur.rowcount
         conn.commit()
         cur.close()
+
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="Camera was not deleted")
+
+    if cam_office == OFFICE_ID:
+        threading.Thread(target=stop_single_camera, args=(camera_id,), daemon=True).start()
 
     log_audit_event(
         username=current_user.get("username"),
         user_role=current_user.get("role"),
         action="CAMERA_DELETED",
         target_module="Cameras",
-        details=f"Deleted camera {camera_id}",
+        details=f"Deleted camera {camera_id} (office {cam_office})",
         user_id=current_user.get("user_id")
     )
 
-    return {"message": "Camera deleted and disconnected"}
+    return {"deleted": deleted, "id": camera_id, "message": "Camera deleted"}
 
 def _seed_cameras_from_config():
     if OFFICE_ID != 1:
@@ -1686,6 +1700,7 @@ def _seed_cameras_from_config():
 class ZoneRequest(BaseModel):
     id: str
     name: str
+    office_id: Optional[int] = None
 
 @app.get("/zones", dependencies=[Depends(verify_token)])
 def list_zones(office_id: Optional[int] = Depends(get_office_id)):
@@ -1699,13 +1714,14 @@ def list_zones(office_id: Optional[int] = Depends(get_office_id)):
 
 @app.post("/zones", dependencies=[Depends(require_admin)])
 def add_zone(payload: ZoneRequest, current_user: dict = Depends(require_admin)):
+    target = payload.office_id if payload.office_id is not None else OFFICE_ID
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT 1 FROM zones WHERE id = %s", (payload.id,))
         if cur.fetchone():
             cur.close()
             raise HTTPException(status_code=400, detail=f"Zone ID '{payload.id}' is already in use. Choose a different ID.")
-        cur.execute("INSERT INTO zones (id, name, office_id) VALUES (%s, %s, %s)", (payload.id, payload.name, OFFICE_ID))
+        cur.execute("INSERT INTO zones (id, name, office_id) VALUES (%s, %s, %s)", (payload.id, payload.name, target))
         conn.commit()
         cur.close()
 
@@ -1724,7 +1740,7 @@ def add_zone(payload: ZoneRequest, current_user: dict = Depends(require_admin)):
 def delete_zone(zone_id: str, current_user: dict = Depends(require_admin)):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM zones WHERE id = %s AND office_id = %s", (zone_id, OFFICE_ID))
+        cur.execute("DELETE FROM zones WHERE id = %s", (zone_id,))
         conn.commit()
         cur.close()
 
@@ -1776,14 +1792,15 @@ def list_incidents(status: str = None, limit: int = 100, office_id: Optional[int
 class IncidentUpdateRequest(BaseModel):
     status: str
 
-@app.put("/incidents/{incident_id}", dependencies=[Depends(require_staff)])
-def update_incident(incident_id: int, payload: IncidentUpdateRequest):
+@app.put("/incidents/{incident_id}")
+def update_incident(incident_id: int, payload: IncidentUpdateRequest, current_user: dict = Depends(require_staff)):
     status = payload.status.strip().lower()
     if status not in ["new", "acknowledged", "dismissed", "resolved"]:
         raise HTTPException(status_code=400, detail="Invalid status")
+    clause, p = _scope(current_user)
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("UPDATE incidents SET status = %s WHERE id = %s AND office_id = %s", (status, incident_id, OFFICE_ID))
+        cur.execute("UPDATE incidents SET status = %s WHERE id = %s" + clause, tuple([status, incident_id] + p))
         conn.commit()
         cur.close()
     return {"message": "Incident updated"}

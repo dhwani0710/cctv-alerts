@@ -124,7 +124,7 @@ export default function CamerasAlerts() {
   const { offices, officeName } = useOffices();
   const isAdmin = session.role === 'ceo' || session.role === 'owner';
   const canAckAlerts = ['owner', 'ceo', 'admin', 'guard'].includes(session.role);
-  const { cameras, refreshCameras, statusLoaded } = useStatus();
+  const { cameras, refreshCameras, removeCamera, statusLoaded } = useStatus();
 
   const [selected, setSelected] = useState(null);
   const [showAddCamera, setShowAddCamera] = useState(false);
@@ -269,11 +269,17 @@ export default function CamerasAlerts() {
   async function confirmDeleteCam(signal) {
     setDeletingCam(true);
     try {
-      await apiFetch(`/cameras/${deleteCamTarget.id}`, { method: 'DELETE', signal });
+      const res = await apiFetch(`/cameras/${deleteCamTarget.id}`, { method: 'DELETE', signal });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.deleted !== 1) {
+        window.alert(data.detail || 'Server did not delete this camera. Restart the backend and retry.');
+        return;
+      }
+      removeCamera(deleteCamTarget.id);
       setDeleteCamTarget(null);
       refreshCameras();
     } catch (err) {
-      if (err.name !== 'AbortError') console.error(err);
+      if (err.name !== 'AbortError') window.alert('Network error. Try again.');
     } finally {
       setDeletingCam(false);
     }
