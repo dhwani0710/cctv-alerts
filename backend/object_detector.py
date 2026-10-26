@@ -1,13 +1,18 @@
 import threading
-from ultralytics import YOLO
+from ultralytics import YOLO, settings
 import config
+
+settings.update({"sync": False})  # no Ultralytics analytics or crash reports
 
 YOLO_MODEL = getattr(config, "YOLO_MODEL", "yolo26n.pt")
 DETECT_CONF = getattr(config, "DETECT_CONF", 0.5)      # people
-ANIMAL_CONF = getattr(config, "ANIMAL_CONF", 0.9)      # animals need higher confidence (keep >= DETECT_CONF)
+ANIMAL_CONF = getattr(config, "ANIMAL_CONF", 0.55)     # animals need higher confidence (keep >= DETECT_CONF)
 
 PERSON = "person"
-ANIMALS = {"bird", "cat", "dog","mouse"}
+
+# COCO animal classes we alert on.
+# Do NOT add "mouse": in COCO that class is the computer mouse, not the animal.
+ANIMALS = {"bird", "cat", "dog"}
 
 _lock = threading.Lock()   # one inference at a time; camera threads share the model
 _model = None
