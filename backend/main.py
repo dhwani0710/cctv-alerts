@@ -1888,22 +1888,83 @@ def get_snapshot(filename: str, current_user: dict = Depends(verify_token), offi
         raise HTTPException(status_code=404, detail="Snapshot not found")
     return FileResponse(target, media_type="image/jpeg")
 
-@app.get("/media")
-def get_media(u: str, current_user: dict = Depends(verify_token), office_id: Optional[int] = Depends(get_office_id)):
-    if current_user.get("role") == "guard":
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT 1 FROM alerts WHERE (snapshot_filename = %s OR ack_proof_image = %s) AND office_id = %s "
-                "UNION ALL SELECT 1 FROM alert_records WHERE snapshot_filename = %s AND office_id = %s "
-                "UNION ALL SELECT 1 FROM recordings WHERE video_url = %s AND office_id = %s "
-                "UNION ALL SELECT 1 FROM audit_logs WHERE proof_image = %s AND office_id = %s LIMIT 1",
-                (u, u, office_id, u, office_id, u, office_id, u, office_id)
-            )
-            ok = cur.fetchone()
-            cur.close()
-        if not ok:
-            raise HTTPException(status_code=404, detail="Media not found")
+def _local_recording_path(ref: str):
+    """Map a 'local:...' reference to a real file path, or None if it isn't safe/valid."""
+    rel = ref[len("local:"):].replace("\\", "/").lstrip("/")
+    if not rel or ".." in rel.split("/"):
+        return None
+    # Office 1 files sit directly in the recordings folder, other offices in o2/, o3/, ...
+    if OFFICE_ID == 1:
+        if "/" in rel:
+            return None
+    elif not rel.startswith(f"o{OFFICE_ID}/"):
+        return None
+    root = os.path.realpath(os.getenv("RECORDINGS_DIR", "recordings"))
+    target = os.path.realpath(os.path.join(root, rel))
+    if not target.startswith(root + os.sep) or not os.path.isfile(target):
+        return None
+    return target
+
+
+def _iter_file_range(path, start, end, chunk_size=1024 * 1024):
+    with open(path, "rb") as f:
+        f.seek(start)
+        remaining = end - start + 1
+        while remaining > 0:
+            data = f.read(min(chunk_size, remaining))
+            if not data:
+                break
+            remaining -= len(data)
+            yield data
+
+
+def _serve_local_video(path: str, request: Request):
+    """Serves the clip with Range support so the video player can seek."""
+    file_size = os.path.getsize(path)
+    base_headers = {"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=3000"}
+    range_header = request.headers.get("range")
+    if not range_header:
+        return FileResponse(path, media_type="video/mp4", headers=base_headers)
+
+    m = re.match(r"bytes=(\d*)-(\d*)$", range_header.strip())
+    if not m or (m.group(1) == "" and m.group(2) == ""):
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{file_size}"})
+
+    if m.group(1) == "":
+        # suffix range: last N bytes
+        start = max(0, file_size - int(m.group(2)))
+        end = file_size - 1
+    else:
+        start = int(m.group(1))
+        end = int(m.group(2)) if m.group(2) else file_size - 1
+        end = min(end, file_size - 1)
+
+    if start >= file_size or start > end:
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{file_size}"})
+
+    headers = {
+        **base_headers,
+        "Content-Range": f"bytes {start}-{end}/{file_size}",
+        "Content-Length": str(end - start + 1),
+    }
+    return StreamingResponse(
+        _iter_file_range(path, start, end),
+        status_code=206,
+        media_type="video/mp4",
+        headers=headers,
+    )
+
+
+@app.get("/media", dependencies=[Depends(verify_token)])
+def get_media(u: str, request: Request):
+    # New recordings are stored on local disk as "local:<relative path>"
+    if u.startswith("local:"):
+        path = _local_recording_path(u)
+        if not path:
+            raise HTTPException(status_code=404, detail="Recording not found")
+        return _serve_local_video(path, request)
+
+    # Everything else (snapshots, old cloud recordings) keeps using signed URLs
     signed = storage.signed_url_for(u)
     if not signed:
         raise HTTPException(status_code=404, detail="Media not found")

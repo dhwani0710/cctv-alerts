@@ -85,6 +85,17 @@ def _recording_key(video_url):
     return None if ".." in key else key
 
 
+def _local_recording_path(video_url):
+    if not video_url or not video_url.startswith("local:"):
+        return None
+    rel = video_url[len("local:"):].replace("\\", "/").lstrip("/")
+    root = os.path.realpath(os.getenv("RECORDINGS_DIR", "recordings"))
+    target = os.path.realpath(os.path.join(root, rel))
+    if not target.startswith(root + os.sep):
+        return None
+    return target
+
+
 def _cleanup_old_recordings():
     cutoff = (datetime.now() - timedelta(days=RECORDING_RETENTION_DAYS)).isoformat()
     total = 0
@@ -102,23 +113,46 @@ def _cleanup_old_recordings():
         if not rows:
             break
 
-        keys = [k for k in (_recording_key(r["video_url"]) for r in rows) if k]
-        if keys and storage.supabase:
-            try:
-                storage.supabase.storage.from_(storage.BUCKET).remove(keys)
-            except Exception as e:
-                # Keep DB rows so the next run retries these files
-                print(f"[retention] Recording storage delete failed: {e}")
-                break
+        ids_to_delete = []
+        cloud_keys = []
+        cloud_ids = []
+        for r in rows:
+            url = r["video_url"] or ""
+            if url.startswith("local:"):
+                path = _local_recording_path(url)
+                try:
+                    if path and os.path.exists(path):
+                        os.remove(path)
+                    ids_to_delete.append(r["id"])  # file gone (or already missing)
+                except OSError as e:
+                    # Keep the DB row so the next run retries this file
+                    print(f"[retention] Local recording delete failed for {url}: {e}")
+            else:
+                key = _recording_key(url)
+                if key:
+                    cloud_keys.append(key)
+                cloud_ids.append(r["id"])
 
-        ids = [r["id"] for r in rows]
+        if cloud_ids:
+            if cloud_keys and storage.supabase:
+                try:
+                    storage.supabase.storage.from_(storage.BUCKET).remove(cloud_keys)
+                    ids_to_delete.extend(cloud_ids)
+                except Exception as e:
+                    print(f"[retention] Recording storage delete failed: {e}")
+            else:
+                ids_to_delete.extend(cloud_ids)
+
+        if not ids_to_delete:
+            break  # nothing could be deleted this round, try again on the next run
+
         with get_db() as conn:
             cur = conn.cursor()
-            cur.execute("DELETE FROM recordings WHERE id = ANY(%s)", (ids,))
+            cur.execute("DELETE FROM recordings WHERE id = ANY(%s)", (ids_to_delete,))
             conn.commit()
             cur.close()
 
-        total += len(rows)
+        total += len(ids_to_delete)
         if len(rows) < RECORDING_BATCH:
             break
 

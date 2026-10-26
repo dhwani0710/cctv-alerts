@@ -11,7 +11,11 @@ import storage
 from database import get_db, OFFICE_ID
 from alerts import log_alert
 
-RECORDINGS_DIR = "recordings"
+# Local recordings root. Set RECORDINGS_DIR in .env to use another drive/folder.
+RECORDINGS_ROOT = os.path.abspath(os.getenv("RECORDINGS_DIR", "recordings"))
+# Office 1 uses the root; other offices get their own subfolder (o2, o3, ...)
+_office_prefix = "" if str(OFFICE_ID) == "1" else f"o{OFFICE_ID}"
+RECORDINGS_DIR = os.path.join(RECORDINGS_ROOT, _office_prefix) if _office_prefix else RECORDINGS_ROOT
 
 # Only one clip is re-encoded at a time so ffmpeg can't starve face recognition of CPU.
 _encode_slot = threading.Semaphore(1)
@@ -40,27 +44,30 @@ def _to_h264(src, fps=None):
 
 
 def _upload_and_save(camera_id, camera_name, zone_name, filepath, filename, actual_fps=None):
+    # Name kept so the thread call in _record_loop doesn't need to change.
+    # Recordings now stay on local disk; only the DB row is written.
     try:
         if not os.path.exists(filepath) or os.path.getsize(filepath) < 1000:
-            print("[video_recorder] Empty clip, skipping upload")
+            print("[video_recorder] Empty clip, skipping save")
             return
         filepath = _to_h264(filepath, fps=actual_fps)
         filename = os.path.basename(filepath)
-        public_url = storage.upload_file(filepath, f"recordings/{filename}")
+
+        # Relative path (not absolute), so moving the recordings folder later won't break records.
+        rel_path = f"{_office_prefix}/{filename}" if _office_prefix else filename
+        video_ref = f"local:{rel_path}"
+
         with get_db() as conn:
             cur = conn.cursor()
             cur.execute(
                 "INSERT INTO recordings (camera_id, camera_name, zone_name, timestamp, video_url, office_id) VALUES (%s, %s, %s, %s, %s, %s)",
-                (camera_id, camera_name, zone_name, datetime.now().isoformat(), public_url, OFFICE_ID)
+                (camera_id, camera_name, zone_name, datetime.now().isoformat(), video_ref, OFFICE_ID)
             )
             conn.commit()
             cur.close()
-        try:
-            os.remove(filepath)
-        except OSError:
-            pass
+        # The file is the real recording now, so it is NOT deleted.
     except Exception as e:
-        print(f"[video_recorder] Upload failed: {e}")
+        print(f"[video_recorder] Save failed: {e}")
 
 
 class VideoRecorder:
