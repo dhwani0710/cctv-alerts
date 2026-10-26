@@ -5,6 +5,7 @@ import psycopg2.extras
 import sys
 import time
 import traceback
+import queue
 from contextlib import contextmanager
 from dotenv import load_dotenv
 from psycopg2 import pool
@@ -16,31 +17,9 @@ OFFICE_ID = int(os.getenv("OFFICE_ID", "1"))
 print("[db] using:", DATABASE_URL.split("@")[-1] if DATABASE_URL else "NOT SET")
 print("[db] office id:", OFFICE_ID)
 
-_POOL_MAX = 40
-_pool_sem = threading.BoundedSemaphore(_POOL_MAX)
-
-_pg_pool = None
-def _get_pg_pool():
-    global _pg_pool
-    if _pg_pool is None:
-        _pg_pool = pool.ThreadedConnectionPool(
-            minconn=1,
-            maxconn=_POOL_MAX,
-            dsn=DATABASE_URL,
-            cursor_factory=psycopg2.extras.RealDictCursor,
-            keepalives=1,
-            keepalives_idle=30,
-            keepalives_interval=10,
-            keepalives_count=5,
-            connect_timeout=10,
-            tcp_user_timeout=15000,
-        )
-    return _pg_pool
-
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_ROLE = os.getenv("DEFAULT_ADMIN_ROLE", "owner")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD")
-
 
 def init_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -315,57 +294,72 @@ def init_db():
         cursor.close()
         conn.close()
 
-_holders = {}
-_holders_lock = threading.Lock()
-_last_used = {}
+_POOL_MAX = 12
+_pool_sem = threading.BoundedSemaphore(_POOL_MAX)
+_idle = queue.LifoQueue()
+_IDLE_PING_SEC = 20
+_IDLE_MAX_SEC = 300
 
-def _dump_holders():
-    frames = sys._current_frames()
-    now = time.time()
-    with _holders_lock:
-        items = list(_holders.values())
-    print(f"[db] POOL BUSY: {len(items)} holders", flush=True)
-    for tid, t0 in items:
-        f = frames.get(tid)
-        stack = "".join(traceback.format_stack(f)[-5:]) if f else "(thread gone)"
-        print(f"[db] held {now - t0:.1f}s by thread {tid}\n{stack}", flush=True)
+
+def _new_conn():
+    return psycopg2.connect(
+        DATABASE_URL,
+        cursor_factory=psycopg2.extras.RealDictCursor,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5,
+        connect_timeout=5,
+        tcp_user_timeout=15000,
+    )
+
+
+def _close(c):
+    try:
+        c.close()
+    except Exception:
+        pass
+
+
+def _checkout():
+    # Reuse idle connection if healthy
+    while True:
+        try:
+            c, t = _idle.get_nowait()
+        except queue.Empty:
+            break
+        age = time.monotonic() - t
+        if c.closed or age > _IDLE_MAX_SEC:
+            _close(c)
+            continue
+        if age > _IDLE_PING_SEC:
+            try:
+                with c.cursor() as cur:
+                    cur.execute("SELECT 1")
+                c.rollback()
+            except Exception:
+                _close(c)
+                continue
+        return c
+    # Else open new one. No global lock held.
+    last_err = None
+    for attempt in range(3):
+        try:
+            return _new_conn()
+        except Exception as e:
+            last_err = e
+            time.sleep(0.5 * (attempt + 1))
+    raise psycopg2.OperationalError(f"no db connection: {last_err}")
+
 
 @contextmanager
 def get_db():
     if not _pool_sem.acquire(timeout=30):
-        _dump_holders()
         raise pool.PoolError("db busy: waited 30s for a connection")
-    key = object()
-    with _holders_lock:
-        _holders[key] = (threading.get_ident(), time.time())
-    p = _get_pg_pool()
     conn = None
     broken = False
     try:
-        last_err = None
-        for attempt in range(5):
-            c = None
-            try:
-                c = p.getconn()
-                if c.closed:
-                    raise psycopg2.OperationalError("closed")
-                if time.monotonic() - _last_used.get(id(c), 0) > 20:
-                    with c.cursor() as cur:
-                        cur.execute("SELECT 1")
-                    c.rollback()
-                conn = c
-                break
-            except Exception as e:
-                last_err = e
-                if c is not None:
-                    _last_used.pop(id(c), None)
-                    try:
-                        p.putconn(c, close=True)
-                    except Exception:
-                        pass
-                time.sleep(min(2 ** attempt, 5) * 0.5)
-        if conn is None:
-            raise psycopg2.OperationalError(f"no healthy db connection: {last_err}")
+        conn = _checkout()
         try:
             yield conn
         except (psycopg2.OperationalError, psycopg2.InterfaceError):
@@ -378,11 +372,8 @@ def get_db():
             except Exception:
                 broken = True
             if broken or conn.closed:
-                _last_used.pop(id(conn), None)
+                _close(conn)
             else:
-                _last_used[id(conn)] = time.monotonic()
-            p.putconn(conn, close=(broken or bool(conn.closed)))
+                _idle.put((conn, time.monotonic()))
     finally:
-        with _holders_lock:
-            _holders.pop(key, None)
         _pool_sem.release()

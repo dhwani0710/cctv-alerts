@@ -230,7 +230,6 @@ export default function CamerasAlerts() {
     () => [...incidents].sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen)),
     [incidents]
   );
-
   console.log('alerts top5', sortedIncidents.slice(0, 5).map(a => [a.id, a.camera_name, a.last_seen]));
   
   /* Auto: pick by camera count, capped by width.

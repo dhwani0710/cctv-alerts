@@ -61,6 +61,7 @@ export default function AdminEmployees() {
   const [editPhoto, setEditPhoto] = useState(null);
 
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Only super admins can switch offices. Everyone else is already scoped by the backend.
   const showOfficePicker = isSuperAdmin && offices.length > 1;
