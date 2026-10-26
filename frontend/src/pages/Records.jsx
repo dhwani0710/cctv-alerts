@@ -58,6 +58,9 @@ export default function Records() {
   const showOfficePicker = isSuperAdmin && offices.length > 1;
   const colCount = showOfficePicker ? 10 : 9;
 
+  // true when any filter is applied, so the empty state can say why
+  const filtersActive = !!((isSuperAdmin && officeFilter) || camera || status || date);
+
   const visibleCameras = useMemo(
     () => (officeFilter ? cameras.filter((c) => String(c.office_id) === officeFilter) : cameras),
     [cameras, officeFilter]
@@ -376,7 +379,11 @@ export default function Records() {
                 </tr>
               ))}
               {!loadingRecords && !recordsError && records.length === 0 && (
-                <tr><td colSpan={colCount} className="table-empty-state">No records match these filters.</td></tr>
+                <tr>
+                  <td colSpan={colCount} className="table-empty-state">
+                    {filtersActive ? 'No records match these filters.' : 'No records found.'}
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
