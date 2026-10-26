@@ -83,29 +83,31 @@ export default function Records() {
     );
   }
 
-  async function confirmDelete() {
+  async function confirmDelete(signal) {
     if (!deleteTarget) return;
     setDeleting(true);
     setDeleteError(null);
     try {
-      const res = await apiFetch(`/records/${deleteTarget.id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/records/${deleteTarget.id}`, { method: 'DELETE', signal });
       if (!res.ok) throw new Error(await describeFetchError(res, 'Failed to delete record'));
       setDeleteTarget(null);
       await loadRecords();
     } catch (err) {
+      if (err.name === 'AbortError') return;
       setDeleteError(err.message || 'Failed to delete the record. Please try again.');
     } finally {
       setDeleting(false);
     }
   }
 
-  async function deleteSelected() {
+  async function deleteSelected(signal) {
     setDeleting(true);
     setDeleteError(null);
     try {
       const results = await Promise.allSettled(
-        selectedIds.map((id) => apiFetch(`/records/${id}`, { method: 'DELETE' }))
+        selectedIds.map((id) => apiFetch(`/records/${id}`, { method: 'DELETE', signal }))
       );
+      if (signal?.aborted) return;
       const failedCount = results.filter(
         (r) => r.status === 'rejected' || !r.value?.ok
       ).length;
@@ -120,6 +122,7 @@ export default function Records() {
       setConfirmBulkDelete(false);
       await loadRecords();
     } catch (err) {
+      if (err.name === 'AbortError') return;
       setDeleteError(err.message || 'Failed to delete the selected records. Please try again.');
     } finally {
       setDeleting(false);

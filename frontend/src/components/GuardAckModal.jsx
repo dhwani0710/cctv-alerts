@@ -1,10 +1,12 @@
 import { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import useOffices from '../hooks/useOffices.js';
+import useAbort from '../hooks/useAbort.js';
 
 export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
   const { session: user, apiFetch, isSuperAdmin } = useAuth();
   const { officeName } = useOffices();
+  const { next, abort } = useAbort();
   const [notes, setNotes] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [proofPreview, setProofPreview] = useState(null);
@@ -15,17 +17,20 @@ export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
   const role = (user?.role || '').toLowerCase();
   const isGuard = role === 'guard';
 
-  // Guards and owners only ever see their own office, so only a super admin
-  // (who can acknowledge across offices) needs to be told which one this is.
   const officeLabel =
     alert.office_name ||
     (alert.office_id != null && isSuperAdmin ? officeName(alert.office_id) : '');
 
-  // Incidents carry last_seen, raw alerts carry timestamp
   const seenAt = new Date(alert.last_seen || alert.timestamp);
   const seenText = Number.isNaN(seenAt.getTime())
     ? ''
     : seenAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  const handleClose = () => {
+    abort();
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
+    onClose();
+  };
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -60,6 +65,7 @@ export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
       return;
     }
 
+    const signal = next();
     setLoading(true);
     try {
       const formData = new FormData();
@@ -71,6 +77,7 @@ export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
       const res = await apiFetch(`/alerts/${alert.id}/acknowledge`, {
         method: 'POST',
         body: formData,
+        signal,
       });
 
       let data = {};
@@ -89,8 +96,9 @@ export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
       }
 
       onSuccess();
-      onClose();
+      handleClose();
     } catch (err) {
+      if (err.name === 'AbortError') return;
       setError(err.message || 'Acknowledgment failed');
     } finally {
       setLoading(false);
@@ -100,7 +108,7 @@ export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
   return (
     <div
       className="cam-lightbox-backdrop"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
       style={{ backdropFilter: 'blur(2px)' }}
     >
       <div
@@ -403,7 +411,7 @@ export const GuardAckModal = ({ alert, onClose, onSuccess }) => {
               borderTop: '1px solid var(--border)',
             }}
           >
-            <button type="button" onClick={onClose} disabled={loading} className="btn btn-outline">
+            <button type="button" onClick={handleClose} className="btn btn-outline">
               Cancel
             </button>
             <button type="submit" disabled={loading} className="btn btn-brass">

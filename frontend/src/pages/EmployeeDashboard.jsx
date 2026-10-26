@@ -39,22 +39,23 @@ function GuardOverview() {
   const { status, cameras } = useStatus();
   const [incidents, setIncidents] = useState([]);
   const [entryLog, setEntryLog] = useState([]);
-  const [recordsToday, setRecordsToday] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const today = localTodayStr();
 
   const load = useCallback(async () => {
     try {
-      const [incRes, recRes] = await Promise.all([
+      const [incRes, attRes] = await Promise.all([
         apiFetch('/incidents?status=new&limit=1000'),
-        apiFetch(`/records?date=${today}&limit=6`),
+        apiFetch(`/attendance?date=${today}&limit=1000`),
       ]);
       if (incRes.ok) setIncidents(await incRes.json());
-      if (recRes.ok) {
-        const data = await recRes.json();
-        setEntryLog(data.records || []);
-        setRecordsToday(data.total || 0);
+      if (attRes.ok) {
+        const data = await attRes.json();
+        const seen = (data.records || [])
+          .filter((r) => r.first_seen && (r.status === 'present' || r.status === 'late'))
+          .sort((a, b) => new Date(b.last_seen || 0) - new Date(a.last_seen || 0));
+        setEntryLog(seen);
       }
     } finally {
       setLoading(false);
@@ -68,6 +69,10 @@ function GuardOverview() {
   }, [load]);
 
   const camerasLive = cameras.filter((c) => c.live).length;
+
+  // "Inside" if seen in the last 3 minutes, else show last-seen time as exit
+  const isInside = (r) =>
+    r.last_seen && Date.now() - new Date(r.last_seen).getTime() < 3 * 60 * 1000;
 
   return (
     <>
@@ -90,8 +95,8 @@ function GuardOverview() {
         </div>
 
         <div className="stat-card">
-          <span className="eyebrow">Entries today</span>
-          <div className="value">{loading ? '–' : recordsToday}</div>
+          <span className="eyebrow">Employees in today</span>
+          <div className="value">{loading ? '–' : entryLog.length}</div>
         </div>
       </div>
 
@@ -130,20 +135,24 @@ function GuardOverview() {
         <div className="panel" style={{ minWidth: 0 }}>
           <div className="panel-head">
             <h2>Entry &amp; exit log</h2>
-            <Link className="link-btn" to="/records">Full records →</Link>
           </div>
           {loading && <Loader compact />}
-          {entryLog.map((r) => (
-            <div className="log-row" key={r.id}>
-              <div className={`log-dot ${r.priority === 'high' ? 'alert' : r.priority === 'medium' ? 'info' : ''}`} />
-              <div className="log-time">{formatTime(r.timestamp)}</div>
-              <div className="log-text">{(r.person_name || '').replace('@front', '')}</div>
-              <div className="log-tag">{r.camera_name}</div>
+          {entryLog.slice(0, 6).map((r, i) => (
+            <div className="log-row" key={`${r.employee_id}-${i}`}>
+              <div className={`log-dot ${isInside(r) ? 'info' : ''}`} />
+              <div className="log-time">{formatTime(r.first_seen)}</div>
+              <div className="log-text">
+                {r.name}{' '}
+                <span className="mono" style={{ color: 'var(--text-muted)' }}>
+                  {isInside(r) ? 'inside' : `out ${formatTime(r.last_seen)}`}
+                </span>
+              </div>
+              <div className="log-tag">{r.zone_name || ''}</div>
             </div>
           ))}
 
           {!loading && entryLog.length === 0 && (
-            <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No entries logged yet today.</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>No employee entries yet today.</p>
           )}
         </div>
       </div>

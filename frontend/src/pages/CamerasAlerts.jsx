@@ -251,22 +251,29 @@ export default function CamerasAlerts() {
       ? `${API_BASE}/media?u=${encodeURIComponent(a.snapshot_filename)}&token=${encodeURIComponent(session.token)}`
       : `${API_BASE}${a.snapshot_filename}?token=${encodeURIComponent(session.token)}`;
 
-  async function confirmDismiss() {
-    await apiFetch(`/incidents/${dismissTarget.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'dismissed' }),
-    });
-    setDismissTarget(null);
-    loadIncidents();
+  async function confirmDismiss(signal) {
+    try {
+      await apiFetch(`/incidents/${dismissTarget.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'dismissed' }),
+        signal,
+      });
+      setDismissTarget(null);
+      loadIncidents();
+    } catch (err) {
+      if (err.name !== 'AbortError') console.error(err);
+    }
   }
 
-  async function confirmDeleteCam() {
+  async function confirmDeleteCam(signal) {
     setDeletingCam(true);
     try {
-      await apiFetch(`/cameras/${deleteCamTarget.id}`, { method: 'DELETE' });
+      await apiFetch(`/cameras/${deleteCamTarget.id}`, { method: 'DELETE', signal });
       setDeleteCamTarget(null);
       refreshCameras();
+    } catch (err) {
+      if (err.name !== 'AbortError') console.error(err);
     } finally {
       setDeletingCam(false);
     }

@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import useOffices from '../hooks/useOffices.js';
 import { initials } from '../data/mockData.js';
 import Loader from '../components/Loader.jsx';
+import useAbort from '../hooks/useAbort.js';
 
 function classifyShift(shift) {
   if (!shift || !shift.includes('–')) return null;
@@ -62,6 +63,9 @@ export default function AdminEmployees() {
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  const addAbort = useAbort();
+  const editAbort = useAbort();
 
   // Only super admins can switch offices. Everyone else is already scoped by the backend.
   const showOfficePicker = isSuperAdmin && offices.length > 1;
@@ -126,12 +130,19 @@ export default function AdminEmployees() {
 
   const [submitting, setSubmitting] = useState(false);
 
+  function openEdit(employee) {
+    setEditTarget(employee);
+    setEditName(employee.name);
+    setEditStart(employee.shift_start);
+    setEditEnd(employee.shift_end);
+    setEditPhoto(null);
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
 
     if (submitting) return;
 
-    // Non-super-admins can only add employees to their own office.
     const targetOffice = isSuperAdmin ? newOfficeId : myOfficeId;
     if (targetOffice == null || targetOffice === '') {
       alert('Select an office for this employee.');
@@ -139,6 +150,7 @@ export default function AdminEmployees() {
     }
 
     setSubmitting(true);
+    const signal = addAbort.next();
 
     const formData = new FormData();
 
@@ -156,6 +168,7 @@ export default function AdminEmployees() {
       const res = await apiFetch('/employees', {
         method: 'POST',
         body: formData,
+        signal,
       });
 
       const data = await res.json();
@@ -174,6 +187,7 @@ export default function AdminEmployees() {
         alert(data.detail || 'Failed to add employee');
       }
     } catch (error) {
+      if (error.name === 'AbortError') return;
       console.error('Error adding employee:', error);
       alert('Failed to add employee');
     } finally {
@@ -181,38 +195,27 @@ export default function AdminEmployees() {
     }
   }
 
-  function openEdit(employee) {
-    setEditTarget(employee);
-    setEditName(employee.name);
-    setEditStart(employee.shift_start);
-    setEditEnd(employee.shift_end);
-    setEditPhoto(null);
-  }
-
   async function confirmEdit() {
     if (!editTarget) return;
 
+    const signal = editAbort.next();
     const formData = new FormData();
 
     formData.append('name', editName);
     formData.append('designation', editTarget.role);
     formData.append('shift_start', editStart);
     formData.append('shift_end', editEnd);
-    // The office is not sent on edit: moving an employee would orphan their
-    // attendance history and face data in the old office.
 
     if (editPhoto) {
       formData.append('photo', editPhoto);
     }
 
     try {
-      const res = await apiFetch(
-        `/employees/${editTarget.id}`,
-        {
-          method: 'PUT',
-          body: formData,
-        }
-      );
+      const res = await apiFetch(`/employees/${editTarget.id}`, {
+        method: 'PUT',
+        body: formData,
+        signal,
+      });
 
       const data = await res.json();
 
@@ -223,12 +226,13 @@ export default function AdminEmployees() {
         alert(data.detail || 'Failed to update employee');
       }
     } catch (error) {
+      if (error.name === 'AbortError') return;
       console.error('Error updating employee:', error);
       alert('Failed to update employee');
     }
   }
 
-  async function confirmDelete() {
+  async function confirmDelete(signal) {
     if (!deleteTarget || deleting) return;
 
     setDeleting(true);
@@ -236,6 +240,7 @@ export default function AdminEmployees() {
     try {
       const res = await apiFetch(`/employees/${deleteTarget.id}`, {
         method: 'DELETE',
+        signal,
       });
 
       if (res.ok) {
@@ -245,6 +250,7 @@ export default function AdminEmployees() {
         alert('Failed to remove employee');
       }
     } catch (error) {
+      if (error.name === 'AbortError') return;
       console.error('Error removing employee:', error);
       alert('Failed to remove employee');
     } finally {
@@ -420,7 +426,7 @@ export default function AdminEmployees() {
               <button
                 type="button"
                 className="btn btn-outline"
-                onClick={() => setShowAdd(false)}
+                onClick={() => { addAbort.abort(); setSubmitting(false); setShowAdd(false); }}
               >
                 Cancel
               </button>
@@ -582,7 +588,7 @@ export default function AdminEmployees() {
                 <button
                   type="button"
                   className="btn btn-outline"
-                  onClick={() => setEditTarget(null)}
+                  onClick={() => { editAbort.abort(); setEditTarget(null); }}
                 >
                   Cancel
                 </button>
@@ -608,12 +614,11 @@ export default function AdminEmployees() {
             ? `Are you sure you want to remove ${deleteTarget.name}? This cannot be undone.`
             : ''
         }
-        confirmLabel={deleting ? 'Removing…' : 'Remove'}
+        confirmLabel="Remove"
+        loading={deleting}
         danger
         onConfirm={confirmDelete}
-        onCancel={() => {
-          if (!deleting) setDeleteTarget(null);
-        }}
+        onCancel={() => { setDeleteTarget(null); setDeleting(false); }}
       />
     </Shell>
   );

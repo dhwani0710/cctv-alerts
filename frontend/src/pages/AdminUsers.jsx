@@ -4,6 +4,7 @@ import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { initials } from '../data/mockData.js';
 import Loader from '../components/Loader.jsx';
+import useAbort from '../hooks/useAbort.js';
 
 const ROLE_OPTIONS = ['ceo', 'owner', 'guard', 'hr'];
 
@@ -36,6 +37,8 @@ export default function AdminUsers() {
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteError, setDeleteError] = useState('');
+  const addAbort = useAbort();
+  const editAbort = useAbort();
 
   const loadUsers = useCallback(async () => {
     try {
@@ -86,6 +89,14 @@ export default function AdminUsers() {
     [users, roleFilter, officeFilter]
   );
 
+  function openEdit(u) {
+    setEditTarget(u);
+    setEditRole(u.role);
+    setEditOfficeId(u.office_id == null ? '' : String(u.office_id));
+    setEditPassword('');
+    setEditError('');
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setAddError('');
@@ -99,39 +110,37 @@ export default function AdminUsers() {
       return;
     }
 
-    // Only guard is tied to an office. Every other role sees all offices.
     const targetOffice = isSuperAdmin ? toId(newOfficeId) : myOfficeId;
     if (role === 'guard' && targetOffice == null) {
       setAddError('Select an office for this guard.');
       return;
     }
 
-    const res = await apiFetch('/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: username.trim(),
-        password,
-        role,
-        office_id: role === 'guard' ? targetOffice : null,
-      }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      setUsername(''); setPassword(''); setConfirmPassword(''); setRole('guard'); setNewOfficeId('');
-      setShowAdd(false);
-      loadUsers();
-    } else {
-      setAddError(data.detail || 'Failed to create user');
+    const signal = addAbort.next();
+    try {
+      const res = await apiFetch('/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal,
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+          role,
+          office_id: role === 'guard' ? targetOffice : null,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUsername(''); setPassword(''); setConfirmPassword(''); setRole('guard'); setNewOfficeId('');
+        setShowAdd(false);
+        loadUsers();
+      } else {
+        setAddError(data.detail || 'Failed to create user');
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      setAddError('Network error. Try again.');
     }
-  }
-
-  function openEdit(u) {
-    setEditTarget(u);
-    setEditRole(u.role);
-    setEditOfficeId(u.office_id == null ? '' : String(u.office_id));
-    setEditPassword('');
-    setEditError('');
   }
 
   async function confirmEdit() {
@@ -155,29 +164,42 @@ export default function AdminUsers() {
       body.password = editPassword;
     }
 
-    const res = await apiFetch(`/users/${editTarget.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      setEditTarget(null);
-      loadUsers();
-    } else {
-      setEditError(data.detail || 'Failed to update user');
+    const signal = editAbort.next();
+    try {
+      const res = await apiFetch(`/users/${editTarget.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEditTarget(null);
+        loadUsers();
+      } else {
+        setEditError(data.detail || 'Failed to update user');
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      setEditError('Network error. Try again.');
     }
   }
 
-  async function confirmDelete() {
+  async function confirmDelete(signal) {
     setDeleteError('');
-    const res = await apiFetch(`/users/${deleteTarget.id}`, { method: 'DELETE' });
-    if (res.ok) {
-      setDeleteTarget(null);
-      loadUsers();
-    } else {
-      const data = await res.json();
-      setDeleteError(data.detail || 'Failed to delete user');
+    try {
+      const res = await apiFetch(`/users/${deleteTarget.id}`, { method: 'DELETE', signal });
+      if (res.ok) {
+        setDeleteTarget(null);
+        loadUsers();
+      } else {
+        const data = await res.json();
+        setDeleteError(data.detail || 'Failed to delete user');
+        setDeleteTarget(null);
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      setDeleteError('Network error. Try again.');
       setDeleteTarget(null);
     }
   }
@@ -235,7 +257,7 @@ export default function AdminUsers() {
             <div className="field"><label>Confirm password</label><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" required /></div>
             <div className="span-all form-actions">
               <button type="submit" className="btn btn-brass">Create user</button>
-              <button type="button" className="btn btn-outline" onClick={() => setShowAdd(false)}>Cancel</button>
+              <button type="button" className="btn btn-outline" onClick={() => { addAbort.abort(); setShowAdd(false); }}>Cancel</button>
             </div>
           </form>
         </div>
@@ -294,7 +316,7 @@ export default function AdminUsers() {
               </div>
               <div className="field"><label>New password (optional)</label><input type="password" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Leave blank to keep current password" autoComplete="new-password" /></div>
               <div className="modal-actions">
-                <button className="btn btn-outline" onClick={() => setEditTarget(null)}>Cancel</button>
+                <button className="btn btn-outline" onClick={() => { editAbort.abort(); setEditTarget(null); }}>Cancel</button>
                 <button className="btn btn-brass" onClick={confirmEdit}>Save changes</button>
               </div>
             </div>
