@@ -1,241 +1,302 @@
-# CCTV Alerts
-A real-time CCTV monitoring and alert platform for a jewellery store environment. The project combines a FastAPI backend for authentication, camera handling, employee recognition, attendance tracking, and alert workflows with a React + Vite frontend for dashboards and admin controls.
+# CCTV Alerts (VaultWatch)
 
-This project is more developed than the original README suggested. The backend now includes JWT auth, database-backed workflows, AI-assisted monitoring, incident tracking, storage support, retention jobs, audit logging, and Telegram alerts. The frontend includes protected role-based pages for admin, owner, guard, and HR operations.
+Real-time CCTV monitoring and alerting platform for jewellery stores. It detects people and animals on camera feeds, recognises staff by face, tracks attendance, raises incidents and sends Telegram notifications, with role-based dashboards for owners, CEOs, guards and HR.
 
-## Overview
-This system is designed to:
-- monitor live camera feeds and detect persons in configured zones
-- match visitors or staff against a known-face database
-- generate alert records for suspicious or unexpected activity
-- track employee attendance by shift and presence
-- support role-based access for different team responsibilities
-- store snapshots and media references locally and in cloud storage when configured
-- notify staff via Telegram when alerts are raised
+- **Backend:** FastAPI, PostgreSQL, DeepFace, Ultralytics YOLO
+- **Frontend:** React + Vite
+- **Storage:** local snapshots with optional Supabase-compatible cloud storage
+- **Alerts:** in-app incidents with Telegram notifications
 
-The application is currently structured around these primary roles:
-- ceo
-- owner
-- guard
-- hr
+---
 
-## Role Access Model
-The backend and frontend enforce route-level access using JWT-based auth.
+## Table of contents
 
-| Role | Live camera / alerts | Employee management | User management | Attendance | Settings |
+1. [Features](#features)
+2. [Architecture](#architecture)
+3. [Roles and access](#roles-and-access)
+4. [Project structure](#project-structure)
+5. [Prerequisites](#prerequisites)
+6. [Quick start](#quick-start)
+7. [Configuration](#configuration)
+8. [Detection and alerts](#detection-and-alerts)
+9. [Production deployment](#production-deployment)
+10. [Security checklist](#security-checklist)
+11. [Troubleshooting](#troubleshooting)
+12. [Licensing](#licensing)
+
+---
+
+## Features
+
+**Monitoring and detection**
+- Live camera feeds over RTSP with online, offline and tamper status
+- Face recognition against a known-faces database (DeepFace)
+- Person and animal detection with YOLO26n
+- Incident grouping: repeated alerts for the same event merge into one incident, with first-seen and last-seen times and an occurrence count
+- Priority escalation of unacknowledged incidents
+
+**Operations**
+- Employee management with shift times, designation and face photos
+- Attendance tracking by employee and date, with overrides and export
+- Multi-office support
+- Alert acknowledge and dismiss workflow with proof images
+- Audit log of administrative actions
+- Retention and daily reset jobs
+
+**Notifications and storage**
+- Telegram alerts with snapshots, and escalation messages
+- Local snapshots, with optional upload to Supabase-compatible storage
+
+---
+
+## Architecture
+
+```text
+ RTSP cameras ──► camera_worker ──► motion gate ──► object_detector (YOLO26n)  ──► alerts.py ──► PostgreSQL
+                                          │                                          │
+                                          └──► recognition (DeepFace)  ──────────────┤
+                                                                                     ├──► Telegram
+ React + Vite frontend ◄──── FastAPI (JWT auth, REST) ◄──────────────────────────────┘
+                                                                                     └──► Supabase storage (optional)
+```
+
+---
+
+## Roles and access
+
+Access is enforced by JWT-based auth on the backend and by protected routes on the frontend.
+
+| Role | Live cameras / alerts | Employee management | User management | Attendance | Settings |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| ceo | ✅ | ✅ | ✅ | ✅ | ✅ |
-| owner | ✅ | ✅ | ✅ | ✅ | ✅ |
-| guard | ✅ | ❌ | ❌ | ❌ | ✅ |
-| hr | ❌ | ✅ | ❌ | ✅ | ✅ |
+| ceo | Yes | Yes | Yes | Yes | Yes |
+| owner | Yes | Yes | Yes | Yes | Yes |
+| guard | Yes | No | No | No | Yes |
+| hr | No | Yes | No | Yes | Yes |
 
-Routes are protected in the frontend via the React router and in the backend via required auth dependencies.
+---
 
-## Current Features
+## Project structure
 
-### Authentication and RBAC
-- JWT-based login flow with username/password verification
-- default admin user is created automatically on database initialization
-- protected API endpoints for admin-only or staff-only actions
-- user management endpoints for creating, updating, and deleting users
-- account update and password change flows for logged-in users
-
-### Employee and Face Management
-- add employee records with shift times and designation
-- upload one or more employee photos
-- store face images in the known_faces folder and sync to configured storage
-- clear cached face representation data after updates
-- employee record management integrated with recognition workflows
-
-### Camera and Incident Monitoring
-- configured camera sources loaded from backend settings
-- live status endpoint for camera and alert health
-- incident tracking with first-seen and last-seen timestamps
-- zone and camera configuration APIs
-- snapshot retrieval endpoints for captured evidence
-- alert acknowledge and status handling with proof images
-
-### Attendance Tracking
-- attendance records keyed by employee and date
-- first/last seen timestamps
-- override support and status tracking
-- attendance export endpoints and dashboard views
-- daily attendance operations tied to the live monitoring system
-
-### Notification and Storage
-- Telegram notifications for alert and escalation events
-- local snapshots and cloud uploads via Supabase-compatible storage
-- retention and daily reset jobs for cleanup and system maintenance
-- audit logs for system actions and administrative events
-
-## Default Login
-On first database initialization, the app seeds a default admin account:
-- username: admin
-- password: admin123
-
-You can then create additional users from the admin user management flow.
-
-## Project Structure
 ```text
 cctv-alerts/
 ├── backend/
-│   ├── alerts.py              # alert generation and anomaly logic
-│   ├── app_settings.py        # app settings management
-│   ├── auth.py                # JWT verification and role checks
-│   ├── auth_users.py          # password hashing, token creation, role constants
-│   ├── audit.py               # audit log creation and record-keeping
-│   ├── camera_worker.py       # camera worker and processing loops
-│   ├── config.py              # default camera configuration
-│   ├── database.py            # PostgreSQL database setup and migrations
-│   ├── main.py                # FastAPI app, routes, and endpoints
-│   ├── notifications.py       # Telegram notification helpers
-│   ├── recognition.py         # face-recognition flows
-│   ├── retention.py           # retention and cleanup tasks
-│   ├── settings_store.py      # settings persistence helpers
-│   ├── storage.py             # local/cloud storage sync helpers
-│   ├── requirements.txt       # backend Python dependencies
-│   ├── known_faces/           # known employee photos
-│   ├── snapshots/             # captured snapshots
-│   ├── recordings/            # stored recordings
-│   ├── .env.example           # sample environment configuration
-│   └── .env                   # local runtime settings (not committed)
+│   ├── main.py               # FastAPI app and routes
+│   ├── auth.py               # JWT verification and role checks
+│   ├── auth_users.py         # password hashing, tokens, role constants
+│   ├── alerts.py             # alert logging, incidents, escalation
+│   ├── camera_worker.py      # per-camera processing loop
+│   ├── object_detector.py    # YOLO26n person and animal detection
+│   ├── recognition.py        # face recognition
+│   ├── notifications.py      # Telegram helpers
+│   ├── storage.py            # local / cloud storage sync
+│   ├── retention.py          # cleanup and daily reset jobs
+│   ├── audit.py              # audit logging
+│   ├── database.py           # PostgreSQL setup and migrations
+│   ├── config.py             # tunable settings
+│   ├── requirements.txt
+│   ├── .env.example
+│   ├── known_faces/          # employee face photos
+│   ├── snapshots/            # alert snapshots
+│   └── recordings/           # stored recordings
 ├── frontend/
-│   ├── index.html
 │   ├── package.json
 │   ├── vite.config.js
-│   ├── css/
-│   └── src/
-│       ├── App.jsx
-│       ├── components/
-│       ├── context/
-│       ├── data/
-│       └── pages/
+│   └── src/ (pages, components, context)
 ├── README.md
-├── TO-DO
-├── package-lock.json
 └── .gitignore
 ```
 
+---
+
 ## Prerequisites
-- Python 3.10+
-- Node.js 18+
-- npm
-- PostgreSQL connection string for the backend database
-- RTSP camera feeds or a local test source for live monitoring
 
-## Backend Setup
-1. Open a terminal and change to the backend folder:
-   ```bash
-   cd backend
-   ```
+| Requirement | Notes |
+| :--- | :--- |
+| Python **3.12** | 3.13 and newer are not supported: DeepFace, tf-keras and mtcnn do not install there |
+| Node.js 18+ and npm | for the frontend |
+| PostgreSQL | any managed instance works (for example Neon) |
+| RTSP camera feeds | or a local video source for testing |
+| Git | only needed for optional dependencies installed from GitHub |
 
-2. Install Python dependencies:
-   ```bash
-   python -m pip install -r requirements.txt
-   ```
+On Windows, use the Python launcher so the right version is used: `py -3.12 -m ...`.
 
-3. Copy the sample environment file and define your values:
-   ```bash
-   copy .env.example .env
-   ```
+---
 
-   Then update the variables in `.env`, including:
-   - `DATABASE_URL`
-   - `JWT_SECRET`
-   - `API_SECRET_KEY`
-   - `DEFAULT_ADMIN_USERNAME`
-   - `DEFAULT_ADMIN_PASSWORD`
-   - `TELEGRAM_BOT_TOKEN`
-   - `TELEGRAM_CHAT_ID`
-   - `CORS_ORIGINS`
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_KEY`
-   - `SUPABASE_BUCKET_NAME`
-   - camera RTSP URLs such as `CAM1_RTSP_URL` and `CAM2_RTSP_URL`
+## Quick start
 
-4. Start the API server:
-   ```bash
-   python -m uvicorn main:app --reload --port 8000
-   ```
+### 1. Backend
 
-5. Open the API docs in a browser:
-   - http://localhost:8000
-   - http://localhost:8000/docs
-
-## Frontend Setup
-1. Open a second terminal and change to the frontend folder:
-   ```bash
-   cd frontend
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
-
-4. Open the app in the browser:
-   - http://localhost:5173
-
-## Environment File Example
-The project expects backend environment values similar to those in [backend/.env.example](backend/.env.example):
-
-```env
-API_SECRET_KEY=your-secret-key-here
-JWT_SECRET=your-jwt-secret-key-here
-DEFAULT_ADMIN_USERNAME=admin
-DEFAULT_ADMIN_PASSWORD=admin123
-
-TELEGRAM_BOT_TOKEN=your-telegram-bot-token-here
-TELEGRAM_CHAT_ID=your-telegram-chat-id-here
-
-DATABASE_URL=your-neon-connection-string-here
-
-SUPABASE_URL=https://your-project-ref.supabase.co
-SUPABASE_SERVICE_KEY=your-service-role-key
-SUPABASE_BUCKET_NAME=cctv-alerts-photos
-
-CAM1_RTSP_URL=******camera-ip:554/path
-CAM2_RTSP_URL=******camera-ip:554/path
-```
-
-> The backend currently expects a PostgreSQL database via `DATABASE_URL` rather than an automatic SQLite fallback.
-
-## Useful Commands
-
-### Backend
 ```bash
 cd backend
-python -m pip install -r requirements.txt
-python -m uvicorn main:app --reload --port 8000
+py -3.12 -m pip install -r requirements.txt     # Windows
+# python3.12 -m pip install -r requirements.txt  # macOS / Linux
 ```
 
-### Frontend
+Create your environment file and fill it in (see [Configuration](#configuration)):
+
+```bash
+copy .env.example .env        # Windows
+# cp .env.example .env        # macOS / Linux
+```
+
+Generate a strong secret for `JWT_SECRET`:
+
+```bash
+py -3.12 -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Start the API:
+
+```bash
+py -3.12 -m uvicorn main:app --reload --port 8000
+```
+
+API docs: http://localhost:8000/docs
+
+### 2. Frontend
+
 ```bash
 cd frontend
 npm install
 npm run dev
+```
+
+App: http://localhost:5173
+
+### 3. First login
+
+On first start the backend creates an admin account from `DEFAULT_ADMIN_USERNAME` and `DEFAULT_ADMIN_PASSWORD` in `.env`. Sign in, create your real users in the user management page, then **change or delete the default account**.
+
+---
+
+## Configuration
+
+### Environment variables (`backend/.env`)
+
+| Variable | Required | Description |
+| :--- | :---: | :--- |
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `JWT_SECRET` | Yes | Secret for signing tokens. The server refuses to start without it |
+| `API_SECRET_KEY` | Yes | Internal API secret |
+| `DEFAULT_ADMIN_USERNAME` | Yes | Initial admin username (first start only) |
+| `DEFAULT_ADMIN_PASSWORD` | Yes | Initial admin password. Use a strong one |
+| `CORS_ORIGINS` | Yes | Allowed frontend origins, for example `https://store.example.com` |
+| `TELEGRAM_BOT_TOKEN` | No | Telegram bot token for alerts |
+| `TELEGRAM_CHAT_ID` | No | Chat or channel that receives alerts |
+| `SUPABASE_URL` | No | Supabase project URL |
+| `SUPABASE_SERVICE_KEY` | No | Supabase service-role key. Keep it secret |
+| `SUPABASE_BUCKET_NAME` | No | Storage bucket, for example `cctv-alerts-photos` |
+| `CAM1_RTSP_URL`, `CAM2_RTSP_URL`, ... | No | RTSP stream URLs |
+
+Never commit `.env`. Only `.env.example` belongs in version control.
+
+### Tuning (`backend/config.py`)
+
+| Setting | Default | Purpose |
+| :--- | :---: | :--- |
+| `YOLO_MODEL` | `yolo26n.pt` | Detection model |
+| `DETECT_CONF` | `0.5` | Minimum confidence for people |
+| `ANIMAL_CONF` | `0.55` | Minimum confidence for animals. Keep it at or above `DETECT_CONF` |
+| `ANIMAL_WINDOW` | `5` | Number of recent checks considered per camera |
+| `ANIMAL_HITS_REQUIRED` | `2` | Checks within the window that must contain an animal before alerting |
+| `ANIMAL_COOLDOWN_SEC` | `60` | Minimum seconds between animal alerts per camera |
+| `ALERT_DEDUPE_WINDOW_SEC` | `300` | Alerts of the same type on the same camera merge into one incident within this window |
+| `ESCALATION_LOW_TO_MEDIUM_SEC` | `1800` | Unacknowledged low incidents rise to medium |
+| `ESCALATION_MEDIUM_TO_HIGH_SEC` | `3600` | Unacknowledged medium incidents rise to high |
+
+---
+
+## Detection and alerts
+
+- **People:** detected with YOLO26n, then matched against known faces. Unrecognised faces raise a `stranger` alert.
+- **Animals:** the model is trained on COCO and recognises these animals: bird, cat, dog, horse, sheep, cow, elephant, bear, zebra and giraffe. **Rodents, snakes and monkeys are not detected.** Supporting them needs a fine-tuned or open-vocabulary model.
+- Animal checks run only on frames that pass the motion gate, and an alert needs repeated detections within the configured window. This reduces false alarms.
+- Detection quality depends on size and clarity. Small, distant or on-screen animals are detected less reliably than real animals in the room.
+- Alerts of the same type on the same camera within the dedupe window merge into one incident. Acknowledged or dismissed incidents stay hidden from the live list even if new alerts merge into them.
+
+---
+
+## Production deployment
+
+### Current setup
+
+The application runs on the store PC and is published through Tailscale:
+
+- **Backend:** FastAPI (uvicorn) on port 8000
+- **Frontend:** production build (`npm run build`) served from `frontend/dist`
+- **Access:** HTTPS through Tailscale on the store PC's `*.ts.net` address. Ask the project owner for the URL.
+
+Check how it is published on the store PC:
+
+```bash
+tailscale status
+tailscale serve status
+tailscale funnel status
+```
+
+- `serve` makes the site available **only to devices on your tailnet**.
+- `funnel` makes it available to **the whole internet**. Use it only if staff must reach the console from devices that are not on the tailnet, and keep the security checklist below in force.
+
+### Running the backend
+
+```bash
+cd backend
+py -3.12 -m uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Do not use `--reload` in production. Run it under a process manager (a Windows service, NSSM, systemd or similar) so it restarts after crashes and reboots.
+
+### Building the frontend
+
+```bash
+cd frontend
 npm run build
 ```
 
-## Notes
-- The app is built for a specific jewellery store use case, but the underlying architecture is reusable for other CCTV, access, and attendance scenarios.
-- The actual frontend route structure includes dashboards such as admin-dashboard, guard-dashboard, hr-dashboard, cameras-alerts, records, attendance, and settings.
-- Face recognition and media processing are active features, but they depend on working camera sources, uploaded employee images, and compatible environment settings.
-- This project has grown beyond a simple starter app and now includes operational monitoring, auditability, and alert workflows.
+Serve `dist/` with your web server or Tailscale. **Rebuild after every frontend change**, otherwise the site keeps serving the old build. Staff may need a hard refresh (Ctrl+F5).
 
-This README reflects the current codebase and setup requirements as implemented in the project today.
+### Recommended practice
 
-## Login Credentials
-1. admin - admin123
-2. guard - guard123
-3. hr - hr1234
-4. Adarsh - 123456
-5. og acc - admin123
-6. ceo - ceo123
-7. owner - 123456
+- Prefer tailnet-only access (`tailscale serve`) over Funnel where you can
+- Set `CORS_ORIGINS` to the exact site URL only
+- Use a managed PostgreSQL instance with backups enabled
+- Keep `known_faces/` backed up. It is the source of truth for face recognition
+- Monitor free disk space for snapshots and your storage bucket
+- Keep the store PC awake, and set the backend and Tailscale to start on boot
 
+---
+
+## Security checklist
+
+- [ ] Change or delete the default admin account after first login
+- [ ] Use a strong, unique `JWT_SECRET` and `API_SECRET_KEY`
+- [ ] Keep `.env` out of git, and rotate any secret that was ever committed
+- [ ] Do not store real usernames or passwords in the README, in code or in git history
+- [ ] Restrict `CORS_ORIGINS` to your own domain
+- [ ] Serve everything over HTTPS
+- [ ] Use least-privilege roles: guards do not need owner access
+- [ ] Do not share logs publicly. They can contain access tokens in request URLs
+- [ ] If the site is published with Tailscale Funnel, use strong passwords for every account and consider limiting access to the tailnet
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause and fix |
+| :--- | :--- |
+| `JWT_SECRET environment variable is not set` | Create `backend/.env` and set `JWT_SECRET` |
+| `DeepFace import failed` | Wrong Python version. Run everything with Python 3.12 (`py -3.12`) |
+| `pip` is not recognised | Use `py -3.12 -m pip ...` |
+| `ModuleNotFoundError: ultralytics` | Install requirements into the same Python you run the server with |
+| No animal alert | Check the animal is one of the supported types, large and clear in frame, and `ANIMAL_CONF` is not too high |
+| Alert not visible on dashboard | The incident may have been acknowledged or dismissed within the dedupe window. Check its status |
+| Frontend change not showing | Rebuild the frontend (`npm run build`) and hard refresh (Ctrl+F5) |
+| Supabase error 402 | Storage quota is full. Free space, upgrade, or disable cloud upload. Never delete `known_faces/` |
+| Site loads on other devices but not mine | Test in Incognito or another browser, turn off Chrome Secure DNS and QUIC, check VPN or proxy settings |
+
+---
+
+## Licensing
+
+- This project: add your licence here (a `LICENSE` file is recommended).
+- **Ultralytics YOLO is licensed under AGPL-3.0.** Running it inside a product or service can carry obligations, including source disclosure for the whole application. Review the Ultralytics licence or buy an Ultralytics Enterprise License before commercial or client deployments. This is not legal advice.
