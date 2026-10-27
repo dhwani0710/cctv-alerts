@@ -33,6 +33,7 @@ export default function Settings() {
   const token = session?.token;
 
   const isAdmin = session?.role === 'ceo' || session?.role === 'owner';
+  const isOwner = session?.role === 'owner';
   const isHRorGuard = session?.role === 'hr' || session?.role === 'guard';
   const canSeeThresholds = session?.role !== 'employee' && !isHRorGuard;
 
@@ -97,6 +98,11 @@ export default function Settings() {
   const [confirmClearRec, setConfirmClearRec] = useState(false);
   const [clearingRecordings, setClearingRecordings] = useState(false);
   const [recError, setRecError] = useState('');
+  
+  // Clear audit logs (owner only)
+  const [confirmClearAudit, setConfirmClearAudit] = useState(false);
+  const [clearingAudit, setClearingAudit] = useState(false);
+  const [clearAuditError, setClearAuditError] = useState('');
 
   // Account
   const [accountName, setAccountName] = useState('');
@@ -521,6 +527,12 @@ export default function Settings() {
     try {
       const res = await apiFetch('/recordings', { method: 'DELETE' });
 
+  async function clearAuditLogs() {
+    setClearingAudit(true);
+    setClearAuditError('');
+
+    try {
+      const res = await apiFetch('/audit-logs', { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data.detail || `Clear failed (HTTP ${res.status})`);
@@ -540,6 +552,17 @@ export default function Settings() {
       setRecError(err.message || 'Failed to clear recordings.');
     } finally {
       setClearingRecordings(false);
+      setConfirmClearAudit(false);
+      showMessage(
+        `Deleted ${data.logs_deleted} audit log(s) and ${data.files_deleted} proof image(s).`,
+        false,
+        8000
+      );
+    } catch (err) {
+      console.error(err);
+      setClearAuditError(err.message || 'Failed to clear audit logs.');
+    } finally {
+      setClearingAudit(false);
     }
   }
 
@@ -571,6 +594,10 @@ export default function Settings() {
           { category: 'system', title: 'Clear all records', description: 'Remove all logged alerts and incidents.' },
           { category: 'system', title: 'Clear all recordings', description: 'Remove all video recordings from the database and this server.' },
         ]
+      : []),
+
+    ...(isOwner
+      ? [{ category: 'system', title: 'Clear audit logs', description: 'Permanently delete all audit log entries and their proof images.' }]
       : []),
   ];
 
@@ -1109,6 +1136,59 @@ export default function Settings() {
                       <p role="alert" style={{ color: '#e5533d', marginTop: 12 }}>
                         {recError}
                       </p>
+                    {isOwner && (
+                      <>
+                        <div className="vscode-danger-row">
+                          <div>
+                            <h3>Clear audit logs</h3>
+                            <p>
+                              Permanently deletes every audit log entry and its proof images from the
+                              database and this server.
+                            </p>
+                          </div>
+
+                          {!confirmClearAudit ? (
+                            <button
+                              type="button"
+                              className="vscode-danger-btn"
+                              onClick={() => {
+                                setClearAuditError('');
+                                setConfirmClearAudit(true);
+                              }}
+                            >
+                              Clear audit logs
+                            </button>
+                          ) : (
+                            <div className="vscode-confirm">
+                              <span>Are you sure?</span>
+                              <button
+                                type="button"
+                                className="vscode-danger-btn"
+                                onClick={clearAuditLogs}
+                                disabled={clearingAudit}
+                              >
+                                {clearingAudit ? 'Clearing…' : 'Yes, clear'}
+                              </button>
+                              <button
+                                type="button"
+                                className="vscode-outline-btn"
+                                onClick={() => {
+                                  setClearAuditError('');
+                                  setConfirmClearAudit(false);
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {clearAuditError && (
+                          <p role="alert" style={{ color: '#e5533d', marginTop: 12 }}>
+                            {clearAuditError}
+                          </p>
+                        )}
+                      </>
                     )}
                   </section>
                 </div>
