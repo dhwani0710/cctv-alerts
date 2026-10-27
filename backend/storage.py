@@ -74,6 +74,25 @@ def delete_prefix(prefix):
     if paths:
         supabase.storage.from_(BUCKET).remove(paths)
 
+def delete_all_in_prefix(prefix):
+    """Delete every file under prefix in the bucket, paging through the listing.
+    Returns the number of files removed. Raises on failure."""
+    if not supabase:
+        return 0
+    removed = 0
+    for _ in range(1000):  # safety cap
+        files = supabase.storage.from_(BUCKET).list(prefix, {"limit": 100, "offset": 0})
+        names = [
+            f"{prefix}/{f['name']}"
+            for f in files
+            if f.get("name") and f["name"] != ".emptyFolderPlaceholder"
+        ]
+        if not names:
+            break
+        supabase.storage.from_(BUCKET).remove(names)
+        removed += len(names)
+    return removed
+
 def sync_known_faces_from_storage(local_dir="known_faces"):
     if not supabase:
         return
