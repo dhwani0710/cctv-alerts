@@ -11,6 +11,7 @@ import math
 import threading
 import uuid
 import re
+from urllib.parse import unquote
 import anyio
 import asyncio
 from starlette.concurrency import run_in_threadpool
@@ -284,6 +285,52 @@ def get_audit_logs(
         cur.close()
 
     return [dict(r) for r in rows]
+
+@app.delete("/audit-logs", dependencies=[Depends(require_owner)])
+def clear_audit_logs(current_user: dict = Depends(require_owner)):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT proof_image FROM audit_logs WHERE office_id = %s AND proof_image IS NOT NULL",
+            (OFFICE_ID,),
+        )
+        proofs = {r["proof_image"] for r in cur.fetchall()}
+
+        # proofs still attached to alert records must survive
+        cur.execute("SELECT DISTINCT ack_proof_image FROM alerts WHERE ack_proof_image IS NOT NULL")
+        in_use = {r["ack_proof_image"] for r in cur.fetchall()}
+
+        cur.execute("DELETE FROM audit_logs WHERE office_id = %s", (OFFICE_ID,))
+        logs_deleted = cur.rowcount
+        conn.commit()
+        cur.close()
+
+    files_deleted = 0
+    for url in proofs - in_use:
+        if "acknowledgments/" not in url:
+            continue
+        name = os.path.basename(unquote(url.split("?", 1)[0]))  # basename blocks path traversal
+        if not name:
+            continue
+        local = os.path.join("snapshots", "acknowledgments", name)
+        if os.path.isfile(local):
+            os.remove(local)
+            files_deleted += 1
+        try:
+            storage.delete_file(f"acknowledgments/{name}")  # adds the office prefix itself
+        except Exception as e:
+            print(f"[audit] Could not delete cloud proof {name}: {e}")
+
+    # written after the delete so the clear itself leaves a trace
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="AUDIT_LOGS_CLEARED",
+        target_module="Audit",
+        details=f"Cleared {logs_deleted} audit logs and {files_deleted} local proof images",
+        user_id=current_user.get("user_id"),
+    )
+    return {"message": "Audit logs cleared", "logs_deleted": logs_deleted, "files_deleted": files_deleted}
 
 # --- Video Recordings ---
 
