@@ -94,15 +94,15 @@ export default function Settings() {
   const [clearingRecords, setClearingRecords] = useState(false);
   const [clearError, setClearError] = useState('');
 
-  // Clear all recordings
-  const [confirmClearRec, setConfirmClearRec] = useState(false);
-  const [clearingRecordings, setClearingRecordings] = useState(false);
-  const [recError, setRecError] = useState('');
-  
   // Clear audit logs (owner only)
   const [confirmClearAudit, setConfirmClearAudit] = useState(false);
   const [clearingAudit, setClearingAudit] = useState(false);
   const [clearAuditError, setClearAuditError] = useState('');
+  
+  // Clear all recordings
+  const [confirmClearRec, setConfirmClearRec] = useState(false);
+  const [clearingRecordings, setClearingRecordings] = useState(false);
+  const [recError, setRecError] = useState('');
 
   // Account
   const [accountName, setAccountName] = useState('');
@@ -493,30 +493,46 @@ export default function Settings() {
         throw new Error(data.detail || `Clear failed (HTTP ${res.status})`);
       }
 
-      // ask how many records are still listed (other offices can't be cleared from here)
-      let remaining = 0;
-      try {
-        const check = await apiFetch('/records?limit=1');
-        const checkData = await check.json().catch(() => ({}));
-        remaining = checkData.total || 0;
-      } catch {
-        // ignore, the clear itself already succeeded
-      }
-
       setConfirmClear(false);
+
+      // tell every page that shows alerts / records / incidents to reload
+      window.dispatchEvent(new CustomEvent('records-cleared'));
+
       showMessage(
-        `Cleared ${data.alerts_deleted} alert(s) and ${data.incidents_deleted} incident(s).` +
-          (remaining
-            ? ` ${remaining} record(s) remain: they belong to other offices or were just logged by live cameras.`
-            : ''),
+        `Cleared ${data.alerts_deleted ?? 0} alert(s), ${data.alert_records_deleted ?? 0} alert record(s) and ${data.incidents_deleted ?? 0} incident(s).`,
         false,
-        8000
+        6000
       );
     } catch (err) {
       console.error(err);
       setClearError(err.message || 'Failed to clear records.');
     } finally {
       setClearingRecords(false);
+    }
+  }
+
+  async function clearAuditLogs() {
+    setClearingAudit(true);
+    setClearAuditError('');
+
+    try {
+      const res = await apiFetch('/audit-logs', { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.detail || `Clear failed (HTTP ${res.status})`);
+      }
+
+      setConfirmClearAudit(false);
+      showMessage(
+        `Deleted ${data.logs_deleted} audit log(s) and ${data.files_deleted} proof image(s).`,
+        false,
+        8000
+      );
+    } catch (err) {
+      console.error(err);
+      setClearAuditError(err.message || 'Failed to clear audit logs.');
+    } finally {
+      setClearingAudit(false);
     }
   }
 
@@ -527,12 +543,6 @@ export default function Settings() {
     try {
       const res = await apiFetch('/recordings', { method: 'DELETE' });
 
-  async function clearAuditLogs() {
-    setClearingAudit(true);
-    setClearAuditError('');
-
-    try {
-      const res = await apiFetch('/audit-logs', { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data.detail || `Clear failed (HTTP ${res.status})`);
@@ -552,17 +562,6 @@ export default function Settings() {
       setRecError(err.message || 'Failed to clear recordings.');
     } finally {
       setClearingRecordings(false);
-      setConfirmClearAudit(false);
-      showMessage(
-        `Deleted ${data.logs_deleted} audit log(s) and ${data.files_deleted} proof image(s).`,
-        false,
-        8000
-      );
-    } catch (err) {
-      console.error(err);
-      setClearAuditError(err.message || 'Failed to clear audit logs.');
-    } finally {
-      setClearingAudit(false);
     }
   }
 
@@ -1090,52 +1089,6 @@ export default function Settings() {
                       </p>
                     )}
 
-                    <div className="vscode-danger-row">
-                      <div>
-                        <h3>Clear all recordings</h3>
-                        <p>Permanently deletes every video recording from the database and this server.</p>
-                      </div>
-
-                      {!confirmClearRec ? (
-                        <button
-                          type="button"
-                          className="vscode-danger-btn"
-                          onClick={() => {
-                            setRecError('');
-                            setConfirmClearRec(true);
-                          }}
-                        >
-                          Clear recordings
-                        </button>
-                      ) : (
-                        <div className="vscode-confirm">
-                          <span>Are you sure?</span>
-                          <button
-                            type="button"
-                            className="vscode-danger-btn"
-                            onClick={clearRecordings}
-                            disabled={clearingRecordings}
-                          >
-                            {clearingRecordings ? 'Clearing…' : 'Yes, clear'}
-                          </button>
-                          <button
-                            type="button"
-                            className="vscode-outline-btn"
-                            onClick={() => {
-                              setRecError('');
-                              setConfirmClearRec(false);
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {recError && (
-                      <p role="alert" style={{ color: '#e5533d', marginTop: 12 }}>
-                        {recError}
-                      </p>
                     {isOwner && (
                       <>
                         <div className="vscode-danger-row">
@@ -1189,6 +1142,54 @@ export default function Settings() {
                           </p>
                         )}
                       </>
+                    )}
+
+                    <div className="vscode-danger-row">
+                      <div>
+                        <h3>Clear all recordings</h3>
+                        <p>Permanently deletes every video recording from the database and this server.</p>
+                      </div>
+
+                      {!confirmClearRec ? (
+                        <button
+                          type="button"
+                          className="vscode-danger-btn"
+                          onClick={() => {
+                            setRecError('');
+                            setConfirmClearRec(true);
+                          }}
+                        >
+                          Clear recordings
+                        </button>
+                      ) : (
+                        <div className="vscode-confirm">
+                          <span>Are you sure?</span>
+                          <button
+                            type="button"
+                            className="vscode-danger-btn"
+                            onClick={clearRecordings}
+                            disabled={clearingRecordings}
+                          >
+                            {clearingRecordings ? 'Clearing…' : 'Yes, clear'}
+                          </button>
+                          <button
+                            type="button"
+                            className="vscode-outline-btn"
+                            onClick={() => {
+                              setRecError('');
+                              setConfirmClearRec(false);
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {recError && (
+                      <p role="alert" style={{ color: '#e5533d', marginTop: 12 }}>
+                        {recError}
+                      </p>
                     )}
                   </section>
                 </div>
