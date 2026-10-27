@@ -93,7 +93,7 @@ export default function Settings() {
   const [clearingRecords, setClearingRecords] = useState(false);
   const [clearError, setClearError] = useState('');
 
-  // Delete all recordings
+  // Clear all recordings
   const [confirmClearRec, setConfirmClearRec] = useState(false);
   const [clearingRecordings, setClearingRecordings] = useState(false);
   const [recError, setRecError] = useState('');
@@ -514,7 +514,7 @@ export default function Settings() {
     }
   }
 
-    async function clearRecordings() {
+  async function clearRecordings() {
     setClearingRecordings(true);
     setRecError('');
 
@@ -523,12 +523,12 @@ export default function Settings() {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.detail || `Delete failed (HTTP ${res.status})`);
+        throw new Error(data.detail || `Clear failed (HTTP ${res.status})`);
       }
 
       setConfirmClearRec(false);
       showMessage(
-        `Deleted ${data.db_deleted} recording(s) from the database and ${data.local_deleted} local file(s).` +
+        `Cleared ${data.db_deleted} recording(s) from the database and ${data.local_deleted} local file(s).` +
           (data.cloud_error
             ? ' Note: cloud files could not be removed (storage service unavailable).'
             : ` ${data.cloud_deleted} cloud file(s) removed.`),
@@ -537,7 +537,7 @@ export default function Settings() {
       );
     } catch (err) {
       console.error(err);
-      setRecError(err.message || 'Failed to delete recordings.');
+      setRecError(err.message || 'Failed to clear recordings.');
     } finally {
       setClearingRecordings(false);
     }
@@ -569,7 +569,7 @@ export default function Settings() {
     ...(isAdmin
       ? [
           { category: 'system', title: 'Clear all records', description: 'Remove all logged alerts and incidents.' },
-          { category: 'system', title: 'Delete all recordings', description: 'Remove all video recordings from the database and this server.' },
+          { category: 'system', title: 'Clear all recordings', description: 'Remove all video recordings from the database and this server.' },
         ]
       : []),
   ];
@@ -1065,7 +1065,7 @@ export default function Settings() {
 
                     <div className="vscode-danger-row">
                       <div>
-                        <h3>Delete all recordings</h3>
+                        <h3>Clear all recordings</h3>
                         <p>Permanently deletes every video recording from the database and this server.</p>
                       </div>
 
@@ -1078,7 +1078,7 @@ export default function Settings() {
                             setConfirmClearRec(true);
                           }}
                         >
-                          Delete recordings
+                          Clear recordings
                         </button>
                       ) : (
                         <div className="vscode-confirm">
@@ -1089,7 +1089,7 @@ export default function Settings() {
                             onClick={clearRecordings}
                             disabled={clearingRecordings}
                           >
-                            {clearingRecordings ? 'Deleting…' : 'Yes, delete'}
+                            {clearingRecordings ? 'Clearing…' : 'Yes, clear'}
                           </button>
                           <button
                             type="button"
