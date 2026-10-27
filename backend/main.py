@@ -410,30 +410,6 @@ def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depen
 
     return dict(updated)
 
-@app.delete("/records/{alert_id}", dependencies=[Depends(require_admin)])
-def delete_record(alert_id: int, current_user: dict = Depends(require_admin)):
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM alerts WHERE incident_id = %s", (alert_id,))
-        cur.execute("DELETE FROM alert_records WHERE incident_id = %s", (alert_id,))
-        cur.execute("DELETE FROM incidents WHERE id = %s", (alert_id,))
-        deleted = cur.rowcount
-        conn.commit()
-        cur.close()
-    if deleted == 0:
-        raise HTTPException(status_code=404, detail="Record not found")
-
-    log_audit_event(
-        username=current_user.get("username"),
-        user_role=current_user.get("role"),
-        action="RECORD_DELETED",
-        target_module="Records",
-        details=f"Deleted record/alert #{alert_id}",
-        user_id=current_user.get("user_id")
-    )
-
-    return {"message": "Record deleted"}
-
 # --- Employee Management (Owner, CEO & HR) ---
 
 MAX_PHOTO_DIMENSION = 1024
@@ -1122,22 +1098,45 @@ def delete_record(alert_id: int, current_user: dict = Depends(require_admin)):
     return {"message": "Record deleted"}
 
 @app.delete("/records", dependencies=[Depends(require_admin)])
-def clear_all_records(current_user: dict = Depends(require_admin)):
+def clear_all_records(
+    current_user: dict = Depends(require_admin),
+    office_id: Optional[int] = Depends(get_office_id),
+):
+    # Same scope the Records page reads from: all offices for owner/ceo
+    # when no office is selected, otherwise just the selected office.
+    clause, p = office_sql(office_id)
+    params = tuple(p)
+
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM alerts WHERE office_id = %s", (OFFICE_ID,))
+        # order matters: alerts.incident_id references incidents(id)
+        cur.execute("DELETE FROM alerts WHERE 1=1" + clause, params)
         alerts_deleted = cur.rowcount
-        cur.execute("DELETE FROM alert_records WHERE office_id = %s", (OFFICE_ID,))
-        cur.execute("DELETE FROM incidents WHERE office_id = %s", (OFFICE_ID,))
+        cur.execute("DELETE FROM alert_records WHERE 1=1" + clause, params)
+        alert_records_deleted = cur.rowcount
+        cur.execute("DELETE FROM incidents WHERE 1=1" + clause, params)
         incidents_deleted = cur.rowcount
         conn.commit()
         cur.close()
-    log_audit_event(username=current_user.get("username"), 
-        user_role=current_user.get("role"), 
-        action="RECORDS_CLEARED", target_module="Records",
-        details=f"Cleared all records ({alerts_deleted} alerts, {incidents_deleted} incidents)",
-        user_id=current_user.get("user_id"))
-    return {"message": "All records cleared", "alerts_deleted": alerts_deleted, "incidents_deleted": incidents_deleted}
+
+    scope = f"office {office_id}" if office_id is not None else "all offices"
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="RECORDS_CLEARED",
+        target_module="Records",
+        details=(
+            f"Cleared all records for {scope} ({alerts_deleted} alerts, "
+            f"{alert_records_deleted} alert records, {incidents_deleted} incidents)"
+        ),
+        user_id=current_user.get("user_id"),
+    )
+    return {
+        "message": "All records cleared",
+        "alerts_deleted": alerts_deleted,
+        "alert_records_deleted": alert_records_deleted,
+        "incidents_deleted": incidents_deleted,
+    }
 
 @app.get("/records/export", dependencies=[Depends(require_staff)])
 def export_records(
