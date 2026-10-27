@@ -16,9 +16,8 @@ const ALERT_TYPE_LABELS = {
   camera_tamper: 'Possible camera tampering',
   early_arrival: 'Early arrival',
   overstay: 'Overstay',
-    animal: 'Animal detected',
+  animal: 'Animal detected',
 };
-const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
 const ZONE_COLORS = ['#C2703D', '#4F8FBF', '#57795F', '#9B6BC2', '#B8902F', '#BF4F7A'];
 const STATUS_LABEL = { online: 'LIVE', offline: 'OFFLINE', tampered: 'TAMPERED' };
 
@@ -161,6 +160,16 @@ export default function CamerasAlerts() {
     return () => clearInterval(t);
   }, [loadIncidents]);
 
+  // reload the alert list right after Settings > System clears all records
+  useEffect(() => {
+    const onCleared = () => {
+      setIncidents([]);
+      loadIncidents();
+    };
+    window.addEventListener('records-cleared', onCleared);
+    return () => window.removeEventListener('records-cleared', onCleared);
+  }, [loadIncidents]);
+
   useEffect(() => {
     function onKey(e) {
       if (e.key === 'Escape') { setSelected(null); setSnapshotView(null); }
@@ -226,12 +235,12 @@ export default function CamerasAlerts() {
     return c;
   }, [officeCameras]);
 
+  // the list now follows the office filter, same as the LIVE count badge
   const sortedIncidents = useMemo(
-    () => [...incidents].sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen)),
-    [incidents]
+    () => [...visibleIncidents].sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen)),
+    [visibleIncidents]
   );
-  console.log('alerts top5', sortedIncidents.slice(0, 5).map(a => [a.id, a.camera_name, a.last_seen]));
-  
+
   /* Auto: pick by camera count, capped by width.
      1x / 2x / 3x / 4x: always exactly what the user picked. */
   const autoCap = gridWidth
