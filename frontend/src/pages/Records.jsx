@@ -225,6 +225,19 @@ export default function Records() {
   // a stale export message shouldn't outlive the filters it was about
   useEffect(() => { setExportError(null); }, [officeFilter, camera, status, date]);
 
+  // reload the table right after Settings > System clears all records
+  useEffect(() => {
+    const onCleared = () => {
+      setRecords([]);
+      setTotal(0);
+      setSelectedIds([]);
+      setPage(1);
+      loadRecords();
+    };
+    window.addEventListener('records-cleared', onCleared);
+    return () => window.removeEventListener('records-cleared', onCleared);
+  }, [loadRecords]);
+
   return (
     <Shell active="records" title="Records">
       <div className="page-head">

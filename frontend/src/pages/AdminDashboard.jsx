@@ -113,6 +113,17 @@ export default function AdminDashboard() {
     return () => clearInterval(t);
   }, [load]);
 
+  // reload the dashboard right after Settings > System clears all records
+  useEffect(() => {
+    const onCleared = () => {
+      setRecords([]);
+      setIncidents([]);
+      load();
+    };
+    window.addEventListener('records-cleared', onCleared);
+    return () => window.removeEventListener('records-cleared', onCleared);
+  }, [load]);
+
   const visibleCameras = useMemo(
     () => (officeFilter ? cameras.filter((c) => String(c.office_id) === officeFilter) : cameras),
     [cameras, officeFilter]

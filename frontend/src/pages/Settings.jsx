@@ -493,24 +493,15 @@ export default function Settings() {
         throw new Error(data.detail || `Clear failed (HTTP ${res.status})`);
       }
 
-      // ask how many records are still listed (other offices can't be cleared from here)
-      let remaining = 0;
-      try {
-        const check = await apiFetch('/records?limit=1');
-        const checkData = await check.json().catch(() => ({}));
-        remaining = checkData.total || 0;
-      } catch {
-        // ignore, the clear itself already succeeded
-      }
-
       setConfirmClear(false);
+
+      // tell every page that shows alerts / records / incidents to reload
+      window.dispatchEvent(new CustomEvent('records-cleared'));
+
       showMessage(
-        `Cleared ${data.alerts_deleted} alert(s) and ${data.incidents_deleted} incident(s).` +
-          (remaining
-            ? ` ${remaining} record(s) remain: they belong to other offices or were just logged by live cameras.`
-            : ''),
+        `Cleared ${data.alerts_deleted ?? 0} alert(s), ${data.alert_records_deleted ?? 0} alert record(s) and ${data.incidents_deleted ?? 0} incident(s).`,
         false,
-        8000
+        6000
       );
     } catch (err) {
       console.error(err);
