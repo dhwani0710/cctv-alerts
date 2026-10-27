@@ -98,6 +98,11 @@ export default function Settings() {
   const [confirmClearAudit, setConfirmClearAudit] = useState(false);
   const [clearingAudit, setClearingAudit] = useState(false);
   const [clearAuditError, setClearAuditError] = useState('');
+  
+  // Delete all recordings
+  const [confirmClearRec, setConfirmClearRec] = useState(false);
+  const [clearingRecordings, setClearingRecordings] = useState(false);
+  const [recError, setRecError] = useState('');
 
   // Account
   const [accountName, setAccountName] = useState('');
@@ -540,6 +545,35 @@ export default function Settings() {
     }
   }
 
+  async function clearRecordings() {
+    setClearingRecordings(true);
+    setRecError('');
+
+    try {
+      const res = await apiFetch('/recordings', { method: 'DELETE' });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.detail || `Delete failed (HTTP ${res.status})`);
+      }
+
+      setConfirmClearRec(false);
+      showMessage(
+        `Deleted ${data.db_deleted} recording(s) from the database and ${data.local_deleted} local file(s).` +
+          (data.cloud_error
+            ? ' Note: cloud files could not be removed (storage service unavailable).'
+            : ` ${data.cloud_deleted} cloud file(s) removed.`),
+        false,
+        10000
+      );
+    } catch (err) {
+      console.error(err);
+      setRecError(err.message || 'Failed to delete recordings.');
+    } finally {
+      setClearingRecordings(false);
+    }
+  }
+
   // ---------- SEARCH ----------
   const searchIndex = [
     { category: 'notifications', title: 'Camera alerts', description: 'Notify when a camera is tampered with or goes offline.' },
@@ -564,7 +598,10 @@ export default function Settings() {
     { category: 'account', title: 'Role', description: 'View your assigned system role.' },
 
     ...(isAdmin
-      ? [{ category: 'system', title: 'Clear all records', description: 'Remove all logged alerts and incidents.' }]
+      ? [
+          { category: 'system', title: 'Clear all records', description: 'Remove all logged alerts and incidents.' },
+          { category: 'system', title: 'Delete all recordings', description: 'Remove all video recordings from the database and this server.' },
+        ]
       : []),
 
     ...(isOwner
@@ -1114,6 +1151,54 @@ export default function Settings() {
                           </p>
                         )}
                       </>
+                    )}
+
+                    <div className="vscode-danger-row">
+                      <div>
+                        <h3>Delete all recordings</h3>
+                        <p>Permanently deletes every video recording from the database and this server.</p>
+                      </div>
+
+                      {!confirmClearRec ? (
+                        <button
+                          type="button"
+                          className="vscode-danger-btn"
+                          onClick={() => {
+                            setRecError('');
+                            setConfirmClearRec(true);
+                          }}
+                        >
+                          Delete recordings
+                        </button>
+                      ) : (
+                        <div className="vscode-confirm">
+                          <span>Are you sure?</span>
+                          <button
+                            type="button"
+                            className="vscode-danger-btn"
+                            onClick={clearRecordings}
+                            disabled={clearingRecordings}
+                          >
+                            {clearingRecordings ? 'Deleting…' : 'Yes, delete'}
+                          </button>
+                          <button
+                            type="button"
+                            className="vscode-outline-btn"
+                            onClick={() => {
+                              setRecError('');
+                              setConfirmClearRec(false);
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {recError && (
+                      <p role="alert" style={{ color: '#e5533d', marginTop: 12 }}>
+                        {recError}
+                      </p>
                     )}
                   </section>
                 </div>

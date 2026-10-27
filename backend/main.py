@@ -14,6 +14,12 @@ import re
 from urllib.parse import unquote
 import anyio
 import asyncio
+import os
+import time
+import storage
+import config
+import storage
+from video_recorder import RECORDINGS_DIR
 from starlette.concurrency import run_in_threadpool
 from typing import List, Optional
 from fastapi import FastAPI, UploadFile, Form, File, Depends, HTTPException, Request, Response, BackgroundTasks
@@ -24,13 +30,11 @@ from database import init_db, get_db, OFFICE_ID
 from camera_worker import start_camera_threads, get_current_frame, start_health_check_thread, get_all_camera_heartbeats, start_escalation_thread, start_single_camera, stop_single_camera, stop_all_cameras, get_tampered_cameras, invalidate_employee_cache
 from recognition import invalidate_gallery, check_gallery_photo
 from datetime import datetime, timedelta
-import config
 from auth import verify_token, require_admin, require_hr, require_guard, require_staff, require_owner, get_office_id, office_sql, enforce_write_office
 from auth_users import verify_password, create_token, hash_password, VALID_ROLES
 from app_settings import get_all_settings, set_setting
 from settings_store import load_settings, save_settings
 from audit import log_audit_event
-import storage
 from PIL import Image, ImageOps
 from retention import start_retention_thread, start_daily_reset_thread
 
@@ -481,6 +485,63 @@ def delete_record(alert_id: int, current_user: dict = Depends(require_admin)):
 
     return {"message": "Record deleted"}
 
+@app.delete("/recordings", dependencies=[Depends(require_admin)])
+def clear_all_recordings(current_user: dict = Depends(require_admin)):
+    # 1. Cloud files: best effort. Supabase may be unavailable (for example quota exceeded),
+    #    and that must not stop the database and local cleanup.
+    cloud_deleted = 0
+    cloud_error = None
+    try:
+        cloud_deleted = storage.delete_all_in_prefix("recordings")
+    except Exception as e:
+        cloud_error = str(e)
+        print(f"[recordings] Cloud delete failed: {e}")
+
+    # 2. Local files (skip anything modified in the last 2 minutes: it may still be recording)
+    local_deleted = 0
+    now = time.time()
+    if os.path.isdir(RECORDINGS_DIR):
+        for name in os.listdir(RECORDINGS_DIR):
+            path = os.path.join(RECORDINGS_DIR, name)
+            if not os.path.isfile(path):
+                continue
+            if now - os.path.getmtime(path) < 120:
+                continue
+            try:
+                os.remove(path)
+                local_deleted += 1
+            except OSError:
+                pass
+
+    # 3. Database rows
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM recordings")
+        db_deleted = cur.rowcount
+        conn.commit()
+        cur.close()
+
+    log_audit_event(
+        username=current_user.get("username"),
+        user_role=current_user.get("role"),
+        action="RECORDINGS_CLEARED",
+        target_module="Recordings",
+        details=(
+            f"Cleared all recordings ({db_deleted} database rows, {local_deleted} local files, "
+            f"{cloud_deleted} cloud files"
+            + (", cloud delete FAILED" if cloud_error else "")
+            + ")"
+        ),
+        user_id=current_user.get("user_id"),
+    )
+    return {
+        "message": "All recordings cleared",
+        "db_deleted": db_deleted,
+        "local_deleted": local_deleted,
+        "cloud_deleted": cloud_deleted,
+        "cloud_error": bool(cloud_error),
+    }
+    
 # --- Employee Management (Owner, CEO & HR) ---
 
 MAX_PHOTO_DIMENSION = 1024
