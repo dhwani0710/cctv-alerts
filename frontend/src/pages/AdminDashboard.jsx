@@ -45,6 +45,7 @@ const icons = {
   bell: svg(<><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></>),
   users: svg(<><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>),
   records: svg(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M8 13h8M8 17h8" /></>),
+  hardware: svg(<><path d="M19.07 4.93a10 10 0 0 0-14.14 0" /><path d="M16.24 7.76a6 6 0 0 0-8.48 0" /><path d="M13.41 10.59a2 2 0 0 0-2.82 0" /><circle cx="12" cy="14" r="1.5" /><path d="M12 16v6" /></>),
 };
 
 function StatCard({ icon, label, value, sub, tone = '' }) {
@@ -200,6 +201,15 @@ export default function AdminDashboard() {
             sub={`of ${employeeCount} total employees`}
           />
           <StatCard icon={icons.records} label="Records today" value={records.length} />
+          <Link to="/hardware-alerts" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <StatCard
+              icon={icons.hardware}
+              label="Hardware & IoT"
+              value="Sensors Live"
+              sub="MC-38, PIR & Sonar →"
+              tone="good"
+            />
+          </Link>
         </div>
 
         {/* ---------- RECENT ALERTS ---------- */}

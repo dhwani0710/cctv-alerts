@@ -4416,3 +4416,654 @@
     height: 40px;
   }
 }
+
+/* =====================================================
+   26. HARDWARE & SENSOR ALERTS DASHBOARD (Sentinel SOC)
+   ===================================================== */
+.hw-alarm-banner {
+  background: color-mix(in srgb, var(--brick) 12%, var(--surface));
+  border: 1.5px solid var(--brick);
+  border-radius: var(--radius-lg);
+  padding: 16px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+  box-shadow: 0 0 24px var(--brick-glow);
+  animation: signal-pulse 2s ease-out infinite;
+}
+
+.hw-alarm-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.hw-alarm-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--brick);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 10px var(--brick-glow);
+}
+
+.hw-alarm-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.hw-alarm-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--brick);
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.hw-alarm-sub {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.hw-stale-banner {
+  background: color-mix(in srgb, var(--brass) 10%, var(--surface));
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--brass);
+  border-radius: var(--radius-md);
+  padding: 11px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.hw-hud-bar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.hw-hud-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.hw-hud-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hw-threat-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 5px 11px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.hw-threat-pill.t-normal {
+  background: color-mix(in srgb, var(--sage) 14%, transparent);
+  color: var(--sage);
+  border: 1px solid color-mix(in srgb, var(--sage) 35%, transparent);
+}
+
+.hw-threat-pill.t-elevated {
+  background: color-mix(in srgb, var(--brass) 16%, transparent);
+  color: var(--brass-dim);
+  border: 1px solid color-mix(in srgb, var(--brass) 35%, transparent);
+}
+
+.hw-threat-pill.t-high {
+  background: color-mix(in srgb, #D97706 16%, transparent);
+  color: #D97706;
+  border: 1px solid color-mix(in srgb, #D97706 35%, transparent);
+}
+
+.hw-threat-pill.t-breach {
+  background: var(--brick);
+  color: #fff;
+  border: 1px solid var(--brick);
+  box-shadow: 0 0 12px var(--brick-glow);
+  animation: signal-pulse 1.6s infinite;
+}
+
+.hw-threat-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.hw-mode-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface-2);
+  padding: 3px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.hw-mode-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+.hw-mode-btn:hover {
+  color: var(--text);
+}
+
+.hw-mode-btn.active {
+  background: var(--brass);
+  color: #fff;
+  box-shadow: 0 2px 6px var(--brass-glow);
+}
+
+.hw-zone-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.hw-zone-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.hw-zone-card.is-alert {
+  border-color: var(--brick);
+  box-shadow: 0 0 16px var(--brick-glow);
+}
+
+.hw-zone-card.is-warning {
+  border-color: var(--brass);
+}
+
+.hw-zone-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hw-zone-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 2.5px 7px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--brass) 14%, transparent);
+  color: var(--brass);
+}
+
+.hw-zone-name {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-top: 6px;
+}
+
+.hw-zone-metric {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  margin: 10px 0 2px;
+}
+
+.hw-zone-metric.text-good { color: var(--sage); }
+.hw-zone-metric.text-warn { color: var(--brick); }
+.hw-zone-metric.text-caution { color: var(--brass); }
+
+.hw-zone-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.hw-zone-bar {
+  height: 6px;
+  background: var(--bg-soft);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 14px 0 12px;
+}
+
+.hw-zone-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width .3s ease;
+}
+
+.hw-zone-fill.fill-good { background: var(--sage); }
+.hw-zone-fill.fill-warn { background: var(--brick); }
+.hw-zone-fill.fill-brass { background: var(--brass); }
+
+.hw-tripwire-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.hw-tripwire-toggle input[type="checkbox"] {
+  accent-color: var(--brass);
+  cursor: pointer;
+}
+
+/* Telemetry & waveform panel */
+.hw-telemetry-grid {
+  display: grid;
+  grid-template-columns: 1.8fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 900px) {
+  .hw-telemetry-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hw-waveform-box {
+  width: 100%;
+  height: 190px;
+  margin-top: 12px;
+  position: relative;
+}
+
+.hw-cat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.hw-cat-bar-bg {
+  width: 100%;
+  height: 5px;
+  background: var(--bg-soft);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.hw-cat-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width .2s ease;
+}
+
+/* Tabs & filter controls */
+.hw-tab-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.hw-tab-btn {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+.hw-tab-btn:hover {
+  border-color: var(--brass);
+  color: var(--text);
+}
+
+.hw-tab-btn.active {
+  background: var(--brass);
+  border-color: var(--brass);
+  color: #fff;
+  box-shadow: 0 2px 8px var(--brass-glow);
+}
+
+.hw-tab-btn .count {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: .8;
+}
+
+/* Simulation Controls Box */
+.hw-sim-box {
+  background: var(--surface-2);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-top: 24px;
+}
+
+.hw-sim-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.hw-sim-btn {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all .15s ease;
+}
+
+.hw-sim-btn:hover {
+  border-color: var(--brass);
+  color: var(--brass);
+}
+
+.hw-sim-btn.active-danger {
+  border-color: var(--brick);
+  background: color-mix(in srgb, var(--brick) 12%, var(--surface));
+  color: var(--brick);
+}
+
+.hw-sim-btn.active-caution {
+  border-color: var(--brass);
+  background: color-mix(in srgb, var(--brass) 12%, var(--surface));
+  color: var(--brass-dim);
+}
+
+/* Siren Schedule & Duration Controls */
+.hw-siren-time-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.hw-siren-time-badge.is-ringing-allowed {
+  border-color: color-mix(in srgb, var(--brick) 40%, var(--border));
+  color: var(--brick);
+  background: color-mix(in srgb, var(--brick) 8%, var(--surface));
+}
+
+.hw-siren-time-badge.is-silent-period {
+  border-color: var(--border);
+  color: var(--text-muted);
+  opacity: .85;
+}
+
+.hw-siren-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--brick);
+  color: #fff;
+  letter-spacing: .04em;
+  box-shadow: 0 0 10px var(--brick-glow);
+  animation: signal-pulse 1.4s infinite;
+}
+
+.hw-schedule-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.hw-schedule-card {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: all .15s ease;
+  user-select: none;
+}
+
+.hw-schedule-card:hover {
+  border-color: var(--brass);
+}
+
+.hw-schedule-card.active {
+  border-color: var(--brass);
+  background: color-mix(in srgb, var(--brass) 10%, var(--surface));
+  box-shadow: 0 0 0 1px var(--brass);
+}
+
+.hw-schedule-card-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.hw-schedule-card-sub {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.hw-time-picker-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+/* Day of week selector */
+.hw-day-picker {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.hw-day-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all .15s ease;
+  user-select: none;
+}
+
+.hw-day-pill:hover {
+  border-color: var(--brass);
+  color: var(--text);
+}
+
+.hw-day-pill.active {
+  background: var(--brass);
+  border-color: var(--brass);
+  color: #fff;
+  box-shadow: 0 1px 6px var(--brass-glow);
+}
+
+.hw-quick-days {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.hw-quick-link {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--brass);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.hw-quick-link:hover {
+  color: var(--brass-glow);
+}
+
+/* Time presets */
+.hw-time-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.hw-time-preset-btn {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+.hw-time-preset-btn:hover {
+  border-color: var(--brass);
+  color: var(--text);
+}
+
+/* Schedule overview banner/card */
+.hw-schedule-overview {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 18px;
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.hw-schedule-overview-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.hw-schedule-overview-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--brass) 14%, var(--surface));
+  color: var(--brass);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--brass) 25%, transparent);
+}
+
+.hw-schedule-overview-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.hw-schedule-overview-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hw-schedule-overview-desc {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+

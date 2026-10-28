@@ -98,6 +98,14 @@ function GuardOverview() {
           <span className="eyebrow">Employees in today</span>
           <div className="value">{loading ? '–' : entryLog.length}</div>
         </div>
+
+        <Link to="/hardware-alerts" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <div className="stat-card good">
+            <span className="eyebrow">Hardware alerts</span>
+            <div className="value">Sensors Live</div>
+            <div className="delta">Door, PIR & Sonar →</div>
+          </div>
+        </Link>
       </div>
 
       <div

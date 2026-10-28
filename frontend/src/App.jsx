@@ -17,6 +17,7 @@ import Attendance from './pages/Attendance.jsx';
 import AdminUsers from './pages/AdminUsers.jsx';
 import Settings from './pages/Settings.jsx';
 import { AuditLogPage } from './pages/AuditLogPage.jsx';
+import HardwareAlerts from './pages/HardwareAlerts.jsx';
 
 import { useAuth, dashboardFor } from './context/AuthContext.jsx';
 
@@ -82,6 +83,15 @@ function AppRoutes() {
         element={
           <ProtectedRoute allowedRoles={['ceo', 'owner', 'guard']}>
             <CamerasAlerts />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/hardware-alerts"
+        element={
+          <ProtectedRoute allowedRoles={['ceo', 'owner', 'guard']}>
+            <HardwareAlerts />
           </ProtectedRoute>
         }
       />
