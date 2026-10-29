@@ -53,6 +53,16 @@ const NAV_ICONS = {
     </svg>
   ),
 
+  hardware: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19.07 4.93a10 10 0 0 0-14.14 0" />
+      <path d="M16.24 7.76a6 6 0 0 0-8.48 0" />
+      <path d="M13.41 10.59a2 2 0 0 0-2.82 0" />
+      <circle cx="12" cy="14" r="1.5" fill="currentColor" />
+      <path d="M12 16v6" />
+    </svg>
+  ),
+
   'audit-logs': (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
       <path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4" />
@@ -224,6 +234,11 @@ export default function Shell({
             key: 'cameras',
             label: 'Cameras & Alerts',
             to: '/cameras-alerts',
+          },
+          {
+            key: 'hardware',
+            label: 'Hardware Alerts',
+            to: '/hardware-alerts',
           },
           {
             key: 'recordings',

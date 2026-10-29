@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Shell from '../components/Shell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -971,6 +972,18 @@ export default function Settings() {
                     <button type="submit" className="vscode-primary-btn" disabled={storeHoursLocked || savingStoreHours}>
                       {savingStoreHours ? 'Saving...' : 'Save store hours'}
                     </button>
+                  </div>
+
+                  <div style={{ marginTop: 24, padding: '14px 16px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>IoT Hardware Siren Schedule</span>
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '6px 0 10px' }}>
+                      When the IoT physical alarm siren is set to After-Hours mode, it automatically triggers only during the closed window ({storeCloseTime} to {storeOpenTime}). You can also customize exact daily hours, days of the week, and auto-cutoff duration.
+                    </p>
+                    <Link to="/hardware-alerts" className="vscode-outline-btn" style={{ display: 'inline-block', textDecoration: 'none' }}>
+                      Open Hardware Alerts Console &rarr;
+                    </Link>
                   </div>
                 </form>
               )}
